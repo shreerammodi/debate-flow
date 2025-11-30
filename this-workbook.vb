@@ -1,6 +1,6 @@
 Private Sub Workbook_SheetChange(ByVal sh As Object, ByVal Target As Range)
 ' Sets sheet name automatically based on value in A1
-    If sh.Name = "Info" Or sh.Name = "CX" Then Exit Sub
+    If sh.Name = "Info" Or sh.Name = "CX" Or sh.Name = "Decisions" Then Exit Sub
     With sh
         If Not Intersect(Target, .Range("A1")) Is Nothing Then
             On Error GoTo Handler

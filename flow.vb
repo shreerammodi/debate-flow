@@ -63,7 +63,7 @@ Public Sub SwitchSpeech()
 
     speech = SpeechName()
 
-    For i = 5 To ActiveWorkbook.Worksheets.Count
+    For i = 6 To ActiveWorkbook.Worksheets.Count
         Set ws = ActiveWorkbook.Worksheets(i)
 
         If ws.Range("A2").Value = "1AC" Then
@@ -82,7 +82,7 @@ Public Sub SwitchSpeech()
     Next i
 
 
-    ActiveWorkbook.Worksheets(5).Activate
+    ActiveWorkbook.Worksheets(6).Activate
 End Sub
 
 Private Function ColumnFromSpeech(SpeechName As String, Side As String) As Integer
