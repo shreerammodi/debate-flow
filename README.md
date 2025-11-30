@@ -8,9 +8,6 @@ experience for debate.
 You can get a copy of the most recent template from the
 [releases page](https://github.com/shreerammodi/debate-flow/releases).
 
-The `Info` page of the template contains information for all macros and
-keybindings provided.
-
 If you wish to use a Google Sheets version instead, you can access it at the
 following link by making a copy.
 
@@ -21,3 +18,12 @@ following link by making a copy.
 > The Google Sheets version of this flow template is not fully supported. Some
 > features won't be exactly as they appear in Excel, and performance may be
 > slower.
+
+## Usage
+
+The `Info` page of the template contains information for all macros and
+keybindings provided.
+
+You can move the downloaded template to your Excel templates folder, or
+alternatively open a new Excel sheet based on the template in order to create a
+new flow.
