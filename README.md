@@ -6,7 +6,13 @@ experience for debate.
 ## Installation
 
 You can get a copy of the most recent template from the
-[releases page](https://github.com/shreerammodi/debate-flow/releases).
+[releases page](https://github.com/shreerammodi/debate-flow/releases). After
+downloading it, simply open the file to make a new flow.
+
+For convenience, you can go to the `File` menu and click `Save as template`,
+ensuring to select the `.xltm` (macro-enabled template) filetype. This will
+cause the flow template to be accessible in Excel's "new workbook" menu any time
+you wish to create a new flow..
 
 If you wish to use a Google Sheets version instead, you can access it at the
 following link by making a copy.
