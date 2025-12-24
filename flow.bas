@@ -33,16 +33,14 @@ Public Sub ToggleEvidence()
     Dim targetRange As Range
     Dim origColor As Long
 
-    Set targetRange = Range(ActiveCell, ActiveCell.Offset(1, 0))
-
     origColor = Cells(2, ActiveCell.Column).Font.Color
     
     If ActiveCell.Font.ColorIndex <> 1 Then
-        targetRange.Font.ColorIndex = 1
-        targetRange.Font.Bold = True
+        ActiveCell.Font.ColorIndex = 1
+        ActiveCell.Font.Bold = True
     Else
-        targetRange.Font.Color = origColor
-        targetRange.Font.Bold = False
+        ActiveCell.Font.Color = origColor
+        ActiveCell.Font.Bold = False
     End If
 End Sub
 
