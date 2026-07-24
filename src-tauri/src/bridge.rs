@@ -1,0 +1,889 @@
+//! cardmirror-bridge endpoint (desktop).
+//!
+//! Two legs, both loopback only. Inbound is a blocking HTTP server on an
+//! OS-assigned 127.0.0.1 port: `/ping` is answered here, `/flow` and `/reveal`
+//! are handed to the renderer over a `bridge:request` event and back through
+//! the `bridge_reply` command. Outbound, Rust reads CardMirror's handshake and
+//! posts to it, so the webview never holds the peer's token or a socket.
+//!
+//! The session token is all that stands between this port and every other
+//! process on the machine, so it lives in a 0600 file, is compared in constant
+//! time, and any request carrying a browser `Origin`/`Referer` is refused
+//! before the token is even looked at.
+
+use std::collections::HashMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
+use std::time::Duration;
+
+use parking_lot::Mutex;
+use serde::Serialize;
+use serde_json::{json, Value as Json};
+use subtle::ConstantTimeEq;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+/// Handshake directory shared by every bridge-speaking app.
+const DIR_NAME: &str = "cardmirror-bridge";
+const APP_ID: &str = "ebb";
+const KIND: &str = "flow";
+const SCHEMA: u32 = 1;
+const TOKEN_HEADER: &str = "x-bridge-token";
+/// An inbound body is a handful of extracted items at worst; past this it is a
+/// resource attack, not a request.
+const MAX_BODY: usize = 4 * 1024 * 1024;
+/// A handshake file is a few hundred bytes. The cap keeps a corrupt or hostile
+/// file from being read into memory.
+const MAX_HANDSHAKE: u64 = 64 * 1024;
+/// CardMirror gives an outbound POST 3000 ms, so ebb has to give up first or
+/// the caller sees its own timeout instead of our error body.
+const RENDERER_TIMEOUT: Duration = Duration::from_millis(2500);
+const OUTBOUND_TIMEOUT: Duration = Duration::from_millis(3000);
+const PING_TIMEOUT: Duration = Duration::from_millis(1500);
+
+// --- Handshake files -----------------------------------------------------------
+
+/// The shared bridge directory: the `CARDMIRROR_BRIDGE_DIR` override first (it
+/// is how tests and sandboxes redirect the pair), then the platform data dir.
+/// XDG is honored on Linux only, because that is where the peer looks.
+pub fn bridge_dir() -> Option<PathBuf> {
+    if let Some(over) = std::env::var_os("CARDMIRROR_BRIDGE_DIR") {
+        if !over.is_empty() {
+            return Some(PathBuf::from(over));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME")?;
+        Some(
+            PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join(DIR_NAME),
+        )
+    }
+    #[cfg(windows)]
+    {
+        let appdata = std::env::var_os("APPDATA")?;
+        Some(PathBuf::from(appdata).join(DIR_NAME))
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            if !xdg.is_empty() {
+                return Some(PathBuf::from(xdg).join(DIR_NAME));
+            }
+        }
+        let home = std::env::var_os("HOME")?;
+        Some(
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join(DIR_NAME),
+        )
+    }
+}
+
+#[cfg(unix)]
+fn create_dir_private(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    // On a shared machine the directory holds other users' session tokens too,
+    // so it must not be traversable by them.
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+#[cfg(not(unix))]
+fn create_dir_private(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+#[cfg(unix)]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    // `mode` applies only when the open creates the file, so a tmp file left by
+    // a crashed run would otherwise keep whatever permissions it had.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    file.write_all(bytes)
+}
+
+#[cfg(not(unix))]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
+}
+
+/// Writes `value` as JSON through `<path>.tmp` and renames it over the target,
+/// so a peer scanning the directory never reads a half-written file.
+fn write_private_json(path: &Path, value: &Json) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    write_private(&tmp, value.to_string().as_bytes())?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Publishes this launch: the identity file that keeps ebb listed in peers'
+/// app pickers, and the session file that says how to reach it right now.
+pub fn write_handshake(port: u16, token: &str, app_version: &str) -> std::io::Result<()> {
+    let dir = bridge_dir().ok_or_else(|| std::io::Error::other("no bridge directory"))?;
+    create_dir_private(&dir)?;
+    let identity = json!({
+        "schema": SCHEMA,
+        "app": APP_ID,
+        "appVersion": app_version,
+        "kind": KIND,
+    });
+    let session = json!({ "port": port, "token": token, "pid": std::process::id() });
+    write_private_json(&dir.join("ebb.json"), &identity)?;
+    write_private_json(&dir.join("ebb.session.json"), &session)
+}
+
+/// Quit path. Only the session half goes: the identity file is what keeps a
+/// closed ebb selectable in CardMirror's flow-app picker.
+pub fn remove_session() {
+    if let Some(dir) = bridge_dir() {
+        let _ = std::fs::remove_file(dir.join("ebb.session.json"));
+    }
+}
+
+// --- Request routing -----------------------------------------------------------
+
+/// What every route answers with: an HTTP status and a JSON body.
+pub type Reply = (u16, Json);
+
+/// The `/flow` and `/reveal` round trip, injected so the routing rules can be
+/// exercised on their own.
+type Renderer = Box<dyn Fn(&str, Json) -> Reply + Send + Sync>;
+
+fn fail(error: &str) -> Json {
+    json!({ "ok": false, "error": error })
+}
+
+/// Handles one inbound request. The renderer round trip is injected, so the
+/// routing, auth and limit rules are exercisable without a running Tauri app.
+pub struct Router {
+    token: String,
+    app_version: String,
+    renderer: Renderer,
+}
+
+impl Router {
+    pub fn new(
+        token: String,
+        app_version: String,
+        renderer: impl Fn(&str, Json) -> Reply + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            token,
+            app_version,
+            renderer: Box::new(renderer),
+        }
+    }
+
+    pub fn handle(&self, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Reply {
+        // Only a browser attaches these. A page that somehow learned the token
+        // must still be turned away, so this precedes the token compare.
+        if headers.iter().any(|(name, _)| {
+            name.eq_ignore_ascii_case("origin") || name.eq_ignore_ascii_case("referer")
+        }) {
+            return (403, fail("unauthorized"));
+        }
+        let given = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(TOKEN_HEADER))
+            .map(|(_, value)| *value)
+            .unwrap_or_default();
+        // Constant time in the bytes; the length difference it does leak is the
+        // token length, which is fixed and public.
+        if !bool::from(given.as_bytes().ct_eq(self.token.as_bytes())) {
+            return (403, fail("unauthorized"));
+        }
+        if body.len() > MAX_BODY {
+            return (400, fail("bad-request"));
+        }
+        // A query string is not part of the route.
+        let path = path.split('?').next().unwrap_or(path);
+        match (method, path) {
+            ("GET", "/ping") => (
+                200,
+                json!({
+                    "ok": true,
+                    "app": APP_ID,
+                    "appVersion": self.app_version,
+                    "schema": SCHEMA,
+                    "kind": KIND,
+                }),
+            ),
+            ("POST", "/flow") => self.to_renderer("flow", body),
+            ("POST", "/reveal") => self.to_renderer("reveal", body),
+            _ => (404, fail("bad-request")),
+        }
+    }
+
+    fn to_renderer(&self, route: &str, body: &[u8]) -> Reply {
+        match serde_json::from_slice::<Json>(body) {
+            Ok(parsed) if parsed.is_object() => (self.renderer)(route, parsed),
+            _ => (400, fail("bad-request")),
+        }
+    }
+}
+
+// --- Server threads ------------------------------------------------------------
+
+fn json_response(status: u16, body: &Json) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let content_type =
+        tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+            .expect("static header");
+    tiny_http::Response::from_string(body.to_string())
+        .with_status_code(status)
+        .with_header(content_type)
+}
+
+/// A `/flow` parked on a wedged renderer holds its worker for the full 2500 ms,
+/// so a few of them share the listener and `/ping` keeps answering meanwhile.
+/// The peer's own ping deadline is shorter than ours, and an unanswered ping
+/// reads as "ebb is not running".
+const WORKERS: usize = 4;
+
+fn serve(server: tiny_http::Server, router: Router) {
+    let server = Arc::new(server);
+    let router = Arc::new(router);
+    for _ in 1..WORKERS {
+        let (server, router) = (server.clone(), router.clone());
+        let spawned = std::thread::Builder::new()
+            .name("cardmirror-bridge".into())
+            .spawn(move || accept(&server, &router));
+        if let Err(e) = spawned {
+            eprintln!("cardmirror bridge: worker spawn failed: {e}");
+        }
+    }
+    accept(&server, &router);
+}
+
+fn accept(server: &tiny_http::Server, router: &Router) {
+    while let Ok(mut request) = server.recv() {
+        // One byte past the cap is enough to know the body is oversized,
+        // without buffering whatever length the sender claimed.
+        let mut body = Vec::new();
+        let read = request
+            .as_reader()
+            .take(MAX_BODY as u64 + 1)
+            .read_to_end(&mut body);
+        if read.is_err() {
+            continue;
+        }
+        let reply = {
+            let headers: Vec<(&str, &str)> = request
+                .headers()
+                .iter()
+                .map(|header| (header.field.as_str().as_str(), header.value.as_str()))
+                .collect();
+            router.handle(request.method().as_str(), request.url(), &headers, &body)
+        };
+        let _ = request.respond(json_response(reply.0, &reply.1));
+    }
+}
+
+// --- Renderer round trip -------------------------------------------------------
+
+/// Inbound requests parked on the renderer, keyed by the id sent out with
+/// `bridge:request`.
+#[derive(Default)]
+pub struct BridgeState {
+    pending: Mutex<HashMap<String, mpsc::Sender<Json>>>,
+}
+
+/// Blocks until the renderer answers or the deadline passes. A reply is
+/// `{status, body}`; a reply of any other shape means the renderer never
+/// produced a usable answer, which is the timeout case from the caller's side.
+fn await_reply(rx: &Receiver<Json>, timeout: Duration) -> Reply {
+    let Ok(reply) = rx.recv_timeout(timeout) else {
+        return (500, fail("timeout"));
+    };
+    let status = reply.get("status").and_then(Json::as_u64).unwrap_or(0);
+    match (u16::try_from(status), reply.get("body")) {
+        (Ok(status @ 100..=599), Some(body)) => (status, body.clone()),
+        _ => (500, fail("timeout")),
+    }
+}
+
+fn call_renderer(app: &AppHandle, route: &str, body: Json) -> Reply {
+    let id = random_id();
+    let (tx, rx) = mpsc::channel();
+    let state = app.state::<BridgeState>();
+    state.pending.lock().insert(id.clone(), tx);
+    let sent = app.emit(
+        "bridge:request",
+        json!({ "id": id, "route": route, "body": body }),
+    );
+    let reply = if sent.is_ok() {
+        await_reply(&rx, RENDERER_TIMEOUT)
+    } else {
+        (500, fail("timeout"))
+    };
+    // A delivered reply already took its entry; this clears the ones that
+    // timed out, which nothing else would.
+    state.pending.lock().remove(&id);
+    reply
+}
+
+#[tauri::command]
+pub fn bridge_reply(state: State<'_, BridgeState>, id: String, response: Json) {
+    // An id we do not know is one whose request already timed out.
+    let waiter = state.pending.lock().remove(&id);
+    if let Some(tx) = waiter {
+        let _ = tx.send(response);
+    }
+}
+
+// --- Random material -----------------------------------------------------------
+
+/// 24 alphanumeric characters: URL-safe by construction, ~143 bits.
+fn random_token() -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 24)
+}
+
+/// 16 hex characters naming one in-flight renderer round trip.
+fn random_id() -> String {
+    use std::fmt::Write;
+    let bytes: [u8; 8] = rand::random();
+    bytes
+        .iter()
+        .fold(String::with_capacity(16), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
+
+// --- Outbound to CardMirror ----------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardMirrorStatus {
+    registered: bool,
+    running: bool,
+    app_version: Option<String>,
+    schema: Option<u32>,
+}
+
+/// Where CardMirror is listening and the token to get in with.
+struct Peer {
+    port: u16,
+    token: String,
+}
+
+fn read_handshake(path: &Path) -> Option<Json> {
+    if std::fs::metadata(path).ok()?.len() > MAX_HANDSHAKE {
+        return None;
+    }
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
+fn session_of(value: &Json) -> Option<Peer> {
+    let port = u16::try_from(value.get("port")?.as_u64()?).ok()?;
+    let token = value.get("token")?.as_str()?;
+    if port == 0 || token.is_empty() {
+        return None;
+    }
+    Some(Peer {
+        port,
+        token: token.to_string(),
+    })
+}
+
+/// CardMirror's identity, plus its session when it is running. Port and token
+/// live on the session file, except for a peer still writing the pre-split
+/// combined shape that carries them on the identity file.
+fn read_peer() -> Option<(Json, Option<Peer>)> {
+    let dir = bridge_dir()?;
+    let identity = read_handshake(&dir.join("cardmirror.json"))?;
+    let session = read_handshake(&dir.join("cardmirror.session.json"))
+        .as_ref()
+        .and_then(session_of)
+        .or_else(|| session_of(&identity));
+    Some((identity, session))
+}
+
+fn ping(peer: &Peer) -> bool {
+    ureq::get(&format!("http://127.0.0.1:{}/ping", peer.port))
+        .set("X-Bridge-Token", &peer.token)
+        .timeout(PING_TIMEOUT)
+        .call()
+        .is_ok()
+}
+
+fn post(path: &str, body: &Json) -> Result<Json, String> {
+    let (_, session) = read_peer().ok_or("not-registered")?;
+    let peer = session.ok_or("not-running")?;
+    let sent = ureq::post(&format!("http://127.0.0.1:{}{path}", peer.port))
+        .set("Content-Type", "application/json")
+        .set("X-Bridge-Token", &peer.token)
+        .timeout(OUTBOUND_TIMEOUT)
+        .send_string(&body.to_string());
+    let text = match sent {
+        Ok(response) => response.into_string(),
+        // A rejected request still carries CardMirror's JSON body, which the
+        // caller is entitled to see.
+        Err(ureq::Error::Status(_, response)) => response.into_string(),
+        Err(ureq::Error::Transport(transport)) => {
+            // A refused connect means the session file outlived the process;
+            // a stalled socket means the process is wedged.
+            return Err(match transport.kind() {
+                ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::Dns => "not-running",
+                ureq::ErrorKind::Io => "timeout",
+                _ => "bad-response",
+            }
+            .to_string());
+        }
+    };
+    let text = text.map_err(|_| "bad-response".to_string())?;
+    serde_json::from_str(&text).map_err(|_| "bad-response".to_string())
+}
+
+#[tauri::command]
+pub fn cardmirror_status() -> Result<CardMirrorStatus, String> {
+    let Some((identity, session)) = read_peer() else {
+        return Ok(CardMirrorStatus {
+            registered: false,
+            running: false,
+            app_version: None,
+            schema: None,
+        });
+    };
+    // Registered but silent is CardMirror being closed, a normal state the
+    // settings UI shows as such rather than as a failure.
+    Ok(CardMirrorStatus {
+        registered: true,
+        running: session.is_some_and(|peer| ping(&peer)),
+        app_version: identity
+            .get("appVersion")
+            .and_then(Json::as_str)
+            .map(str::to_string),
+        schema: identity
+            .get("schema")
+            .and_then(Json::as_u64)
+            .and_then(|n| u32::try_from(n).ok()),
+    })
+}
+
+#[tauri::command]
+pub fn cardmirror_jump(source: String) -> Result<Json, String> {
+    post("/jump", &json!({ "source": source }))
+}
+
+#[tauri::command]
+pub fn cardmirror_insert(text: String, role: String, new_paragraph: bool) -> Result<Json, String> {
+    // ebb never sends omitted text, but the field is part of the insert shape.
+    post(
+        "/insert",
+        &json!({
+            "text": text,
+            "role": role,
+            "newParagraph": new_paragraph,
+            "omitted": false,
+        }),
+    )
+}
+
+// --- Startup -------------------------------------------------------------------
+
+/// Binds the loopback listener, publishes the handshake, and serves on its own
+/// thread. Every failure here is non-fatal: without the bridge ebb just has no
+/// CardMirror integration this run.
+pub fn start(app: &AppHandle) {
+    app.manage(BridgeState::default());
+    let server = match tiny_http::Server::http(("127.0.0.1", 0)) {
+        Ok(server) => server,
+        Err(e) => {
+            eprintln!("cardmirror bridge: bind failed: {e}");
+            return;
+        }
+    };
+    let Some(port) = server.server_addr().to_ip().map(|addr| addr.port()) else {
+        eprintln!("cardmirror bridge: listener has no IP address");
+        return;
+    };
+    let token = random_token();
+    let app_version = app.package_info().version.to_string();
+    if let Err(e) = write_handshake(port, &token, &app_version) {
+        eprintln!("cardmirror bridge: handshake write failed: {e}");
+        return;
+    }
+    let handle = app.clone();
+    let router = Router::new(token, app_version, move |route, body| {
+        call_renderer(&handle, route, body)
+    });
+    if let Err(e) = std::thread::Builder::new()
+        .name("cardmirror-bridge".into())
+        .spawn(move || serve(server, router))
+    {
+        eprintln!("cardmirror bridge: thread spawn failed: {e}");
+        remove_session();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bridge directory comes from a process-wide env var, so the tests
+    /// that set it must not overlap.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ebb-bridge-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn router() -> Router {
+        Router::new("tok".into(), "0.6.1".into(), |route, body| {
+            (200, json!({ "ok": true, "route": route, "echo": body }))
+        })
+    }
+
+    fn auth() -> [(&'static str, &'static str); 1] {
+        [("X-Bridge-Token", "tok")]
+    }
+
+    #[test]
+    fn bridge_dir_honors_the_env_override() {
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("override");
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+        assert_eq!(bridge_dir().as_deref(), Some(dir.as_path()));
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let fallback = bridge_dir().expect("platform data dir resolves");
+        assert!(fallback.ends_with(DIR_NAME), "{fallback:?}");
+        assert_ne!(fallback, dir);
+    }
+
+    #[test]
+    fn handshake_splits_identity_from_session() {
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("handshake");
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+
+        write_handshake(49213, "sekrit", "0.6.1").unwrap();
+        let read = |name: &str| -> Json {
+            serde_json::from_str(&std::fs::read_to_string(dir.join(name)).unwrap()).unwrap()
+        };
+
+        let identity = read("ebb.json");
+        assert_eq!(
+            identity,
+            json!({ "schema": 1, "app": "ebb", "appVersion": "0.6.1", "kind": "flow" }),
+            "the identity file carries no port and no token"
+        );
+        let session = read("ebb.session.json");
+        assert_eq!(session["port"], 49213);
+        assert_eq!(session["token"], "sekrit");
+        assert_eq!(session["pid"], std::process::id());
+        assert!(
+            !dir.join("ebb.session.json.tmp").exists(),
+            "the atomic write renamed its tmp file away"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode =
+                |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(dir.clone()), 0o700);
+            assert_eq!(mode(dir.join("ebb.json")), 0o600);
+            assert_eq!(mode(dir.join("ebb.session.json")), 0o600);
+        }
+
+        remove_session();
+        assert!(!dir.join("ebb.session.json").exists(), "session cleared");
+        assert!(dir.join("ebb.json").exists(), "identity outlives the run");
+
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_wrong_or_missing_token_is_rejected() {
+        let (status, body) = router().handle("GET", "/ping", &[("X-Bridge-Token", "nope")], b"");
+        assert_eq!(status, 403);
+        assert_eq!(body, json!({ "ok": false, "error": "unauthorized" }));
+        assert_eq!(router().handle("GET", "/ping", &[], b"").0, 403);
+    }
+
+    #[test]
+    fn a_browser_origin_is_rejected_even_with_the_right_token() {
+        for header in ["Origin", "Referer"] {
+            let headers = [(header, "http://evil.example"), ("X-Bridge-Token", "tok")];
+            let (status, body) = router().handle("GET", "/ping", &headers, b"");
+            assert_eq!(status, 403, "{header}");
+            assert_eq!(body["error"], "unauthorized");
+        }
+    }
+
+    #[test]
+    fn ping_is_answered_locally() {
+        let (status, body) = router().handle("GET", "/ping", &auth(), b"");
+        assert_eq!(status, 200);
+        assert_eq!(
+            body,
+            json!({
+                "ok": true, "app": "ebb", "appVersion": "0.6.1",
+                "schema": 1, "kind": "flow"
+            })
+        );
+    }
+
+    #[test]
+    fn flow_and_reveal_reach_the_renderer_and_answer_verbatim() {
+        let calls: Arc<Mutex<Vec<String>>> = Arc::default();
+        let seen = calls.clone();
+        let router = Router::new("tok".into(), "0.6.1".into(), move |route, body| {
+            seen.lock().push(route.to_string());
+            (200, json!({ "ok": true, "echo": body }))
+        });
+
+        let (status, body) = router.handle("POST", "/flow", &auth(), br#"{"mode":"column"}"#);
+        assert_eq!(status, 200);
+        assert_eq!(body, json!({ "ok": true, "echo": { "mode": "column" } }));
+
+        let (status, body) = router.handle("POST", "/reveal", &auth(), br#"{"keys":["d|a b"]}"#);
+        assert_eq!(status, 200);
+        assert_eq!(body["echo"]["keys"][0], "d|a b");
+
+        assert_eq!(*calls.lock(), ["flow", "reveal"]);
+    }
+
+    #[test]
+    fn an_unknown_route_is_a_404() {
+        for (method, path) in [("GET", "/flow"), ("POST", "/ping"), ("POST", "/nope")] {
+            let (status, body) = router().handle(method, path, &auth(), b"{}");
+            assert_eq!(status, 404, "{method} {path}");
+            assert_eq!(body["error"], "bad-request");
+        }
+    }
+
+    #[test]
+    fn a_body_over_the_cap_is_a_400() {
+        let body = vec![b'x'; MAX_BODY + 1];
+        let (status, reply) = router().handle("POST", "/flow", &auth(), &body);
+        assert_eq!(status, 400);
+        assert_eq!(reply["error"], "bad-request");
+    }
+
+    #[test]
+    fn a_body_that_is_not_a_json_object_is_a_400() {
+        for body in [&b"not json"[..], &b"[1,2]"[..], &b""[..]] {
+            let (status, reply) = router().handle("POST", "/flow", &auth(), body);
+            assert_eq!(status, 400);
+            assert_eq!(reply["error"], "bad-request");
+        }
+    }
+
+    #[test]
+    fn a_silent_renderer_times_out_with_a_500() {
+        let router = Router::new("tok".into(), "0.6.1".into(), |_, _| {
+            // The sender stays alive, so this is a real deadline rather than a
+            // disconnected channel returning early.
+            let (_tx, rx) = mpsc::channel();
+            await_reply(&rx, Duration::from_millis(10))
+        });
+        let (status, body) = router.handle("POST", "/flow", &auth(), b"{}");
+        assert_eq!(status, 500);
+        assert_eq!(body, json!({ "ok": false, "error": "timeout" }));
+    }
+
+    #[test]
+    fn a_renderer_reply_keeps_its_own_status_and_body() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(json!({ "status": 200, "body": { "ok": false, "error": "no-active-sheet" } }))
+            .unwrap();
+        assert_eq!(
+            await_reply(&rx, Duration::from_millis(10)),
+            (200, json!({ "ok": false, "error": "no-active-sheet" }))
+        );
+
+        let (tx, rx) = mpsc::channel();
+        tx.send(json!({ "nonsense": true })).unwrap();
+        assert_eq!(await_reply(&rx, Duration::from_millis(10)).0, 500);
+    }
+
+    #[test]
+    fn a_combined_peer_file_still_yields_a_session() {
+        let combined = json!({
+            "schema": 1, "app": "cardmirror", "kind": "editor",
+            "port": 49999, "token": "peer-token"
+        });
+        let peer = session_of(&combined).expect("pre-split shape tolerated");
+        assert_eq!(peer.port, 49999);
+        assert_eq!(peer.token, "peer-token");
+        assert!(session_of(&json!({ "schema": 1, "app": "cardmirror" })).is_none());
+        assert!(session_of(&json!({ "port": 0, "token": "t" })).is_none());
+    }
+
+    #[test]
+    fn a_session_token_is_url_safe_and_long_enough() {
+        let token = random_token();
+        assert_eq!(token.len(), 24);
+        assert!(token.chars().all(|c| c.is_ascii_alphanumeric()), "{token}");
+        assert_ne!(token, random_token());
+
+        let id = random_id();
+        assert_eq!(id.len(), 16);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "{id}");
+    }
+
+    /// The routing tests above stop at the seam; this one drives the real
+    /// listener, so the header plumbing and the body cap are covered too.
+    #[test]
+    fn the_listener_serves_json_over_loopback() {
+        let server = tiny_http::Server::http(("127.0.0.1", 0)).expect("ephemeral port");
+        let port = server.server_addr().to_ip().expect("ip listener").port();
+        std::thread::spawn(move || serve(server, router()));
+        let url = |path: &str| format!("http://127.0.0.1:{port}{path}");
+        let body_of = |response: ureq::Response| -> Json {
+            assert_eq!(response.header("Content-Type"), Some("application/json"));
+            serde_json::from_str(&response.into_string().unwrap()).unwrap()
+        };
+        let status_of = |error: ureq::Error| -> (u16, Json) {
+            match error {
+                ureq::Error::Status(status, response) => (status, body_of(response)),
+                other => panic!("expected a status error, got {other}"),
+            }
+        };
+
+        let ok = ureq::get(&url("/ping"))
+            .set("X-Bridge-Token", "tok")
+            .call()
+            .unwrap();
+        assert_eq!(ok.status(), 200);
+        assert_eq!(body_of(ok)["app"], "ebb");
+
+        let refused = ureq::get(&url("/ping"))
+            .set("X-Bridge-Token", "tok")
+            .set("Origin", "http://evil.example")
+            .call()
+            .unwrap_err();
+        assert_eq!(status_of(refused), (403, fail("unauthorized")));
+
+        let sent = ureq::post(&url("/flow"))
+            .set("X-Bridge-Token", "tok")
+            .set("Content-Type", "application/json")
+            .send_string(r#"{"mode":"cell"}"#)
+            .unwrap();
+        assert_eq!(body_of(sent)["echo"]["mode"], "cell");
+
+        let too_big = ureq::post(&url("/flow"))
+            .set("X-Bridge-Token", "tok")
+            .set("Content-Type", "application/json")
+            .send_string(&"x".repeat(MAX_BODY + 1))
+            .unwrap_err();
+        assert_eq!(status_of(too_big), (400, fail("bad-request")));
+
+        let missing = ureq::get(&url("/nope"))
+            .set("X-Bridge-Token", "tok")
+            .call()
+            .unwrap_err();
+        assert_eq!(status_of(missing).0, 404);
+    }
+
+    /// Drives the outbound leg against a stand-in CardMirror, so the posted
+    /// shapes and the failure mapping are checked against a real socket.
+    #[test]
+    fn outbound_calls_reach_the_peer_and_map_its_failures() {
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("peer");
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+
+        let absent = cardmirror_status().unwrap();
+        assert!(!absent.registered && !absent.running);
+        assert_eq!(
+            cardmirror_jump("cmsrc1".into()),
+            Err("not-registered".into())
+        );
+
+        let server = tiny_http::Server::http(("127.0.0.1", 0)).expect("ephemeral port");
+        let peer_port = server.server_addr().to_ip().expect("ip listener").port();
+        let log: Arc<Mutex<Vec<Json>>> = Arc::default();
+        let seen = log.clone();
+        std::thread::spawn(move || {
+            for mut request in server.incoming_requests() {
+                let mut body = Vec::new();
+                let _ = request.as_reader().read_to_end(&mut body);
+                let token = request
+                    .headers()
+                    .iter()
+                    .find(|header| header.field.equiv("X-Bridge-Token"))
+                    .map(|header| header.value.as_str().to_string());
+                seen.lock().push(json!({
+                    "url": request.url(),
+                    "token": token,
+                    "body": serde_json::from_slice::<Json>(&body).unwrap_or(Json::Null),
+                }));
+                let reply = json!({ "ok": false, "error": "doc-not-open", "docTitle": "AT" });
+                let _ = request.respond(json_response(200, &reply));
+            }
+        });
+
+        create_dir_private(&dir).unwrap();
+        let identity =
+            json!({ "schema": 1, "app": "cardmirror", "appVersion": "3.2.0", "kind": "editor" });
+        let session = json!({ "port": peer_port, "token": "peer-token", "pid": 1 });
+        write_private_json(&dir.join("cardmirror.json"), &identity).unwrap();
+        write_private_json(&dir.join("cardmirror.session.json"), &session).unwrap();
+
+        let live = cardmirror_status().unwrap();
+        assert!(live.registered && live.running);
+        assert_eq!(live.app_version.as_deref(), Some("3.2.0"));
+        assert_eq!(live.schema, Some(1));
+
+        let jumped = cardmirror_jump("cmsrc1abc".into()).unwrap();
+        assert_eq!(
+            jumped["error"], "doc-not-open",
+            "the peer body comes back whole"
+        );
+        cardmirror_insert("Perm solves".into(), "cite".into(), true).unwrap();
+
+        let calls = log.lock().clone();
+        assert_eq!(calls.len(), 3, "{calls:?}");
+        assert_eq!(calls[0]["url"], "/ping");
+        assert_eq!(calls[1]["url"], "/jump");
+        assert_eq!(calls[1]["token"], "peer-token");
+        assert_eq!(calls[1]["body"], json!({ "source": "cmsrc1abc" }));
+        assert_eq!(calls[2]["url"], "/insert");
+        assert_eq!(
+            calls[2]["body"],
+            json!({ "text": "Perm solves", "role": "cite", "newParagraph": true, "omitted": false })
+        );
+
+        // CardMirror quits: the identity file stays, the session file goes.
+        std::fs::remove_file(dir.join("cardmirror.session.json")).unwrap();
+        assert_eq!(
+            cardmirror_jump("cmsrc1abc".into()),
+            Err("not-running".into())
+        );
+        let closed = cardmirror_status().unwrap();
+        assert!(closed.registered && !closed.running);
+
+        // A session file left behind by a crash points at a dead port.
+        let stale = json!({ "port": 1, "token": "peer-token", "pid": 1 });
+        write_private_json(&dir.join("cardmirror.session.json"), &stale).unwrap();
+        assert_eq!(
+            cardmirror_jump("cmsrc1abc".into()),
+            Err("not-running".into())
+        );
+
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

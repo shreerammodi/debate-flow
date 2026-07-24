@@ -8,6 +8,18 @@ import { getEvent, type EventId } from "@/lib/format/events";
 import { uid } from "@/lib/model/ids";
 import type { Role, Scouting, Side } from "@/lib/model/types";
 
+/** Where this cell's text came from, when it was sent in from another app. */
+export interface CellSource {
+    /** Origin app id from the cardmirror-bridge handshake, e.g. "cardmirror". */
+    app: string;
+    /** The origin's opaque provenance token, handed back verbatim to jump. */
+    token: string;
+    /** Stable equality key the origin mints, used for forward search. */
+    key: string;
+    /** Origin document title, for messages like "open X first". */
+    title?: string;
+}
+
 export interface CellMeta {
     bold?: boolean;
     highlight?: boolean;
@@ -17,6 +29,8 @@ export interface CellMeta {
     group?: boolean;
     /** Reserved for the links phase; nothing reads or writes it yet. */
     answers?: { sheetId: string; row: number; col: number };
+    /** Provenance for text handed in by another app; absent for typed cells. */
+    source?: CellSource;
 }
 
 export interface FlowSheet {

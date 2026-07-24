@@ -9,33 +9,48 @@ import {
     shiftSpan,
     type CellGrid,
 } from "@/lib/grid/cellShift";
+import type { CellSource } from "@/lib/model/flow";
 
 registerAllModules();
 
+const src = (key: string): CellSource => ({ app: "cardmirror", token: `t-${key}`, key });
+
 /**
- * A column-major grid of text plus a className map keyed "row,col". `col` picks
- * one column's text out as an array, which is how the rotation assertions read.
+ * A column-major grid of text plus className and source maps keyed "row,col".
+ * `col` picks one column's text out as an array, which is how the rotation
+ * assertions read.
  */
 function fakeGrid(
     data: (string | null)[][],
     classNames: Record<string, string> = {},
+    sources: Record<string, CellSource> = {},
 ): CellGrid & {
     data: (string | null)[][];
     classNames: Record<string, string>;
+    sources: Record<string, CellSource>;
     apply(changes: [number, number, string | null][]): void;
     col(c: number): (string | null)[];
 } {
     const store = { ...classNames };
+    const srcStore = { ...sources };
     return {
         data,
         classNames: store,
+        sources: srcStore,
         countRows: () => data.length,
         countCols: () => data[0]?.length ?? 0,
         getDataAtCell: (r, c) => data[r][c],
-        getCellMeta: (r, c) => ({ className: store[`${r},${c}`] }),
-        setCellMeta: (r, c, _key, value) => {
-            if (value) store[`${r},${c}`] = value;
-            else delete store[`${r},${c}`];
+        getCellMeta: (r, c) => ({ className: store[`${r},${c}`], source: srcStore[`${r},${c}`] }),
+        setCellMeta: (r, c, key, value) => {
+            const cell = `${r},${c}`;
+            if (key === "source") {
+                if (value) srcStore[cell] = value as CellSource;
+                else delete srcStore[cell];
+            } else if (value) {
+                store[cell] = value as string;
+            } else {
+                delete store[cell];
+            }
         },
         apply(changes) {
             for (const [r, c, v] of changes) data[r][c] = v;
@@ -90,6 +105,34 @@ describe("shiftSpan", () => {
 
         expect(g.col(1)).toEqual(["x", "y"]);
     });
+
+    it("carries provenance with the text it describes", () => {
+        const g = fakeGrid([["a"], ["b"], ["c"], ["d"]], {}, { "1,0": src("k-b") });
+
+        g.apply(shiftSpan(g, 0, 1, 4, 1));
+
+        expect(g.col(0)).toEqual(["a", "b", "b", "c"]);
+        expect(g.sources).toEqual({ "1,0": src("k-b"), "2,0": src("k-b") });
+    });
+
+    it("drops provenance that runs off the last row with its text", () => {
+        const g = fakeGrid(
+            [["a"], ["b"], ["c"]],
+            {},
+            { "0,0": src("k-a"), "1,0": src("k-b"), "2,0": src("k-c") },
+        );
+
+        g.apply(shiftSpan(g, 0, 0, 3, 1));
+
+        // "c" had nowhere to go, so k-c went off the bottom with it. Row 0 is a
+        // source, never a target, so its stale text and provenance both stay.
+        expect(g.col(0)).toEqual(["a", "a", "b"]);
+        expect(g.sources).toEqual({
+            "0,0": src("k-a"),
+            "1,0": src("k-a"),
+            "2,0": src("k-b"),
+        });
+    });
 });
 
 describe("insertCell", () => {
@@ -100,6 +143,15 @@ describe("insertCell", () => {
 
         expect(g.col(0)).toEqual(["a", "", "b"]);
         expect(g.classNames).toEqual({ "0,0": "bold", "2,0": "hl" });
+    });
+
+    it("leaves the opened cell with no provenance", () => {
+        const g = fakeGrid([["a"], ["b"], ["c"]], {}, { "1,0": src("k-b") });
+
+        g.apply(insertCell(g, 1, 0));
+
+        expect(g.col(0)).toEqual(["a", "", "b"]);
+        expect(g.sources).toEqual({ "2,0": src("k-b") });
     });
 });
 
@@ -144,6 +196,19 @@ describe("moveBlock", () => {
         expect(moveBlock(g, 0, 0, 1, 0)).toEqual([]);
         expect(g.col(0)).toEqual(["A", "B"]);
     });
+
+    it("carries provenance through a rotation", () => {
+        const g = fakeGrid(
+            [["A"], ["B"], ["C"], ["D"], ["E"]],
+            {},
+            { "1,0": src("k-b"), "2,0": src("k-c") },
+        );
+
+        g.apply(moveBlock(g, 0, 1, 1, 2));
+
+        expect(g.col(0)).toEqual(["A", "C", "D", "B", "E"]);
+        expect(g.sources).toEqual({ "1,0": src("k-c"), "3,0": src("k-b") });
+    });
 });
 
 describe("shiftMetaDown", () => {
@@ -177,6 +242,14 @@ describe("shiftMetaDown", () => {
         shiftMetaDown(hot, { row: 0, col: 0, width: 5, height: 1 });
 
         expect(hot.classNames).toEqual({ "1,1": "bold" });
+    });
+
+    it("re-lays provenance below the pasted block and bares the block", () => {
+        const hot = fakeGrid(blank(6, 3), {}, { "1,0": src("k-1"), "2,0": src("k-2") });
+
+        shiftMetaDown(hot, { row: 1, col: 0, width: 1, height: 2 });
+
+        expect(hot.sources).toEqual({ "3,0": src("k-1"), "4,0": src("k-2") });
     });
 });
 

@@ -11,6 +11,7 @@
  * Rust owns the TOML syntax and comment preservation, this side owns validation.
  */
 
+import { resolveCardMirrorTextType } from "@/lib/bridge/cardmirror";
 import { COMMANDS } from "@/lib/commands/registry";
 import { DEFAULT_KEYTIPS, effectiveKeytips } from "@/lib/dashboard/keytips";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
@@ -33,6 +34,8 @@ export interface ConfigFileShape {
     insert_paste: boolean;
     scroll_zoom: boolean;
     tooltips: boolean;
+    /** How CardMirror types text a cell sends it: card, cite, or inline. */
+    cardmirror_text_type: string;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
@@ -114,6 +117,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         insert_paste: s.insertPaste,
         scroll_zoom: s.scrollZoom,
         tooltips: s.tooltips,
+        cardmirror_text_type: s.cardmirrorTextType,
         aff_color: s.affColor,
         neg_color: s.negColor,
         keymap: nestByNamespace(byCommand(effectiveKeymap(s.keymapOverrides).bindings)),
@@ -166,6 +170,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         insertPaste: bool(o.insert_paste, false),
         scrollZoom: bool(o.scroll_zoom, true),
         tooltips: bool(o.tooltips, true),
+        cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         theme: resolveThemeMode(o.theme),
         affColor: resolveColor(o.aff_color),
         negColor: resolveColor(o.neg_color),

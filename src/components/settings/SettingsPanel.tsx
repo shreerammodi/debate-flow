@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tip } from "@/components/ui/tooltip";
+import type { CardMirrorTextType } from "@/lib/bridge/cardmirror";
 import { COMMANDS, type CommandId } from "@/lib/commands/registry";
 import { FONTS, DEFAULT_FONT_ID, type FontId } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
@@ -43,6 +44,13 @@ const THEME_OPTIONS: { id: ThemeMode; label: string }[] = [
     { id: "light", label: "Light" },
     { id: "dark", label: "Dark" },
     { id: "system", label: "System" },
+];
+
+/** CardMirror's insert roles, in the words its own document editor uses. */
+const CARDMIRROR_TEXT_TYPES: { value: CardMirrorTextType; label: string }[] = [
+    { value: "card", label: "Card body" },
+    { value: "cite", label: "Cite" },
+    { value: "inline", label: "Inline text" },
 ];
 
 const SIDE_OPTIONS: { id: Side; label: string }[] = [
@@ -104,6 +112,8 @@ export default function SettingsPanel() {
     const setRfdVim = useFlowStore((s) => s.setRfdVim);
     const insertPaste = useFlowStore((s) => s.insertPaste);
     const setInsertPaste = useFlowStore((s) => s.setInsertPaste);
+    const cardmirrorTextType = useFlowStore((s) => s.cardmirrorTextType);
+    const setCardmirrorTextType = useFlowStore((s) => s.setCardmirrorTextType);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -482,6 +492,42 @@ export default function SettingsPanel() {
                                         />
                                     }
                                 />
+                                {isDesktop() && (
+                                    <SettingRow
+                                        title="CardMirror text type"
+                                        description="The role ebb tags a cell with when it sends the text to CardMirror. CardMirror decides how to type it from there."
+                                        control={
+                                            <Select
+                                                value={cardmirrorTextType}
+                                                items={CARDMIRROR_TEXT_TYPES}
+                                                onValueChange={(value) =>
+                                                    setCardmirrorTextType(
+                                                        value as CardMirrorTextType,
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    aria-label="CardMirror text type"
+                                                    data-testid="cardmirror-text-type-select"
+                                                    className="w-44"
+                                                >
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {CARDMIRROR_TEXT_TYPES.map((t) => (
+                                                        <SelectItem
+                                                            key={t.value}
+                                                            value={t.value}
+                                                            data-testid={`cardmirror-text-type-${t.value}`}
+                                                        >
+                                                            {t.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        }
+                                    />
+                                )}
                             </div>
                         )}
                         {category === "keyboard" && (

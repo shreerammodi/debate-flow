@@ -7,6 +7,31 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- CardMirror integration (desktop only). ebb and CardMirror find each other
+  through the shared `cardmirror-bridge` directory and talk over a loopback
+  HTTP bridge that never leaves your machine.
+    - Send to flow: with the ebb plugin installed in CardMirror, "Send to Flow
+      (ebb)" writes the headings, tags, cites and analytics under your cursor
+      into the active sheet at the active cell. Pocket, hat and block headings
+      land bold, tags land as cards, and a cite rides as a second line inside
+      the tag's cell. The write respects your insert-paste setting, and one Undo
+      takes the whole send back.
+    - Jump to source in CardMirror (`Meta+e` / `Ctrl+e`): on a cell that came
+      from a document, CardMirror scrolls to the card it came from and selects
+      it. A cell you typed yourself says so instead.
+    - Send to CardMirror (`Meta+Shift+e` / `Ctrl+Shift+e`): pushes the selected
+      cells into the document open in CardMirror, joined as paragraphs. Settings
+      then Editor picks the role ebb tags the text with (card body, cite, or
+      inline); CardMirror decides how to type it from there.
+    - Reveal in flow: CardMirror's "Reveal in Flow (ebb)" finds every cell a
+      card produced, activates that sheet, selects the cell, and steps to the
+      next match each time you run it.
+    - Where a cell came from travels with it: sheet switches, cell inserts,
+      insert-paste displacement, undo, redo, and export or import of a flow file
+      all keep it attached to its text.
+
 ## [0.6.1] - 2026-07-24
 
 ### Changed

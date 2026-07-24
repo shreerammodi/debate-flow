@@ -12,6 +12,9 @@ import {
     restoreMetaUndo,
     snapshotClasses,
 } from "@/lib/grid/metaUndo";
+import type { CellSource } from "@/lib/model/flow";
+
+const SRC: CellSource = { app: "cardmirror", token: "cmsrc1abc", key: "doc1|perm solves" };
 
 registerAllModules();
 
@@ -91,6 +94,37 @@ describe("metaUndo on a live grid", () => {
         expect(h.getDataAtCell(0, 0)).toBe("a");
         expect(h.getCellMeta(0, 0).className).toBe("flow-bold");
     });
+
+    it("returns provenance to its cell when the insert that moved it is undone", () => {
+        const h = makeHot();
+        h.setCellMeta(1, 0, "source", SRC);
+
+        doInsert(h, 1, 0);
+        expect(h.getCellMeta(2, 0).source).toEqual(SRC);
+        expect(h.getCellMeta(1, 0).source).toBeUndefined();
+
+        h.getPlugin("undoRedo").undo();
+
+        expect(h.getDataAtCell(1, 0)).toBe("b");
+        expect(h.getCellMeta(1, 0).source).toEqual(SRC);
+        expect(h.getCellMeta(2, 0).source).toBeUndefined();
+    });
+
+    it("re-applies provenance on redo", () => {
+        const h = makeHot();
+        h.setCellMeta(1, 0, "className", "flow-card");
+        h.setCellMeta(1, 0, "source", SRC);
+
+        doInsert(h, 1, 0);
+        h.getPlugin("undoRedo").undo();
+        h.getPlugin("undoRedo").redo();
+
+        expect(h.getDataAtCell(2, 0)).toBe("b");
+        expect(h.getCellMeta(2, 0).className).toBe("flow-card");
+        expect(h.getCellMeta(2, 0).source).toEqual(SRC);
+        expect(h.getCellMeta(1, 0).className).toBe("");
+        expect(h.getCellMeta(1, 0).source).toBeUndefined();
+    });
 });
 
 describe("snapshotClasses", () => {
@@ -105,5 +139,17 @@ describe("snapshotClasses", () => {
         };
 
         expect(snapshotClasses(grid, [0, 1])).toEqual([[1, 0, "flow-bold"]]);
+    });
+
+    it("records a sourced cell even when it carries no decoration", () => {
+        const grid = {
+            countRows: () => 2,
+            countCols: () => 1,
+            getDataAtCell: () => null,
+            getCellMeta: (r: number) => (r === 1 ? { source: SRC } : {}),
+            setCellMeta: () => {},
+        };
+
+        expect(snapshotClasses(grid, [0])).toEqual([[1, 0, "", SRC]]);
     });
 });

@@ -1,12 +1,15 @@
 /**
  * Column-wise cell shifting: the one place that slides a run of cells up or
- * down a single column, carrying its text and its decoration class together.
+ * down a single column, carrying its text, its decoration class and its
+ * provenance together.
  *
  * Three callers sit on `shiftSpan`: `insertCell` opens a hole, `shiftMetaDown`
  * chases a `shift_down` paste that Handsontable already applied to the text,
  * and `moveBlock` runs the insert backwards to rotate a block through its
  * neighbors.
  */
+
+import type { CellSource } from "@/lib/model/flow";
 
 /** A single `setDataAtCell` change tuple. */
 export type CellChange = [row: number, col: number, value: string | null];
@@ -29,8 +32,13 @@ export interface CellGrid {
     countCols(): number;
     /** Handsontable types this `unknown`; a flow sheet only ever holds text. */
     getDataAtCell(row: number, col: number): unknown;
-    getCellMeta(row: number, col: number): { className?: unknown };
-    setCellMeta(row: number, col: number, key: "className", value: string): void;
+    getCellMeta(row: number, col: number): { className?: unknown; source?: unknown };
+    setCellMeta(
+        row: number,
+        col: number,
+        key: "className" | "source",
+        value: string | CellSource | undefined,
+    ): void;
 }
 
 const dataAt = (grid: CellGrid, row: number, col: number) =>
@@ -39,10 +47,14 @@ const dataAt = (grid: CellGrid, row: number, col: number) =>
 const classAt = (grid: CellGrid, row: number, col: number) =>
     (grid.getCellMeta(row, col).className ?? "") as string;
 
+const sourceAt = (grid: CellGrid, row: number, col: number) =>
+    grid.getCellMeta(row, col).source as CellSource | undefined;
+
 /**
- * Slides rows `[start, end)` of `col` by `delta`, carrying decorations with the
- * text. Content whose target falls outside the grid is dropped. Vacated cells
- * keep their stale value; every caller either blanks them or writes over them.
+ * Slides rows `[start, end)` of `col` by `delta`, carrying decorations and
+ * provenance with the text. Content whose target falls outside the grid is
+ * dropped. Vacated cells keep their stale value; every caller either blanks
+ * them or writes over them.
  *
  * The read order follows the shift (descending when moving down, ascending when
  * moving up) so each read sees the pre-shift value even when source and target
@@ -68,25 +80,29 @@ export function shiftSpan(
         if (target < 0 || target >= rows) continue;
         if (!opts?.metaOnly) changes.push([target, col, dataAt(grid, r, col)]);
         grid.setCellMeta(target, col, "className", classAt(grid, r, col));
+        grid.setCellMeta(target, col, "source", sourceAt(grid, r, col));
     }
     return changes;
 }
 
 /**
  * Opens a blank cell at `row`, pushing the rest of `col` down by one. The last
- * row's content falls off the bottom.
+ * row's content falls off the bottom. The opened cell is bare: it inherits
+ * neither the decoration nor the provenance of the text it displaced.
  */
 export function insertCell(grid: CellGrid, row: number, col: number): CellChange[] {
     const changes = shiftSpan(grid, col, row, grid.countRows() - 1, 1);
     grid.setCellMeta(row, col, "className", "");
+    grid.setCellMeta(row, col, "source", undefined);
     changes.push([row, col, ""]);
     return changes;
 }
 
 /**
- * Moves each decoration class in the pasted columns down by `height`, leaving
- * the pasted block bare. Classes pushed past the last row fall off, as their
- * text does. Columns outside the pasted block keep their rows.
+ * Moves each decoration class and provenance record in the pasted columns down
+ * by `height`, leaving the pasted block bare. Meta pushed past the last row
+ * falls off, as its text does. Columns outside the pasted block keep their
+ * rows.
  *
  * Call this after the paste, once the grid has grown to hold the displaced rows.
  */
@@ -97,6 +113,7 @@ export function shiftMetaDown(grid: CellGrid, { row, col, width, height }: Paste
         shiftSpan(grid, c, row, rows, height, { metaOnly: true });
         for (let r = row; r < Math.min(row + height, rows); r++) {
             grid.setCellMeta(r, c, "className", "");
+            grid.setCellMeta(r, c, "source", undefined);
         }
     }
 }
@@ -120,9 +137,11 @@ export function moveBlock(
     // Read the block before shiftSpan writes over any of it.
     const block: CellChange[] = [];
     const classes: string[] = [];
+    const sources: (CellSource | undefined)[] = [];
     for (let i = 0; i < height; i++) {
         block.push([blockStart + delta + i, col, dataAt(grid, blockStart + i, col)]);
         classes.push(classAt(grid, blockStart + i, col));
+        sources.push(sourceAt(grid, blockStart + i, col));
     }
 
     const passed =
@@ -132,6 +151,7 @@ export function moveBlock(
 
     for (let i = 0; i < height; i++) {
         grid.setCellMeta(blockStart + delta + i, col, "className", classes[i]);
+        grid.setCellMeta(blockStart + delta + i, col, "source", sources[i]);
     }
     return [...passed, ...block];
 }

@@ -20,6 +20,8 @@ export type CommandId =
     | "cell.insert"
     | "cell.insertBelow"
     | "cell.move"
+    | "cell.jumpToSource"
+    | "cell.sendToDoc"
     | "sheet.next"
     | "sheet.prev"
     | "sheet.newAff"
@@ -72,6 +74,11 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "cell.insert": { id: "cell.insert", label: "Insert cell" },
     "cell.insertBelow": { id: "cell.insertBelow", label: "Insert cell below" },
     "cell.move": { id: "cell.move", label: "Move cells" },
+    "cell.jumpToSource": {
+        id: "cell.jumpToSource",
+        label: "Jump to source in CardMirror",
+    },
+    "cell.sendToDoc": { id: "cell.sendToDoc", label: "Send to CardMirror" },
     "sheet.next": { id: "sheet.next", label: "Next sheet" },
     "sheet.prev": { id: "sheet.prev", label: "Previous sheet" },
     "sheet.newAff": { id: "sheet.newAff", label: "New aff sheet" },

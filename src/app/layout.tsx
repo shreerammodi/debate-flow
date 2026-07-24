@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Toaster } from "sonner";
 
+import { BridgeHost } from "@/components/BridgeHost";
 import ConfigFileSync from "@/components/ConfigFileSync";
 import { DesktopMenu } from "@/components/DesktopMenu";
 import MotionRoot from "@/components/MotionRoot";
@@ -328,6 +329,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </head>
             <body className="font-sans antialiased">
                 <DesktopMenu />
+                <BridgeHost />
                 <ThemeSync />
                 <ConfigFileSync />
                 <TooltipProvider>

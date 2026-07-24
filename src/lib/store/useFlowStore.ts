@@ -9,6 +9,7 @@
 
 import { create } from "zustand";
 
+import { resolveCardMirrorTextType, type CardMirrorTextType } from "@/lib/bridge/cardmirror";
 import type { CommandId } from "@/lib/commands/registry";
 import { type FontId, DEFAULT_FONT_ID, resolveFontId } from "@/lib/fonts/registry";
 import { getEvent } from "@/lib/format/events";
@@ -77,6 +78,8 @@ export interface FlowState {
     scrollZoom: boolean;
     /** Hover tips on buttons and controls; off renders the trigger bare. */
     tooltips: boolean;
+    /** How CardMirror types text sent to it from a cell. */
+    cardmirrorTextType: CardMirrorTextType;
     renamingSheetId: string | null;
 }
 
@@ -127,6 +130,7 @@ export interface FlowActions {
     setInsertPaste(on: boolean): void;
     setScrollZoom(on: boolean): void;
     setTooltips(on: boolean): void;
+    setCardmirrorTextType(type: CardMirrorTextType): void;
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
     setSideColor(side: Side, color: string | null): void;
@@ -164,6 +168,7 @@ export interface AppConfig {
     insertPaste: boolean;
     scrollZoom: boolean;
     tooltips: boolean;
+    cardmirrorTextType: CardMirrorTextType;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -246,6 +251,7 @@ interface DisplaySettings {
     insertPaste: boolean;
     scrollZoom: boolean;
     tooltips: boolean;
+    cardmirrorTextType: CardMirrorTextType;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -266,6 +272,7 @@ function loadDisplaySettings(): DisplaySettings {
         insertPaste: false,
         scrollZoom: true,
         tooltips: true,
+        cardmirrorTextType: "card",
         theme: "system",
         affColor: null,
         negColor: null,
@@ -284,6 +291,7 @@ function loadDisplaySettings(): DisplaySettings {
             insertPaste: typeof p.insertPaste === "boolean" ? p.insertPaste : false,
             scrollZoom: typeof p.scrollZoom === "boolean" ? p.scrollZoom : true,
             tooltips: typeof p.tooltips === "boolean" ? p.tooltips : true,
+            cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
             theme: resolveThemeMode(p.theme),
             affColor: resolveColor(p.affColor),
             negColor: resolveColor(p.negColor),
@@ -313,6 +321,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         insertPaste: s.insertPaste,
         scrollZoom: s.scrollZoom,
         tooltips: s.tooltips,
+        cardmirrorTextType: s.cardmirrorTextType,
         theme: s.theme,
         affColor: s.affColor,
         negColor: s.negColor,
@@ -380,6 +389,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     insertPaste: initialDisplaySettings.insertPaste,
     scrollZoom: initialDisplaySettings.scrollZoom,
     tooltips: initialDisplaySettings.tooltips,
+    cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
     renamingSheetId: null,
 
     loadRound(round, opts) {
@@ -657,6 +667,11 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setTooltips(on) {
         saveDisplaySettings({ ...displaySettingsOf(get()), tooltips: on });
         set({ tooltips: on });
+    },
+
+    setCardmirrorTextType(type) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorTextType: type });
+        set({ cardmirrorTextType: type });
     },
 
     setTheme(mode) {

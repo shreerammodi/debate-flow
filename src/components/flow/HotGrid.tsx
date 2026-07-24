@@ -33,7 +33,7 @@ import {
 } from "@/lib/grid/moveSession";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { resolveCommand } from "@/lib/keymap/resolve";
-import type { CellMeta, FlowSheet } from "@/lib/model/flow";
+import type { CellMeta, CellSource, FlowSheet } from "@/lib/model/flow";
 import { useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
 registerAllModules();
@@ -108,27 +108,30 @@ function pasteCols(hot: Handsontable, { col, width }: PasteShift): number[] {
     return Array.from({ length: Math.max(last - col, 0) }, (_, i) => col + i);
 }
 
-function collectMeta(hot: Handsontable): Record<string, CellMeta> {
+export function collectMeta(hot: Handsontable): Record<string, CellMeta> {
     const meta: Record<string, CellMeta> = {};
     for (let r = 0; r < hot.countRows(); r++) {
         for (let c = 0; c < hot.countCols(); c++) {
-            const m = classNameToMeta((hot.getCellMeta(r, c).className ?? "") as string);
-            if (m) meta[`${r},${c}`] = m;
+            const cellMeta = hot.getCellMeta(r, c);
+            const m = classNameToMeta((cellMeta.className ?? "") as string);
+            const source = cellMeta.source as CellSource | undefined;
+            if (source) meta[`${r},${c}`] = { ...m, source };
+            else if (m) meta[`${r},${c}`] = m;
         }
     }
     return meta;
 }
 
 /**
- * Clears the outgoing sheet's decoration cells, then injects the incoming
- * sheet's stored meta. `prevMeta` is the sheet being left; since every
- * className change is snapshotted back into a sheet's stored meta, its keys
- * are exactly the decorations live on the grid, so the clear touches only
- * those instead of every cell in the padded grid. `prevMeta` is null only
- * when the outgoing sheet is gone from the store (it was just deleted), where
- * the full grid must be scanned to catch its orphaned decorations.
+ * Clears the outgoing sheet's decoration and provenance cells, then injects
+ * the incoming sheet's stored meta. `prevMeta` is the sheet being left; since
+ * every meta change is snapshotted back into a sheet's stored meta, its keys
+ * are exactly the decorations and provenance live on the grid, so the clear
+ * touches only those instead of every cell in the padded grid. `prevMeta` is
+ * null only when the outgoing sheet is gone from the store (it was just
+ * deleted), where the full grid must be scanned to catch its orphans.
  */
-function applyMeta(
+export function applyMeta(
     hot: Handsontable,
     meta: Record<string, CellMeta>,
     prevMeta: Record<string, CellMeta> | null,
@@ -138,18 +141,22 @@ function applyMeta(
             if (key in meta) continue;
             const [r, c] = key.split(",").map(Number);
             hot.setCellMeta(r, c, "className", "");
+            hot.setCellMeta(r, c, "source", undefined);
         }
     } else {
         for (let r = 0; r < hot.countRows(); r++) {
             for (let c = 0; c < hot.countCols(); c++) {
-                const cls = (hot.getCellMeta(r, c).className ?? "") as string;
+                const cellMeta = hot.getCellMeta(r, c);
+                const cls = (cellMeta.className ?? "") as string;
                 if (cls && classNameToMeta(cls)) hot.setCellMeta(r, c, "className", "");
+                if (cellMeta.source) hot.setCellMeta(r, c, "source", undefined);
             }
         }
     }
     for (const [key, m] of Object.entries(meta)) {
         const [r, c] = key.split(",").map(Number);
         hot.setCellMeta(r, c, "className", metaToClassName(m));
+        hot.setCellMeta(r, c, "source", m.source);
     }
 }
 

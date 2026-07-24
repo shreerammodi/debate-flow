@@ -16,6 +16,7 @@ const sample: AppConfig = {
     insertPaste: true,
     scrollZoom: false,
     tooltips: false,
+    cardmirrorTextType: "cite",
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
@@ -36,6 +37,11 @@ describe("configFromState -> toAppConfig round-trip", () => {
         expect(file.rfd_vim).toBe(true);
         expect(file.neg_color).toBeNull();
         expect(file.update.auto_check_enabled).toBe(true);
+    });
+
+    it("falls back to the card text type when the file names an unknown one", () => {
+        expect(toAppConfig({ cardmirror_text_type: "footnote" }).cardmirrorTextType).toBe("card");
+        expect(toAppConfig({ cardmirror_text_type: "inline" }).cardmirrorTextType).toBe("inline");
     });
 
     it("ships every default binding but stores none of them as overrides", () => {

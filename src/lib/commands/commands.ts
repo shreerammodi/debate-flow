@@ -7,6 +7,7 @@
  * commands unconditionally.
  */
 
+import { runJumpToSource, runSendToDoc } from "@/lib/bridge/commands";
 import { insertCell as insertCellChanges } from "@/lib/grid/cellShift";
 import {
     BOLD_CLASS,
@@ -153,6 +154,14 @@ export function executeCommand(id: CommandId): void {
             return;
         case "cell.move":
             startMove();
+            return;
+
+        // --- CardMirror -------------------------------------------------------
+        case "cell.jumpToSource":
+            void runJumpToSource();
+            return;
+        case "cell.sendToDoc":
+            void runSendToDoc();
             return;
 
         // --- Sheets ----------------------------------------------------------

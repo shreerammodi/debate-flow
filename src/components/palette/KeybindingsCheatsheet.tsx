@@ -6,6 +6,7 @@ import { COMMANDS, type CommandId } from "@/lib/commands/registry";
 import { prettyChord, buildChordMap } from "@/lib/keymap/displayChord";
 import { isMacPlatform } from "@/lib/platform";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { isDesktop } from "@/lib/update/adapter";
 
 const GUIDE_URL = "https://ebb.smodi.net/docs";
 
@@ -47,7 +48,7 @@ const FIXED_GROUPS: { label: string; rows: { chord: string; label: string }[] }[
     },
 ];
 
-const GROUPS = [
+const GROUPS: { label: string; rows: { commandId: CommandId }[] }[] = [
     {
         label: "Format",
         rows: [
@@ -95,7 +96,16 @@ const GROUPS = [
             { commandId: "help.open" as CommandId },
         ],
     },
-] as const;
+];
+
+/** Only reachable from the desktop app, which is where the bridge lives. */
+const CARDMIRROR_GROUP = {
+    label: "CardMirror",
+    rows: [
+        { commandId: "cell.jumpToSource" as CommandId },
+        { commandId: "cell.sendToDoc" as CommandId },
+    ],
+};
 
 export default function KeybindingsCheatsheet() {
     const open = useFlowStore((s) => s.cheatsheetOpen);
@@ -106,6 +116,7 @@ export default function KeybindingsCheatsheet() {
     }
 
     const chordFor = buildChordMap();
+    const groups = isDesktop() ? [...GROUPS, CARDMIRROR_GROUP] : GROUPS;
 
     return (
         <Dialog
@@ -155,7 +166,7 @@ export default function KeybindingsCheatsheet() {
                                 </div>
                             </div>
                         ))}
-                        {GROUPS.map((group) => (
+                        {groups.map((group) => (
                             <div key={group.label} className="flex flex-col gap-1">
                                 <div className="text-muted-foreground mb-1 font-mono text-[9px] font-bold tracking-widest uppercase">
                                     {group.label}

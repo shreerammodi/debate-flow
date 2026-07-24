@@ -4,7 +4,7 @@ import { executeCommand } from "@/lib/commands/commands";
 import { BOLD_CLASS, GROUP_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
-import { makeFlowRound } from "@/lib/model/flow";
+import { makeFlowRound, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 function loadRound() {
@@ -258,7 +258,9 @@ describe("grid commands", () => {
 
     it("cell.insert shifts the selected column down and blanks the target", () => {
         const data = [["a"], ["b"], ["c"]];
-        const meta = new Map<string, { className?: string }>([["0,0", { className: BOLD_CLASS }]]);
+        const meta = new Map<string, { className?: string; source?: CellSource }>([
+            ["0,0", { className: BOLD_CLASS }],
+        ]);
         const at = (r: number, c: number) => {
             const key = `${r},${c}`;
             if (!meta.has(key)) meta.set(key, {});
@@ -271,8 +273,9 @@ describe("grid commands", () => {
             countCols: () => 1,
             getDataAtCell: (r: number, c: number) => data[r][c],
             getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, _k: string, v: string) => {
-                at(r, c).className = v;
+            setCellMeta: (r: number, c: number, k: string, v: unknown) => {
+                if (k === "source") at(r, c).source = v as CellSource | undefined;
+                else at(r, c).className = v as string;
             },
             setDataAtCell: (changes: [number, number, string | null][]) => {
                 for (const [r, c, v] of changes) data[r][c] = v as string;
@@ -285,12 +288,14 @@ describe("grid commands", () => {
         // Row 0 untouched, row 1 blanked, "b" pushed to row 2 ("c" falls off).
         expect(data.map((row) => row[0])).toEqual(["a", "", "b"]);
         expect(at(1, 0).className).toBe("");
+        // The opened cell inherits no provenance from the text it displaced.
+        expect(at(1, 0).source).toBeUndefined();
         expect(onMutated).toHaveBeenCalled();
     });
 
     it("cell.insertBelow blanks the row under the selection", () => {
         const data = [["a"], ["b"], ["c"], ["d"]];
-        const meta = new Map<string, { className?: string }>();
+        const meta = new Map<string, { className?: string; source?: CellSource }>();
         const at = (r: number, c: number) => {
             const key = `${r},${c}`;
             if (!meta.has(key)) meta.set(key, {});
@@ -302,8 +307,9 @@ describe("grid commands", () => {
             countCols: () => 1,
             getDataAtCell: (r: number, c: number) => data[r][c],
             getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, _k: string, v: string) => {
-                at(r, c).className = v;
+            setCellMeta: (r: number, c: number, k: string, v: unknown) => {
+                if (k === "source") at(r, c).source = v as CellSource | undefined;
+                else at(r, c).className = v as string;
             },
             setDataAtCell: (changes: [number, number, string | null][]) => {
                 for (const [r, c, v] of changes) data[r][c] = v as string;

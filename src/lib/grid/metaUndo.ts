@@ -1,18 +1,25 @@
 /**
- * Decoration undo. Handsontable's undo stack records `setDataAtCell` and
- * ignores `setCellMeta`, so a shift that moves text and classes together comes
- * apart on undo: the text returns and the class stays where the shift put it.
+ * Decoration and provenance undo. Handsontable's undo stack records
+ * `setDataAtCell` and ignores `setCellMeta`, so a shift that moves text and
+ * meta together comes apart on undo: the text returns and the meta stays where
+ * the shift put it.
  *
- * The fix pairs each pushed undo action with a `{before, after}` snapshot of the
- * touched columns' classes. It uses documented hooks only, so if a future
- * Handsontable stops firing the stack-change hooks the decoration undo silently
+ * The fix pairs each pushed undo action with a `{before, after}` snapshot of
+ * the touched columns' cell meta. It uses documented hooks only, so if a future
+ * Handsontable stops firing the stack-change hooks the meta undo silently
  * no-ops and text undo keeps working.
  */
 
+import type { CellSource } from "@/lib/model/flow";
+
 import type { CellGrid } from "./cellShift";
 
-/** One decorated cell: row, column, and its full className string. */
-export type ClassEntry = [row: number, col: number, className: string];
+/**
+ * One cell worth of carried meta: row, column, its full className string, and
+ * its provenance when it has any. The fourth slot is left off rather than set
+ * undefined, so a plain decoration snapshot stays a 3-tuple.
+ */
+export type ClassEntry = [row: number, col: number, className: string, source?: CellSource];
 
 export interface MetaSnapshot {
     /** The columns the snapshots cover; restoring clears these in full first. */
@@ -30,13 +37,16 @@ const snapshots = new WeakMap<object, MetaSnapshot>();
 let lastPushed: object | null = null;
 let lastUndone: object | null = null;
 
-/** Records the decorated cells of `cols`, top to bottom. */
+/** Records the decorated or sourced cells of `cols`, top to bottom. */
 export function snapshotClasses(grid: CellGrid, cols: number[]): ClassEntry[] {
     const entries: ClassEntry[] = [];
     for (let r = 0; r < grid.countRows(); r++) {
         for (const c of cols) {
-            const cls = (grid.getCellMeta(r, c).className ?? "") as string;
-            if (cls) entries.push([r, c, cls]);
+            const meta = grid.getCellMeta(r, c);
+            const cls = (meta.className ?? "") as string;
+            const source = meta.source as CellSource | undefined;
+            if (source) entries.push([r, c, cls, source]);
+            else if (cls) entries.push([r, c, cls]);
         }
     }
     return entries;
@@ -44,9 +54,15 @@ export function snapshotClasses(grid: CellGrid, cols: number[]): ClassEntry[] {
 
 function applyClasses(grid: CellGrid, cols: number[], entries: ClassEntry[]): void {
     for (let r = 0; r < grid.countRows(); r++) {
-        for (const c of cols) grid.setCellMeta(r, c, "className", "");
+        for (const c of cols) {
+            grid.setCellMeta(r, c, "className", "");
+            grid.setCellMeta(r, c, "source", undefined);
+        }
     }
-    for (const [r, c, cls] of entries) grid.setCellMeta(r, c, "className", cls);
+    for (const [r, c, cls, source] of entries) {
+        grid.setCellMeta(r, c, "className", cls);
+        if (source) grid.setCellMeta(r, c, "source", source);
+    }
 }
 
 /**
@@ -63,7 +79,7 @@ export function onRedoStackChange(before: readonly object[], after: readonly obj
 }
 
 /**
- * Binds a decoration snapshot to the action the preceding `setDataAtCell`
+ * Binds a meta snapshot to the action the preceding `setDataAtCell`
  * pushed. Call it after that write, never before: until the write lands there is
  * no action to key on. Clearing the reference keeps a write that pushed nothing
  * from stealing the previous action's snapshot.

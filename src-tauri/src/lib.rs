@@ -4,6 +4,7 @@
 //! frontend (the same `src/` that powers the web build). Rust owns only window
 //! creation, the native menu, lifecycle guards, and (later) the updater.
 
+mod bridge;
 mod config;
 mod menu;
 
@@ -37,6 +38,12 @@ pub fn run() {
             #[cfg(desktop)]
             config::init(app.handle());
 
+            // Loopback endpoint CardMirror sends extracted cards to, and the
+            // broker for our own outbound calls (desktop only; see
+            // `bridge.rs`). A failed bind costs the integration, not the app.
+            #[cfg(desktop)]
+            bridge::start(app.handle());
+
             // Install the native menu; accelerators follow the JS keymap via
             // rebuild_menu (see menu.rs).
             let handle = app.handle();
@@ -45,6 +52,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            bridge::bridge_reply,
+            bridge::cardmirror_insert,
+            bridge::cardmirror_jump,
+            bridge::cardmirror_status,
             config::read_config,
             config::write_config,
             menu::rebuild_menu,
@@ -61,6 +72,13 @@ pub fn run() {
                 let _ = app.emit("menu:command", id.to_string());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Ebb");
+        .build(tauri::generate_context!())
+        .expect("error while running Ebb")
+        // The session handshake advertises a port that dies with the process,
+        // so it has to go on the way out; the identity file stays.
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                bridge::remove_session();
+            }
+        });
 }
