@@ -46,7 +46,12 @@ function selectedSource(): CellSource | null {
     return (hot.getCellMeta(selection[0], selection[1]).source as CellSource | undefined) ?? null;
 }
 
-/** Every non-empty selected cell, row-major within each selected range. */
+/**
+ * Every non-empty selected cell, row-major within each selected range, one
+ * per line. CardMirror's insert builds one block per line, so a single
+ * newline is the paragraph break; a blank line between cells would leave an
+ * empty paragraph behind in the document.
+ */
 function selectedText(): string {
     const hot = getActiveHot();
     const ranges = hot?.getSelectedRange();
@@ -62,7 +67,7 @@ function selectedText(): string {
             }
         }
     }
-    return parts.join("\n\n");
+    return parts.join("\n");
 }
 
 /** Null when the call and CardMirror both succeeded, else what to tell the user. */

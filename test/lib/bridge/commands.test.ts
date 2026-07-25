@@ -135,7 +135,7 @@ describe("send to doc", () => {
         expect(lastToast()).toBe('Sent to "1AR".');
     });
 
-    it("joins a multi-cell selection into paragraphs and skips blanks", async () => {
+    it("sends one line per selected cell and skips blanks", async () => {
         const texts: Record<string, string | null> = {
             "0,0": "First",
             "1,0": "   ",
@@ -159,7 +159,9 @@ describe("send to doc", () => {
 
         await runSendToDoc();
 
-        expect(invoked.mock.calls[0][1]).toMatchObject({ text: "First\n\nSecond" });
+        // One newline per cell: CardMirror makes one block per line, so a
+        // blank line here would land an empty paragraph in the document.
+        expect(invoked.mock.calls[0][1]).toMatchObject({ text: "First\nSecond" });
         expect(lastToast()).toBe("Sent to CardMirror.");
     });
 
