@@ -43,14 +43,25 @@ function metaFor(item: FlowItem, docTitle: string): CellMeta {
     return meta;
 }
 
+/** The empty separator cells a send leaves below it, given the setting. */
+function spacerCells(space: number): PlannedCell[] {
+    return Array.from({ length: space }, () => ({ text: "", meta: {} }));
+}
+
 /**
  * The cells a send produces, in write order. Empty only when `items` is,
  * which the protocol layer already rejects.
+ *
+ * `space` appends that many blank cells below the send, so consecutive sends
+ * read as separate cards. They are real writes rather than a cursor jump: an
+ * insert paste shifts the column's tail into those rows, and the shift leaves
+ * the vacated cells holding their old text.
  */
 export function planFlowWrite(
     items: readonly FlowItem[],
     mode: "column" | "cell",
     docTitle: string,
+    space = 0,
 ): PlannedCell[] {
     if (items.length === 0) return [];
 
@@ -65,6 +76,7 @@ export function planFlowWrite(
                 text: items.map((i) => i.text).join("\n"),
                 meta: source ? { source } : {},
             },
+            ...spacerCells(space),
         ];
     }
 
@@ -79,5 +91,5 @@ export function planFlowWrite(
         }
         cells.push({ text: item.text, meta: metaFor(item, docTitle) });
     }
-    return cells;
+    return [...cells, ...spacerCells(space)];
 }

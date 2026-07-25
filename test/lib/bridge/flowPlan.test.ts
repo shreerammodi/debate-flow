@@ -87,3 +87,38 @@ describe("planFlowWrite in cell mode", () => {
         expect(cells[0].meta.source?.token).toBe("cmsrc1.Cap K");
     });
 });
+
+describe("planFlowWrite with a paste space", () => {
+    it("adds the empty cells below a column send", () => {
+        const cells = planFlowWrite(
+            [item("tag", "Perm solves"), item("analytic", "No link")],
+            "column",
+            "AT - Cap K",
+            2,
+        );
+        expect(cells.map((c) => c.text)).toEqual(["Perm solves", "No link", "", ""]);
+        expect(cells[2].meta).toEqual({});
+        expect(cells[3].meta).toEqual({});
+    });
+
+    it("adds the empty cells below a single-cell send", () => {
+        const cells = planFlowWrite(
+            [item("tag", "Perm solves"), item("cite", "Smith 24")],
+            "cell",
+            "AT - Cap K",
+            1,
+        );
+        expect(cells).toHaveLength(2);
+        expect(cells[0].text).toBe("Perm solves\nSmith 24");
+        expect(cells[1]).toEqual({ text: "", meta: {} });
+    });
+
+    it("plans nothing extra when the space is zero", () => {
+        const cells = planFlowWrite([item("tag", "Perm solves")], "column", "AT - Cap K", 0);
+        expect(cells).toHaveLength(1);
+    });
+
+    it("plans nothing at all for an empty send, whatever the space", () => {
+        expect(planFlowWrite([], "column", "AT - Cap K", 3)).toEqual([]);
+    });
+});
