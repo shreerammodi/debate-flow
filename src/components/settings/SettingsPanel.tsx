@@ -46,10 +46,14 @@ const THEME_OPTIONS: { id: ThemeMode; label: string }[] = [
     { id: "system", label: "System" },
 ];
 
-/** CardMirror's insert types, in the words its own document editor uses. */
+/** CardMirror's insert types, in the words its own document editor uses:
+ *  its outline heading levels, deepest first, then plain body text. */
 const CARDMIRROR_TEXT_TYPES: { value: CardMirrorTextType; label: string }[] = [
     { value: "analytic", label: "Analytic" },
     { value: "tag", label: "Tag" },
+    { value: "block", label: "Block" },
+    { value: "hat", label: "Hat" },
+    { value: "pocket", label: "Pocket" },
     { value: "body", label: "Body" },
 ];
 

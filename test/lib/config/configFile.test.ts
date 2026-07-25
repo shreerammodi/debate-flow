@@ -47,6 +47,12 @@ describe("configFromState -> toAppConfig round-trip", () => {
         expect(toAppConfig({ cardmirror_text_type: "body" }).cardmirrorTextType).toBe("body");
     });
 
+    it("keeps every CardMirror heading level the file can name", () => {
+        for (const type of ["pocket", "hat", "block", "tag", "analytic"]) {
+            expect(toAppConfig({ cardmirror_text_type: type }).cardmirrorTextType).toBe(type);
+        }
+    });
+
     it("ships every default binding but stores none of them as overrides", () => {
         const file = configFromState({ ...sample, keymapOverrides: {} });
         expect(toAppConfig(file).keymapOverrides).toEqual({});
