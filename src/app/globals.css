@@ -290,6 +290,24 @@ html .ht-theme-main {
     box-shadow: inset 0 -2px 0 #2563eb;
 }
 
+/* Linked marker: a cell another app sent in over the bridge wears a teal inset
+   rail down its left edge, the same rail a linked copy wears in CardMirror, so
+   a run of sent cells reads as borrowed. Painted from the cell's stored source
+   by afterRenderer, so it is never a saved decoration. Fixed teal rather than a
+   token: the flow sheet is light-locked paper.
+
+   Sits above the group marker deliberately. The two share the left gutter and
+   equal specificity, so source order decides, and a hand-grouped cell keeps its
+   own bar. */
+.handsontable tbody tr td.cell-linked {
+    box-shadow: inset 3px 0 0 #2f8a8a;
+}
+.handsontable tbody tr td.flow-card.cell-linked {
+    box-shadow:
+        inset 0 -2px 0 #2563eb,
+        inset 3px 0 0 #2f8a8a;
+}
+
 /* Group marker: a neutral inset bar down the cell's left edge, so a vertical
    run reads as one cluster. Inset box-shadow (not border-left) keeps HOT's
    cell metrics intact, matching the card marker. */

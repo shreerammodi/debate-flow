@@ -16,6 +16,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   cheatsheet. The integration stays on unless you turn it off, and it exists
   only in the desktop app: the web build has no CardMirror commands, no section
   in Settings, and answers nothing on the bridge.
+- A cell that came in from CardMirror carries a teal rail down its left edge,
+  the same rail a linked copy wears in CardMirror. A sheet shows at a glance
+  which runs came from a document and which you typed yourself. The rail follows
+  the cell's stored source, so it survives sheet switches, row shifts, undo, and
+  an export and import. It does not print.
 - A CardMirror send can leave empty cells below itself, so consecutive sends
   read as separate cards instead of one continuous run. The count is a setting
   of the ebb plugin inside CardMirror (its gear in CardMirror's Settings then

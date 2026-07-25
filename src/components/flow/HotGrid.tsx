@@ -387,13 +387,16 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     );
 
     // Cells inherit their column header's side color: blue for aff, red for neg.
-    // The move tint is a class on the TD alone, never cellMeta, so it cannot
-    // leak into a saved sheet through collectMeta.
+    // The move tint and the linked rail are classes on the TD alone, never
+    // cellMeta, so neither can leak into a saved sheet through collectMeta.
     const afterRenderer = useCallback((TD: HTMLTableCellElement, row: number, col: number) => {
         const side = colsRef.current[col]?.side;
         if (side) TD.classList.add(side === "aff" ? "cell-aff" : "cell-neg");
         if (cellIsMoving(hotRef.current?.hotInstance ?? null, row, col)) {
             TD.classList.add("cell-moving");
+        }
+        if (hotRef.current?.hotInstance?.getCellMeta(row, col).source) {
+            TD.classList.add("cell-linked");
         }
     }, []);
 
