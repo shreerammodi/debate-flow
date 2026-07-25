@@ -88,7 +88,23 @@ jobs:
                   tagName: ${{ github.ref_name }}
                   releaseName: "ebb ${{ github.ref_name }}"
                   releaseBody: "See the assets below to download and install, and the [changelog](https://github.com/shreerammodi/ebb/blob/main/CHANGELOG.md) for a log of updates."
+                  # Every matrix job uploads into this one release, so it stays a draft
+                  # until the last platform lands. The updater reads
+                  # `releases/latest/download/latest.json` and a draft is never
+                  # "latest", so a half-uploaded release is not an update anyone can
+                  # take. The publish job below undrafts it.
                   releaseDraft: true
                   prerelease: false
                   uploadUpdaterJson: true
                   args: ${{ matrix.args }}
+
+    # Runs only when every matrix platform built, so a release reaches users whole
+    # or not at all. A failed platform leaves the draft in place for a human.
+    publish:
+        needs: release
+        runs-on: ubuntu-22.04
+        steps:
+            - name: Publish the release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"

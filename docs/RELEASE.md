@@ -69,14 +69,16 @@ autosave) and the user controls when they reload.
 
 **Trigger:** pushing a `v*` tag (section 2 does this for you).
 
-A 4-way build matrix (`fail-fast: false`) - macOS arm64, macOS x64, Linux x64,
-Windows x64 - runs `tauri-apps/tauri-action`, which builds each installer, signs
-the updater artifacts with the Ed25519 key, generates `latest.json`, and uploads
-everything to a **draft** GitHub Release named `ebb vX.Y.Z`.
+A 3-way build matrix (`fail-fast: false`) - macOS universal, Linux x64, Windows
+x64 - runs `tauri-apps/tauri-action`, which builds each installer, signs the
+updater artifacts with the Ed25519 key, generates `latest.json`, and uploads
+everything to a GitHub Release named `ebb vX.Y.Z`.
 
-`releaseDraft: true` is the safety valve: the updater reads
-`releases/latest/download/latest.json`, and a draft is never "latest", so
-**nothing ships to users until a human publishes the release.**
+The workflow creates the release as a draft, and the `publish` job
+(`needs: release`) publishes it after all three platforms succeed. The draft
+keeps a partly uploaded release away from clients: the updater reads
+`releases/latest/download/latest.json`, and a draft is never "latest". **A tag
+push reaches users on its own. If one platform fails, nothing publishes.**
 
 Full procedure and one-time signing-key setup: [`desktop/releasing.md`](desktop/releasing.md).
 
@@ -140,12 +142,13 @@ Ships fine for beta, worth doing after:
 # From a clean main with CI green, set VERSION=X.Y.Z, then by hand:
 # - edit `version` in package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml
 cargo update -p ebb --manifest-path src-tauri/Cargo.toml   # refresh Cargo.lock
-git commit -am "$VERSION" && git tag "v$VERSION"
+git commit -am "$VERSION" && git tag -s "v$VERSION" -m "v$VERSION"
 git push --follow-tags
-# -> release.yml builds 4 installers into a DRAFT GitHub Release
-# Review the draft on GitHub, then click Publish.
+# -> release.yml builds 3 installers into a draft GitHub Release,
+#    then publishes it once every platform succeeds. No click needed.
 # -> the /latest/ redirect flips; desktop clients pick it up on next check.
 ```
 
-For a critical fix, set `"critical": true` in the release's `latest.json` before
-publishing (`tauri-action` does not set it).
+For a critical fix, edit the published release's `latest.json` to set
+`"critical": true` and upload it again over the existing asset (`tauri-action`
+does not set it). Clients read the flag on their next check.
