@@ -31,6 +31,7 @@ import {
     nudge,
     revertMove,
 } from "@/lib/grid/moveSession";
+import { breakEmptiedLinks, type GridChange } from "@/lib/grid/staleSource";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { resolveCommand } from "@/lib/keymap/resolve";
 import type { CellMeta, CellSource, FlowSheet } from "@/lib/model/flow";
@@ -114,7 +115,14 @@ export function collectMeta(hot: Handsontable): Record<string, CellMeta> {
         for (let c = 0; c < hot.countCols(); c++) {
             const cellMeta = hot.getCellMeta(r, c);
             const m = classNameToMeta((cellMeta.className ?? "") as string);
-            const source = cellMeta.source as CellSource | undefined;
+            // A blank cell's provenance describes text that is gone, so the
+            // save drops it. This is what retires a stale source a sheet
+            // carried in from before the emptying rule existed.
+            const text = hot.getDataAtCell(r, c);
+            const source =
+                text === null || text === undefined || text === ""
+                    ? undefined
+                    : (cellMeta.source as CellSource | undefined);
             if (source) meta[`${r},${c}`] = { ...m, source };
             else if (m) meta[`${r},${c}`] = m;
         }
@@ -389,22 +397,43 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // Cells inherit their column header's side color: blue for aff, red for neg.
     // The move tint and the linked rail are classes on the TD alone, never
     // cellMeta, so neither can leak into a saved sheet through collectMeta.
-    const afterRenderer = useCallback((TD: HTMLTableCellElement, row: number, col: number) => {
-        const side = colsRef.current[col]?.side;
-        if (side) TD.classList.add(side === "aff" ? "cell-aff" : "cell-neg");
-        if (cellIsMoving(hotRef.current?.hotInstance ?? null, row, col)) {
-            TD.classList.add("cell-moving");
-        }
-        if (hotRef.current?.hotInstance?.getCellMeta(row, col).source) {
-            TD.classList.add("cell-linked");
-        }
-    }, []);
+    const afterRenderer = useCallback(
+        (
+            TD: HTMLTableCellElement,
+            row: number,
+            col: number,
+            _prop: string | number,
+            value: unknown,
+            cellProperties: { source?: unknown },
+        ) => {
+            const side = colsRef.current[col]?.side;
+            if (side) TD.classList.add(side === "aff" ? "cell-aff" : "cell-neg");
+            if (cellIsMoving(hotRef.current?.hotInstance ?? null, row, col)) {
+                TD.classList.add("cell-moving");
+            }
+            // Empty text came from nowhere, so a blank cell wears no rail even
+            // when a source saved before the emptying rule existed outlived it.
+            if (cellProperties.source && value !== null && value !== undefined && value !== "") {
+                TD.classList.add("cell-linked");
+            }
+        },
+        [],
+    );
 
     // changes is null on loadData/updateSettings passes; snapshotting those
     // loops setState -> render -> afterChange forever.
+    //
+    // "edit" is a cell the user typed, emptied, or cut: every structured write
+    // names itself instead, and carries its own meta bookkeeping. So this is
+    // the one path that can strand provenance on a cell it no longer describes.
     const afterChange = useCallback(
-        (changes: unknown) => {
-            if (changes) snapshot();
+        (changes: unknown, source: unknown) => {
+            if (!changes) return;
+            const hot = hotRef.current?.hotInstance;
+            if (hot && source === "edit" && breakEmptiedLinks(hot, changes as GridChange[])) {
+                hot.render();
+            }
+            snapshot();
         },
         [snapshot],
     );

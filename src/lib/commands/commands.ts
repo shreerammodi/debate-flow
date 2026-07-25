@@ -19,6 +19,7 @@ import {
 import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
+import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
@@ -89,7 +90,7 @@ function runInsertCell(where: "at" | "below"): void {
     if (row > hot.countRows() - 1) return;
 
     const before = snapshotClasses(hot, [col]);
-    hot.setDataAtCell(insertCellChanges(hot, row, col));
+    hot.setDataAtCell(insertCellChanges(hot, row, col), STRUCTURED_WRITE);
     attachMetaUndo({ cols: [col], before, after: snapshotClasses(hot, [col]) });
     hot.render();
     notifyGridMutated();

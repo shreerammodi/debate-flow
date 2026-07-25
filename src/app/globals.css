@@ -296,7 +296,7 @@ html .ht-theme-main {
    afterRenderer, so it is never a saved decoration. Fixed teal rather than a
    token: the flow sheet is light-locked paper.
 
-   A pseudo-element held 3px off the edge, not an inset box-shadow on the edge
+   A pseudo-element held 1px off the edge, not an inset box-shadow on the edge
    itself, because the selection border is a thin bar the theme paints over the
    cell boundary: a rail hugging that boundary reads as one smear of two colors
    the moment the cell is selected. The offset also clears the group marker's
@@ -311,7 +311,7 @@ html .ht-theme-main {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 3px;
+    left: 1px;
     width: 3px;
     background: #2f8a8a;
     pointer-events: none;

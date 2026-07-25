@@ -20,12 +20,22 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   the same rail a linked copy wears in CardMirror. A sheet shows at a glance
   which runs came from a document and which you typed yourself. The rail follows
   the cell's stored source, so it survives sheet switches, row shifts, undo, and
-  an export and import. It does not print.
+  an export and import. It does not print. Emptying a cell breaks its link and
+  takes the rail with it. Editing the text keeps the link, the same way an
+  edited linked copy stays linked in CardMirror.
 - A CardMirror send can leave empty cells below itself, so consecutive sends
   read as separate cards instead of one continuous run. The count is a setting
   of the ebb plugin inside CardMirror (its gear in CardMirror's Settings then
   Plugins), not an ebb setting, and it travels with each send. Sends that name
   no count, including those from an older plugin, leave no empty cells.
+
+### Fixed
+
+- A cell you emptied kept the provenance of the text it used to hold. The stale
+  link survived a save, so "Reveal in Flow" in CardMirror could select a blank
+  cell, and text you typed into that cell later inherited a jump target it never
+  earned. Emptying a cell now drops the link, and a sheet that carries a stale
+  one from an earlier version drops it on the next save.
 
 ## [0.7.0] - 2026-07-24
 

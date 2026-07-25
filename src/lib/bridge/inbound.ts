@@ -13,6 +13,7 @@ import { shiftSpan } from "@/lib/grid/cellShift";
 import { metaToClassName } from "@/lib/grid/codec";
 import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
+import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
 
 import { cardmirrorLive } from "./enabled";
@@ -54,7 +55,7 @@ function applyFlow(req: FlowRequest): BridgeReply {
         ? shiftSpan(hot, col, row, hot.countRows(), cells.length)
         : [];
     cells.forEach((cell, i) => changes.push([row + i, col, cell.text]));
-    hot.setDataAtCell(changes);
+    hot.setDataAtCell(changes, STRUCTURED_WRITE);
     // shiftSpan leaves the vacated cells' decorations stale, and every written
     // cell gets its own anyway, so both keys are set unconditionally.
     cells.forEach((cell, i) => {

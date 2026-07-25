@@ -12,10 +12,11 @@
 
 import { moveBlock, type CellChange, type CellGrid } from "./cellShift";
 import { attachMetaUndo, snapshotClasses, type ClassEntry } from "./metaUndo";
+import { STRUCTURED_WRITE } from "./staleSource";
 
 /** `CellGrid` plus the write the session applies. The live grid satisfies it. */
 export interface MoveGrid extends CellGrid {
-    setDataAtCell(changes: CellChange[]): void;
+    setDataAtCell(changes: CellChange[], source?: string): void;
 }
 
 /** The bounding rectangle of the selection the session moves. */
@@ -94,7 +95,7 @@ export function nudge(delta: number): void {
     for (const col of cols) {
         changes.push(...moveBlock(grid, col, blockStart, height, target - blockStart));
     }
-    grid.setDataAtCell(changes);
+    grid.setDataAtCell(changes, STRUCTURED_WRITE);
     session.blockStart = target;
 }
 
@@ -107,7 +108,7 @@ function restoreEntryState(s: Session): void {
         });
     });
     for (const [row, col, cls] of s.classes) s.grid.setCellMeta(row, col, "className", cls);
-    s.grid.setDataAtCell(changes);
+    s.grid.setDataAtCell(changes, STRUCTURED_WRITE);
 }
 
 /** Puts the grid back as it was at entry and closes the session. */
@@ -133,6 +134,6 @@ export function commitMove(): void {
 
     const changes: CellChange[] = [];
     for (const col of s.cols) changes.push(...moveBlock(s.grid, col, s.origin, s.height, delta));
-    s.grid.setDataAtCell(changes);
+    s.grid.setDataAtCell(changes, STRUCTURED_WRITE);
     attachMetaUndo({ cols: s.cols, before: s.classes, after: snapshotClasses(s.grid, s.cols) });
 }
