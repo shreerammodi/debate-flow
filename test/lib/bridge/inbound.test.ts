@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleBridgeRequest, resetRevealCycle } from "@/lib/bridge/inbound";
 import { setActiveHot } from "@/lib/grid/hotInstance";
@@ -66,6 +66,8 @@ function activeSheetTitle(): string {
 }
 
 beforeEach(() => {
+    // The bridge is desktop-only, so every route needs the shell's global.
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     setActiveHot(null, null);
     resetMetaUndo();
     resetRevealCycle();
@@ -74,7 +76,12 @@ beforeEach(() => {
         activeSheetId: null,
         insertPaste: false,
         revealTarget: null,
+        cardmirrorEnabled: true,
     });
+});
+
+afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 });
 
 describe("the flow route", () => {
@@ -237,5 +244,31 @@ describe("the reveal route", () => {
         expect(reveal(["doc-1|perm"]).body).toEqual({ ok: false, error: "no-round" });
         loadRound();
         expect(handleBridgeRequest("reveal", { keys: [] }).status).toBe(400);
+    });
+});
+
+describe("the desktop-only gate", () => {
+    it("turns every route away when the switch is off, without touching the grid", () => {
+        loadRound();
+        const grid = makeGrid(10, 3);
+        setActiveHot(grid.hot as never, vi.fn());
+        useFlowStore.setState({ cardmirrorEnabled: false });
+
+        expect(send([tag]).body).toEqual({ ok: false, error: "integration-disabled" });
+        expect(handleBridgeRequest("reveal", { keys: ["doc-1|perm"] }).body).toEqual({
+            ok: false,
+            error: "integration-disabled",
+        });
+        expect(grid.data[0][0]).toBeNull();
+    });
+
+    it("turns every route away on the web build", () => {
+        loadRound();
+        const grid = makeGrid(10, 3);
+        setActiveHot(grid.hot as never, vi.fn());
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+
+        expect(send([tag]).body).toEqual({ ok: false, error: "integration-disabled" });
+        expect(grid.data[0][0]).toBeNull();
     });
 });

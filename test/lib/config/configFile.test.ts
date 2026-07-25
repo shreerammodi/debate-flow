@@ -16,6 +16,7 @@ const sample: AppConfig = {
     insertPaste: true,
     scrollZoom: false,
     tooltips: false,
+    cardmirrorEnabled: false,
     cardmirrorTextType: "cite",
     theme: "dark",
     affColor: "#1d4ed8",

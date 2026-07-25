@@ -42,7 +42,7 @@ beforeEach(() => {
     toasted.mockReset();
     setActiveHot(null, null);
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-    useFlowStore.setState({ cardmirrorTextType: "card" });
+    useFlowStore.setState({ cardmirrorTextType: "card", cardmirrorEnabled: true });
 });
 
 afterEach(() => {
@@ -107,15 +107,6 @@ describe("jump to source", () => {
         invoked.mockRejectedValue(new Error("boom"));
         await runJumpToSource();
         expect(lastToast()).toBe("CardMirror sent something ebb could not read.");
-    });
-
-    it("does nothing off the desktop app", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
-        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
-
-        await runJumpToSource();
-        expect(invoked).not.toHaveBeenCalled();
-        expect(lastToast()).toBe("This works in the ebb desktop app.");
     });
 });
 
@@ -185,5 +176,29 @@ describe("send to doc", () => {
             await runSendToDoc();
             expect(lastToast()).toBe(message);
         }
+    });
+});
+
+describe("the desktop-only gate", () => {
+    it("makes both commands silent no-ops when the switch is off", async () => {
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        useFlowStore.setState({ cardmirrorEnabled: false });
+
+        await runJumpToSource();
+        await runSendToDoc();
+
+        expect(invoked).not.toHaveBeenCalled();
+        expect(toasted).not.toHaveBeenCalled();
+    });
+
+    it("makes both commands silent no-ops on the web build", async () => {
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+
+        await runJumpToSource();
+        await runSendToDoc();
+
+        expect(invoked).not.toHaveBeenCalled();
+        expect(toasted).not.toHaveBeenCalled();
     });
 });

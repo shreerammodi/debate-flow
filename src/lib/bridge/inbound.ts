@@ -15,6 +15,7 @@ import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
 
+import { cardmirrorLive } from "./enabled";
 import { planFlowWrite } from "./flowPlan";
 import type { BridgeReply, FlowRequest, RevealRequest } from "./protocol";
 import { BAD_REQUEST, bridgeError, parseFlowRequest, parseRevealRequest } from "./protocol";
@@ -112,8 +113,14 @@ export function resetRevealCycle(): void {
     revealedIndex = 0;
 }
 
-/** Answers one bridge route. Unknown routes read as a malformed request. */
+/**
+ * Answers one bridge route. Unknown routes read as a malformed request, and a
+ * bridge that is switched off (or a web build, where it never existed) names
+ * itself so the caller can say why nothing landed rather than reporting a
+ * dead app.
+ */
 export function handleBridgeRequest(route: string, body: unknown): BridgeReply {
+    if (!cardmirrorLive()) return bridgeError("integration-disabled");
     if (route === "flow") {
         const req = parseFlowRequest(body);
         return req ? applyFlow(req) : BAD_REQUEST;

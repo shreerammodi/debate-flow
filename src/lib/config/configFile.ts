@@ -34,6 +34,8 @@ export interface ConfigFileShape {
     insert_paste: boolean;
     scroll_zoom: boolean;
     tooltips: boolean;
+    /** Master switch for the CardMirror integration. */
+    cardmirror_enabled: boolean;
     /** How CardMirror types text a cell sends it: card, cite, or inline. */
     cardmirror_text_type: string;
     /** null means "reset to theme default"; Rust removes the key from the file. */
@@ -117,6 +119,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         insert_paste: s.insertPaste,
         scroll_zoom: s.scrollZoom,
         tooltips: s.tooltips,
+        cardmirror_enabled: s.cardmirrorEnabled,
         cardmirror_text_type: s.cardmirrorTextType,
         aff_color: s.affColor,
         neg_color: s.negColor,
@@ -170,6 +173,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         insertPaste: bool(o.insert_paste, false),
         scrollZoom: bool(o.scroll_zoom, true),
         tooltips: bool(o.tooltips, true),
+        cardmirrorEnabled: bool(o.cardmirror_enabled, true),
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         theme: resolveThemeMode(o.theme),
         affColor: resolveColor(o.aff_color),

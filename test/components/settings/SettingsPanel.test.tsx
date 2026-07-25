@@ -52,6 +52,7 @@ function resetStore() {
     useFlowStore.setState({
         keymapOverrides: {},
         settingsOpen: true,
+        cardmirrorEnabled: true,
     });
 }
 
@@ -321,6 +322,33 @@ describe("SettingsPanel", () => {
         await user.click(toggle);
         expect(useFlowStore.getState().insertPaste).toBe(true);
         expect(toggle).toBeChecked();
+    });
+
+    describe("CardMirror section", () => {
+        it("hides the text type picker until the integration is switched on", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+
+            const toggle = screen.getByTestId("cardmirror-enabled-toggle");
+            expect(toggle).toBeChecked();
+            expect(screen.getByTestId("cardmirror-text-type-select")).toBeTruthy();
+
+            await user.click(toggle);
+            expect(useFlowStore.getState().cardmirrorEnabled).toBe(false);
+            expect(screen.queryByTestId("cardmirror-text-type-select")).toBeNull();
+        });
+
+        it("drops the CardMirror shortcuts from the Keyboard pane when off", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await gotoKeyboard(user);
+            expect(screen.getByTestId("cmd-cell.jumpToSource")).toBeTruthy();
+
+            act(() => useFlowStore.getState().setCardmirrorEnabled(false));
+            expect(screen.queryByTestId("cmd-cell.jumpToSource")).toBeNull();
+            expect(screen.queryByTestId("cmd-cell.sendToDoc")).toBeNull();
+        });
     });
 
     // The Updates pane calls useUpdate(), which throws unless a UpdateProvider is

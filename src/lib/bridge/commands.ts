@@ -6,6 +6,10 @@
  * throw and never leave the user guessing: every outcome, including a
  * CardMirror that is closed or a cell with no provenance, ends in a toast
  * that names the next move.
+ *
+ * On the web build, and with the integration switched off in Settings, both
+ * are silent no-ops: the feature is absent there, and an absent feature owes
+ * the user nothing, not even a toast.
  */
 
 import { toast } from "sonner";
@@ -16,6 +20,7 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import type { BridgeCall, BridgeFailure, CardMirrorReply } from "./cardmirror";
 import { cardmirrorInsert, cardmirrorJump } from "./cardmirror";
+import { cardmirrorLive } from "./enabled";
 
 const TRANSPORT_MESSAGE: Record<BridgeFailure, string> = {
     "not-registered": "CardMirror has never run on this machine.",
@@ -87,6 +92,7 @@ function failureMessage(
 }
 
 export async function runJumpToSource(): Promise<void> {
+    if (!cardmirrorLive()) return;
     const source = selectedSource();
     if (!source) {
         toast("This cell did not come from CardMirror.");
@@ -101,6 +107,7 @@ export async function runJumpToSource(): Promise<void> {
 }
 
 export async function runSendToDoc(): Promise<void> {
+    if (!cardmirrorLive()) return;
     const text = selectedText();
     if (!text) {
         toast("Select a cell with text to send.");

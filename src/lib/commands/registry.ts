@@ -113,3 +113,6 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.dark": { id: "theme.dark", label: "Theme: Dark" },
     "theme.system": { id: "theme.system", label: "Theme: System" },
 };
+
+/** The commands the CardMirror integration owns; dead when it is switched off. */
+export const CARDMIRROR_COMMANDS: readonly CommandId[] = ["cell.jumpToSource", "cell.sendToDoc"];

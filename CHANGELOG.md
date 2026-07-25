@@ -7,6 +7,16 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- Settings then Editor now keeps the CardMirror integration in its own section,
+  behind an "Enable CardMirror integration" switch. Switching it off turns away
+  every inbound send from CardMirror, makes jump to source and send to
+  CardMirror do nothing, and drops both from the shortcut list and the `?`
+  cheatsheet. The integration stays on unless you turn it off, and it exists
+  only in the desktop app: the web build has no CardMirror commands, no section
+  in Settings, and answers nothing on the bridge.
+
 ## [0.7.0] - 2026-07-24
 
 ### Added

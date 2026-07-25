@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tip } from "@/components/ui/tooltip";
 import type { CardMirrorTextType } from "@/lib/bridge/cardmirror";
-import { COMMANDS, type CommandId } from "@/lib/commands/registry";
+import { CARDMIRROR_COMMANDS, COMMANDS, type CommandId } from "@/lib/commands/registry";
 import { FONTS, DEFAULT_FONT_ID, type FontId } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { eventToChord } from "@/lib/keymap/resolve";
@@ -114,6 +114,8 @@ export default function SettingsPanel() {
     const setInsertPaste = useFlowStore((s) => s.setInsertPaste);
     const cardmirrorTextType = useFlowStore((s) => s.cardmirrorTextType);
     const setCardmirrorTextType = useFlowStore((s) => s.setCardmirrorTextType);
+    const cardmirrorEnabled = useFlowStore((s) => s.cardmirrorEnabled);
+    const setCardmirrorEnabled = useFlowStore((s) => s.setCardmirrorEnabled);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -162,11 +164,18 @@ export default function SettingsPanel() {
         return chordForCommand(keymap.bindings);
     }, [keymapOverrides]);
 
+    // isDesktop() gates the bridge itself; the setting gates the user's choice.
+    const cardmirrorOn = cardmirrorEnabled && isDesktop();
+
+    // Rebinding a command the integration owns is pointless while it is off.
     const visibleCommands = useMemo(() => {
+        const list = cardmirrorOn
+            ? COMMAND_LIST
+            : COMMAND_LIST.filter((c) => !CARDMIRROR_COMMANDS.includes(c.id));
         const q = query.trim().toLowerCase();
-        if (!q) return COMMAND_LIST;
-        return COMMAND_LIST.filter((c) => c.label.toLowerCase().includes(q));
-    }, [query]);
+        if (!q) return list;
+        return list.filter((c) => c.label.toLowerCase().includes(q));
+    }, [query, cardmirrorOn]);
 
     function close() {
         setSettingsOpen(false);
@@ -493,40 +502,62 @@ export default function SettingsPanel() {
                                     }
                                 />
                                 {isDesktop() && (
-                                    <SettingRow
-                                        title="CardMirror text type"
-                                        description="The role ebb tags a cell with when it sends the text to CardMirror. CardMirror decides how to type it from there."
-                                        control={
-                                            <Select
-                                                value={cardmirrorTextType}
-                                                items={CARDMIRROR_TEXT_TYPES}
-                                                onValueChange={(value) =>
-                                                    setCardmirrorTextType(
-                                                        value as CardMirrorTextType,
-                                                    )
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    aria-label="CardMirror text type"
-                                                    data-testid="cardmirror-text-type-select"
-                                                    className="w-44"
-                                                >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {CARDMIRROR_TEXT_TYPES.map((t) => (
-                                                        <SelectItem
-                                                            key={t.value}
-                                                            value={t.value}
-                                                            data-testid={`cardmirror-text-type-${t.value}`}
+                                    <section
+                                        className="border-border/60 mt-4 flex flex-col border-t pt-3"
+                                        data-testid="cardmirror-section"
+                                    >
+                                        <h3 className="text-muted-foreground mb-1 font-mono text-[9px] font-bold tracking-widest uppercase">
+                                            CardMirror
+                                        </h3>
+                                        <SettingRow
+                                            title="Enable CardMirror integration"
+                                            description="Lets ebb and CardMirror reach each other over the local bridge: sends into the flow, jump to source, and send to the open document. Off leaves every route dead."
+                                            control={
+                                                <Switch
+                                                    checked={cardmirrorEnabled}
+                                                    onCheckedChange={setCardmirrorEnabled}
+                                                    data-testid="cardmirror-enabled-toggle"
+                                                    aria-label="Enable CardMirror integration"
+                                                />
+                                            }
+                                        />
+                                        {cardmirrorEnabled && (
+                                            <SettingRow
+                                                title="Text type"
+                                                description="The role ebb tags a cell with when it sends the text to CardMirror. CardMirror decides how to type it from there."
+                                                control={
+                                                    <Select
+                                                        value={cardmirrorTextType}
+                                                        items={CARDMIRROR_TEXT_TYPES}
+                                                        onValueChange={(value) =>
+                                                            setCardmirrorTextType(
+                                                                value as CardMirrorTextType,
+                                                            )
+                                                        }
+                                                    >
+                                                        <SelectTrigger
+                                                            aria-label="CardMirror text type"
+                                                            data-testid="cardmirror-text-type-select"
+                                                            className="w-44"
                                                         >
-                                                            {t.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        }
-                                    />
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {CARDMIRROR_TEXT_TYPES.map((t) => (
+                                                                <SelectItem
+                                                                    key={t.value}
+                                                                    value={t.value}
+                                                                    data-testid={`cardmirror-text-type-${t.value}`}
+                                                                >
+                                                                    {t.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                }
+                                            />
+                                        )}
+                                    </section>
                                 )}
                             </div>
                         )}
