@@ -391,6 +391,23 @@ describe("SettingsPanel", () => {
             expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(10);
             expect(screen.getByTestId("paste-space-input")).toHaveValue("10");
         });
+
+        it("resets the field to the stored value when the typed value clamps to it unchanged", async () => {
+            const user = userEvent.setup();
+            useFlowStore.getState().setCardmirrorPasteSpace(10);
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+
+            const input = screen.getByTestId("paste-space-input");
+            await user.clear(input);
+            await user.type(input, "40");
+            await user.tab();
+            // The clamp lands back on 10, the value already in the store, so
+            // the mirroring effect never re-fires; commitSpace must still
+            // correct the field itself.
+            expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(10);
+            expect(screen.getByTestId("paste-space-input")).toHaveValue("10");
+        });
     });
 
     // The Updates pane calls useUpdate(), which throws unless a UpdateProvider is

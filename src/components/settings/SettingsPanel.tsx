@@ -31,7 +31,7 @@ import { restoreMenuAccelerators, suspendMenuAccelerators } from "@/lib/keymap/u
 import { useSettingsShortcut } from "@/lib/keymap/useSettingsShortcut";
 import type { Side } from "@/lib/model/types";
 import { isMacPlatform } from "@/lib/platform";
-import { useFlowStore } from "@/lib/store/useFlowStore";
+import { resolvePasteSpace, useFlowStore } from "@/lib/store/useFlowStore";
 import { DEFAULT_SIDE_COLORS } from "@/lib/theme/applySideColors";
 import type { ThemeMode } from "@/lib/theme/mode";
 import { isDesktop } from "@/lib/update/adapter";
@@ -151,8 +151,13 @@ export default function SettingsPanel() {
 
     function commitSpace() {
         const n = parseInt(spaceDraft, 10);
+        // The store clamps internally and only re-renders on a change, so a
+        // typed value that clamps to what's already stored (e.g. 40 while at
+        // 10) would otherwise leave the stale typed text on screen. Reading
+        // the clamp back here keeps the field in sync either way.
+        const resolved = Number.isNaN(n) ? cardmirrorPasteSpace : resolvePasteSpace(n);
         if (!Number.isNaN(n)) setCardmirrorPasteSpace(n);
-        else setSpaceDraft(String(cardmirrorPasteSpace));
+        setSpaceDraft(String(resolved));
     }
 
     // Reset transient UI state whenever the dialog closes.

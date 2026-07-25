@@ -208,6 +208,21 @@ describe("the flow route", () => {
         expect(grid.hot.getSelectedLast()).toEqual([4, 0]);
     });
 
+    it("overwrites text and decoration below the send when insert paste is off", () => {
+        loadRound();
+        useFlowStore.setState({ cardmirrorPasteSpace: 1 });
+        const grid = makeGrid(10, 3);
+        grid.data[1][0] = "old note";
+        grid.at(1, 0).className = "flow-highlight";
+        setActiveHot(grid.hot as never, vi.fn());
+
+        send([tag]);
+
+        expect(grid.data[0][0]).toBe("Perm solves");
+        expect(grid.data[1][0]).toBe("");
+        expect(grid.at(1, 0).className).toBe("");
+    });
+
     it("keeps the empty cells clear of the tail an insert paste pushes down", () => {
         loadRound();
         useFlowStore.setState({ insertPaste: true, cardmirrorPasteSpace: 1 });
