@@ -503,15 +503,20 @@ export default function SettingsPanel() {
                                 />
                                 {isDesktop() && (
                                     <section
-                                        className="border-border/60 mt-4 flex flex-col border-t pt-3"
+                                        className="mt-4 flex flex-col"
                                         data-testid="cardmirror-section"
                                     >
-                                        <h3 className="text-muted-foreground mb-1 font-mono text-[9px] font-bold tracking-widest uppercase">
-                                            CardMirror
-                                        </h3>
+                                        {/* The label rides the divider, so the
+                                            preceding row's hairline is the only
+                                            rule between the two groups. */}
+                                        <div className="mb-1 flex items-center gap-2">
+                                            <h3 className="text-muted-foreground text-[11px] font-bold tracking-widest uppercase">
+                                                CardMirror
+                                            </h3>
+                                            <span className="bg-border/60 h-px flex-1" />
+                                        </div>
                                         <SettingRow
                                             title="Enable CardMirror integration"
-                                            description="Lets ebb and CardMirror reach each other over the local bridge: sends into the flow, jump to source, and send to the open document. Off leaves every route dead."
                                             control={
                                                 <Switch
                                                     checked={cardmirrorEnabled}
@@ -523,8 +528,8 @@ export default function SettingsPanel() {
                                         />
                                         {cardmirrorEnabled && (
                                             <SettingRow
-                                                title="Text type"
-                                                description="The role ebb tags a cell with when it sends the text to CardMirror. CardMirror decides how to type it from there."
+                                                title="Send to CardMirror as"
+                                                description="What style ebb should apply to text sent to CardMirror."
                                                 control={
                                                     <Select
                                                         value={cardmirrorTextType}
@@ -536,7 +541,7 @@ export default function SettingsPanel() {
                                                         }
                                                     >
                                                         <SelectTrigger
-                                                            aria-label="CardMirror text type"
+                                                            aria-label="Send to CardMirror as"
                                                             data-testid="cardmirror-text-type-select"
                                                             className="w-44"
                                                         >
