@@ -65,6 +65,24 @@ describe("loadRound", () => {
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"insertPaste":true');
     });
 
+    it("persists cardmirrorPasteSpace through setCardmirrorPasteSpace", () => {
+        expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(0);
+        useFlowStore.getState().setCardmirrorPasteSpace(2);
+        expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(2);
+        expect(window.localStorage.getItem("ebb-display-settings")).toContain(
+            '"cardmirrorPasteSpace":2',
+        );
+    });
+
+    it("limits cardmirrorPasteSpace to the 0 to 10 range", () => {
+        useFlowStore.getState().setCardmirrorPasteSpace(99);
+        expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(10);
+        useFlowStore.getState().setCardmirrorPasteSpace(-3);
+        expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(0);
+        useFlowStore.getState().setCardmirrorPasteSpace(1.6);
+        expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(2);
+    });
+
     it("persists scrollZoom through setScrollZoom, defaulting on", () => {
         expect(useFlowStore.getState().scrollZoom).toBe(true);
         useFlowStore.getState().setScrollZoom(false);

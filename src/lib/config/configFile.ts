@@ -17,7 +17,12 @@ import { DEFAULT_KEYTIPS, effectiveKeytips } from "@/lib/dashboard/keytips";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { getPresetKeymap } from "@/lib/keymap/presets";
-import { type AppConfig, resolveZoom, useFlowStore } from "@/lib/store/useFlowStore";
+import {
+    type AppConfig,
+    resolvePasteSpace,
+    resolveZoom,
+    useFlowStore,
+} from "@/lib/store/useFlowStore";
 import { resolveThemeMode } from "@/lib/theme/mode";
 import { isDesktop } from "@/lib/update/adapter";
 import { DEFAULT_UPDATE_CONFIG } from "@/lib/update/types";
@@ -38,6 +43,8 @@ export interface ConfigFileShape {
     cardmirror_enabled: boolean;
     /** How CardMirror types text a cell sends it: analytic, tag, or body. */
     cardmirror_text_type: string;
+    /** Empty cells a CardMirror send leaves below itself; 0 turns it off. */
+    cardmirror_paste_space: number;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
@@ -121,6 +128,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         tooltips: s.tooltips,
         cardmirror_enabled: s.cardmirrorEnabled,
         cardmirror_text_type: s.cardmirrorTextType,
+        cardmirror_paste_space: s.cardmirrorPasteSpace,
         aff_color: s.affColor,
         neg_color: s.negColor,
         keymap: nestByNamespace(byCommand(effectiveKeymap(s.keymapOverrides).bindings)),
@@ -175,6 +183,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         tooltips: bool(o.tooltips, true),
         cardmirrorEnabled: bool(o.cardmirror_enabled, true),
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
+        cardmirrorPasteSpace: resolvePasteSpace(o.cardmirror_paste_space),
         theme: resolveThemeMode(o.theme),
         affColor: resolveColor(o.aff_color),
         negColor: resolveColor(o.neg_color),

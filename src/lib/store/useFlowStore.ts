@@ -82,6 +82,8 @@ export interface FlowState {
     cardmirrorEnabled: boolean;
     /** How CardMirror types text sent to it from a cell. */
     cardmirrorTextType: CardMirrorTextType;
+    /** Empty cells a CardMirror send leaves below itself; 0 turns it off. */
+    cardmirrorPasteSpace: number;
     renamingSheetId: string | null;
 }
 
@@ -134,6 +136,7 @@ export interface FlowActions {
     setTooltips(on: boolean): void;
     setCardmirrorEnabled(on: boolean): void;
     setCardmirrorTextType(type: CardMirrorTextType): void;
+    setCardmirrorPasteSpace(space: number): void;
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
     setSideColor(side: Side, color: string | null): void;
@@ -173,6 +176,7 @@ export interface AppConfig {
     tooltips: boolean;
     cardmirrorEnabled: boolean;
     cardmirrorTextType: CardMirrorTextType;
+    cardmirrorPasteSpace: number;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -202,6 +206,18 @@ export function clampZoom(zoom: number): number {
  */
 export function resolveZoom(value: unknown): number {
     return typeof value === "number" && Number.isFinite(value) ? clampZoom(value) : 1;
+}
+
+/** The most empty cells a send can leave below itself. */
+const PASTE_SPACE_MAX = 10;
+
+/**
+ * A valid paste space from a hand-edited config value or from localStorage: a
+ * whole number of cells clamped to the bounds, else 0 (the feature off).
+ */
+export function resolvePasteSpace(value: unknown): number {
+    if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+    return Math.min(PASTE_SPACE_MAX, Math.max(0, Math.round(value)));
 }
 
 function loadKeymapOverrides(): Record<string, string> {
@@ -257,6 +273,7 @@ interface DisplaySettings {
     tooltips: boolean;
     cardmirrorEnabled: boolean;
     cardmirrorTextType: CardMirrorTextType;
+    cardmirrorPasteSpace: number;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -279,6 +296,7 @@ function loadDisplaySettings(): DisplaySettings {
         tooltips: true,
         cardmirrorEnabled: true,
         cardmirrorTextType: "analytic",
+        cardmirrorPasteSpace: 0,
         theme: "system",
         affColor: null,
         negColor: null,
@@ -300,6 +318,7 @@ function loadDisplaySettings(): DisplaySettings {
             cardmirrorEnabled:
                 typeof p.cardmirrorEnabled === "boolean" ? p.cardmirrorEnabled : true,
             cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
+            cardmirrorPasteSpace: resolvePasteSpace(p.cardmirrorPasteSpace),
             theme: resolveThemeMode(p.theme),
             affColor: resolveColor(p.affColor),
             negColor: resolveColor(p.negColor),
@@ -331,6 +350,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         tooltips: s.tooltips,
         cardmirrorEnabled: s.cardmirrorEnabled,
         cardmirrorTextType: s.cardmirrorTextType,
+        cardmirrorPasteSpace: s.cardmirrorPasteSpace,
         theme: s.theme,
         affColor: s.affColor,
         negColor: s.negColor,
@@ -400,6 +420,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     tooltips: initialDisplaySettings.tooltips,
     cardmirrorEnabled: initialDisplaySettings.cardmirrorEnabled,
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
+    cardmirrorPasteSpace: initialDisplaySettings.cardmirrorPasteSpace,
     renamingSheetId: null,
 
     loadRound(round, opts) {
@@ -687,6 +708,12 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCardmirrorTextType(type) {
         saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorTextType: type });
         set({ cardmirrorTextType: type });
+    },
+
+    setCardmirrorPasteSpace(space) {
+        const n = resolvePasteSpace(space);
+        saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorPasteSpace: n });
+        set({ cardmirrorPasteSpace: n });
     },
 
     setTheme(mode) {

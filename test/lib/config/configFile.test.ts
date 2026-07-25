@@ -18,6 +18,7 @@ const sample: AppConfig = {
     tooltips: false,
     cardmirrorEnabled: false,
     cardmirrorTextType: "tag",
+    cardmirrorPasteSpace: 3,
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
@@ -45,6 +46,13 @@ describe("configFromState -> toAppConfig round-trip", () => {
             "analytic",
         );
         expect(toAppConfig({ cardmirror_text_type: "body" }).cardmirrorTextType).toBe("body");
+    });
+
+    it("limits a hand-edited paste space and defaults a bad one to zero", () => {
+        expect(toAppConfig({ cardmirror_paste_space: 4 }).cardmirrorPasteSpace).toBe(4);
+        expect(toAppConfig({ cardmirror_paste_space: 40 }).cardmirrorPasteSpace).toBe(10);
+        expect(toAppConfig({ cardmirror_paste_space: "two" }).cardmirrorPasteSpace).toBe(0);
+        expect(toAppConfig({}).cardmirrorPasteSpace).toBe(0);
     });
 
     it("ships every default binding but stores none of them as overrides", () => {
