@@ -77,6 +77,7 @@ beforeEach(() => {
         insertPaste: false,
         revealTarget: null,
         cardmirrorEnabled: true,
+        cardmirrorPasteSpace: 0,
     });
 });
 
@@ -187,6 +188,55 @@ describe("the flow route", () => {
             body: { ok: false, error: "bad-request" },
         });
         expect(handleBridgeRequest("nonsense", {}).status).toBe(400);
+    });
+
+    it("leaves the empty cells below a send and lands the cursor below them", () => {
+        loadRound();
+        useFlowStore.setState({ cardmirrorPasteSpace: 2 });
+        const grid = makeGrid(10, 3);
+        grid.select(0, 0);
+        setActiveHot(grid.hot as never, vi.fn());
+
+        const reply = send([block, tag]);
+
+        // `written` counts the items, not the rows the empty cells took.
+        expect(reply.body).toMatchObject({ ok: true, written: 2 });
+        expect(grid.data[0][0]).toBe("Cap K");
+        expect(grid.data[1][0]).toBe("Perm solves");
+        expect(grid.data[2][0]).toBe("");
+        expect(grid.data[3][0]).toBe("");
+        expect(grid.hot.getSelectedLast()).toEqual([4, 0]);
+    });
+
+    it("keeps the empty cells clear of the tail an insert paste pushes down", () => {
+        loadRound();
+        useFlowStore.setState({ insertPaste: true, cardmirrorPasteSpace: 1 });
+        const grid = makeGrid(10, 3);
+        grid.data[0][0] = "old";
+        grid.at(0, 0).className = "flow-bold";
+        setActiveHot(grid.hot as never, vi.fn());
+
+        send([tag]);
+
+        expect(grid.data[0][0]).toBe("Perm solves");
+        expect(grid.data[1][0]).toBe("");
+        expect(grid.data[2][0]).toBe("old");
+        expect(grid.at(1, 0).className).toBe("");
+        expect(grid.at(2, 0).className).toBe("flow-bold");
+    });
+
+    it("grows the grid to hold the empty cells", () => {
+        loadRound();
+        useFlowStore.setState({ cardmirrorPasteSpace: 3 });
+        const grid = makeGrid(3, 3);
+        grid.select(2, 0);
+        setActiveHot(grid.hot as never, vi.fn());
+
+        send([tag]);
+
+        expect(grid.data.length).toBeGreaterThanOrEqual(6);
+        expect(grid.data[2][0]).toBe("Perm solves");
+        expect(grid.data[5][0]).toBe("");
     });
 });
 
