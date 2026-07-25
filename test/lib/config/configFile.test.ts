@@ -17,7 +17,7 @@ const sample: AppConfig = {
     scrollZoom: false,
     tooltips: false,
     cardmirrorEnabled: false,
-    cardmirrorTextType: "cite",
+    cardmirrorTextType: "tag",
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
@@ -40,9 +40,11 @@ describe("configFromState -> toAppConfig round-trip", () => {
         expect(file.update.auto_check_enabled).toBe(true);
     });
 
-    it("falls back to the card text type when the file names an unknown one", () => {
-        expect(toAppConfig({ cardmirror_text_type: "footnote" }).cardmirrorTextType).toBe("card");
-        expect(toAppConfig({ cardmirror_text_type: "inline" }).cardmirrorTextType).toBe("inline");
+    it("falls back to the analytic text type when the file names an unknown one", () => {
+        expect(toAppConfig({ cardmirror_text_type: "footnote" }).cardmirrorTextType).toBe(
+            "analytic",
+        );
+        expect(toAppConfig({ cardmirror_text_type: "body" }).cardmirrorTextType).toBe("body");
     });
 
     it("ships every default binding but stores none of them as overrides", () => {

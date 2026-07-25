@@ -278,7 +278,7 @@ function loadDisplaySettings(): DisplaySettings {
         scrollZoom: true,
         tooltips: true,
         cardmirrorEnabled: true,
-        cardmirrorTextType: "card",
+        cardmirrorTextType: "analytic",
         theme: "system",
         affColor: null,
         negColor: null,

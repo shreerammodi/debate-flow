@@ -42,7 +42,7 @@ beforeEach(() => {
     toasted.mockReset();
     setActiveHot(null, null);
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-    useFlowStore.setState({ cardmirrorTextType: "card", cardmirrorEnabled: true });
+    useFlowStore.setState({ cardmirrorTextType: "analytic", cardmirrorEnabled: true });
 });
 
 afterEach(() => {
@@ -113,14 +113,14 @@ describe("jump to source", () => {
 describe("send to doc", () => {
     it("sends the selected text with the configured type", async () => {
         setActiveHot(makeGrid("Perm solves") as never, vi.fn());
-        useFlowStore.setState({ cardmirrorTextType: "cite" });
+        useFlowStore.setState({ cardmirrorTextType: "tag" });
         invoked.mockResolvedValue({ ok: true, inserted: true, docTitle: "1AR" });
 
         await runSendToDoc();
 
         expect(invoked).toHaveBeenCalledWith("cardmirror_insert", {
             text: "Perm solves",
-            role: "cite",
+            role: "tag",
             newParagraph: true,
         });
         expect(lastToast()).toBe('Sent to "1AR".');

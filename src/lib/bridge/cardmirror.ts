@@ -29,15 +29,15 @@ export interface CardMirrorStatus {
 export type BridgeCall<T> = { ok: true; value: T } | { ok: false; error: BridgeFailure };
 
 /**
- * The roles CardMirror's insert route accepts. The role travels with the
- * text and CardMirror decides what to make of it; anything it does not know
- * degrades to `card` on its side, so ebb only ever sends one of these three.
+ * The paragraph types CardMirror's insert route accepts. The type travels
+ * with the text and CardMirror decides what to make of it; anything it does
+ * not know degrades on its side, so ebb only ever sends one of these three.
  */
-export type CardMirrorTextType = "card" | "cite" | "inline";
+export type CardMirrorTextType = "analytic" | "tag" | "body";
 
 /** A text type from storage or a hand-edited config file. */
 export function resolveCardMirrorTextType(value: unknown): CardMirrorTextType {
-    return value === "cite" || value === "inline" ? value : "card";
+    return value === "tag" || value === "body" ? value : "analytic";
 }
 
 const FAILURES: Record<string, BridgeFailure> = {

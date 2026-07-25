@@ -36,7 +36,7 @@ export interface ConfigFileShape {
     tooltips: boolean;
     /** Master switch for the CardMirror integration. */
     cardmirror_enabled: boolean;
-    /** How CardMirror types text a cell sends it: card, cite, or inline. */
+    /** How CardMirror types text a cell sends it: analytic, tag, or body. */
     cardmirror_text_type: string;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;

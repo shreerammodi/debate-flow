@@ -46,11 +46,11 @@ const THEME_OPTIONS: { id: ThemeMode; label: string }[] = [
     { id: "system", label: "System" },
 ];
 
-/** CardMirror's insert roles, in the words its own document editor uses. */
+/** CardMirror's insert types, in the words its own document editor uses. */
 const CARDMIRROR_TEXT_TYPES: { value: CardMirrorTextType; label: string }[] = [
-    { value: "card", label: "Card body" },
-    { value: "cite", label: "Cite" },
-    { value: "inline", label: "Inline text" },
+    { value: "analytic", label: "Analytic" },
+    { value: "tag", label: "Tag" },
+    { value: "body", label: "Body" },
 ];
 
 const SIDE_OPTIONS: { id: Side; label: string }[] = [
