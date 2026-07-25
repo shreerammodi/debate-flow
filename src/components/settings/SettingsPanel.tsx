@@ -31,7 +31,7 @@ import { restoreMenuAccelerators, suspendMenuAccelerators } from "@/lib/keymap/u
 import { useSettingsShortcut } from "@/lib/keymap/useSettingsShortcut";
 import type { Side } from "@/lib/model/types";
 import { isMacPlatform } from "@/lib/platform";
-import { resolvePasteSpace, useFlowStore } from "@/lib/store/useFlowStore";
+import { useFlowStore } from "@/lib/store/useFlowStore";
 import { DEFAULT_SIDE_COLORS } from "@/lib/theme/applySideColors";
 import type { ThemeMode } from "@/lib/theme/mode";
 import { isDesktop } from "@/lib/update/adapter";
@@ -116,8 +116,6 @@ export default function SettingsPanel() {
     const setCardmirrorTextType = useFlowStore((s) => s.setCardmirrorTextType);
     const cardmirrorEnabled = useFlowStore((s) => s.cardmirrorEnabled);
     const setCardmirrorEnabled = useFlowStore((s) => s.setCardmirrorEnabled);
-    const cardmirrorPasteSpace = useFlowStore((s) => s.cardmirrorPasteSpace);
-    const setCardmirrorPasteSpace = useFlowStore((s) => s.setCardmirrorPasteSpace);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -129,7 +127,6 @@ export default function SettingsPanel() {
     const [category, setCategory] = useState<Category>("display");
     const [query, setQuery] = useState("");
     const [zoomDraft, setZoomDraft] = useState("");
-    const [spaceDraft, setSpaceDraft] = useState("");
 
     // Mirror the stored default zoom into the editable field on open and on
     // external changes (e.g. the field commits a clamped value back).
@@ -141,23 +138,6 @@ export default function SettingsPanel() {
         const n = parseInt(zoomDraft, 10);
         if (!Number.isNaN(n)) setDefaultGridZoom(n / 100);
         else setZoomDraft(String(Math.round(defaultGridZoom * 100)));
-    }
-
-    // Mirror the stored count into the editable field on open and on external
-    // changes (the field commits a clamped value back).
-    useEffect(() => {
-        setSpaceDraft(String(cardmirrorPasteSpace));
-    }, [cardmirrorPasteSpace, open]);
-
-    function commitSpace() {
-        const n = parseInt(spaceDraft, 10);
-        // The store clamps internally and only re-renders on a change, so a
-        // typed value that clamps to what's already stored (e.g. 40 while at
-        // 10) would otherwise leave the stale typed text on screen. Reading
-        // the clamp back here keeps the field in sync either way.
-        const resolved = Number.isNaN(n) ? cardmirrorPasteSpace : resolvePasteSpace(n);
-        if (!Number.isNaN(n)) setCardmirrorPasteSpace(n);
-        setSpaceDraft(String(resolved));
     }
 
     // Reset transient UI state whenever the dialog closes.
@@ -547,80 +527,40 @@ export default function SettingsPanel() {
                                             }
                                         />
                                         {cardmirrorEnabled && (
-                                            <>
-                                                <SettingRow
-                                                    title="Send to CardMirror as"
-                                                    description="What style ebb should apply to text sent to CardMirror."
-                                                    control={
-                                                        <Select
-                                                            value={cardmirrorTextType}
-                                                            items={CARDMIRROR_TEXT_TYPES}
-                                                            onValueChange={(value) =>
-                                                                setCardmirrorTextType(
-                                                                    value as CardMirrorTextType,
-                                                                )
-                                                            }
-                                                        >
-                                                            <SelectTrigger
-                                                                aria-label="Send to CardMirror as"
-                                                                data-testid="cardmirror-text-type-select"
-                                                                className="w-44"
-                                                            >
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {CARDMIRROR_TEXT_TYPES.map((t) => (
-                                                                    <SelectItem
-                                                                        key={t.value}
-                                                                        value={t.value}
-                                                                        data-testid={`cardmirror-text-type-${t.value}`}
-                                                                    >
-                                                                        {t.label}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    }
-                                                />
-                                                <SettingRow
-                                                    title="Insert space after paste"
-                                                    description="Leaves empty cells below each CardMirror send, so one send reads as separate from the next."
-                                                    control={
-                                                        <Switch
-                                                            checked={cardmirrorPasteSpace > 0}
-                                                            onCheckedChange={(on) =>
-                                                                setCardmirrorPasteSpace(on ? 1 : 0)
-                                                            }
-                                                            data-testid="paste-space-toggle"
-                                                            aria-label="Insert space after paste"
-                                                        />
-                                                    }
-                                                />
-                                                {cardmirrorPasteSpace > 0 && (
-                                                    <SettingRow
-                                                        title="Empty cells"
-                                                        description="How many empty cells each send leaves below itself."
-                                                        control={
-                                                            <Input
-                                                                type="text"
-                                                                inputMode="numeric"
-                                                                value={spaceDraft}
-                                                                onChange={(e) =>
-                                                                    setSpaceDraft(e.target.value)
-                                                                }
-                                                                onBlur={commitSpace}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === "Enter")
-                                                                        e.currentTarget.blur();
-                                                                }}
-                                                                aria-label="Empty cells after a paste"
-                                                                data-testid="paste-space-input"
-                                                                className="h-8 w-16 text-right tabular-nums"
-                                                            />
+                                            <SettingRow
+                                                title="Send to CardMirror as"
+                                                description="What style ebb should apply to text sent to CardMirror."
+                                                control={
+                                                    <Select
+                                                        value={cardmirrorTextType}
+                                                        items={CARDMIRROR_TEXT_TYPES}
+                                                        onValueChange={(value) =>
+                                                            setCardmirrorTextType(
+                                                                value as CardMirrorTextType,
+                                                            )
                                                         }
-                                                    />
-                                                )}
-                                            </>
+                                                    >
+                                                        <SelectTrigger
+                                                            aria-label="Send to CardMirror as"
+                                                            data-testid="cardmirror-text-type-select"
+                                                            className="w-44"
+                                                        >
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {CARDMIRROR_TEXT_TYPES.map((t) => (
+                                                                <SelectItem
+                                                                    key={t.value}
+                                                                    value={t.value}
+                                                                    data-testid={`cardmirror-text-type-${t.value}`}
+                                                                >
+                                                                    {t.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                }
+                                            />
                                         )}
                                     </section>
                                 )}

@@ -8,11 +8,13 @@ describe("parseFlowRequest", () => {
             mode: "cell",
             docTitle: "AT - Cap K",
             items: [{ kind: "tag", text: "Perm solves", source: "cmsrc1.a", key: "doc-1|perm" }],
+            space: 2,
         });
         expect(req).toEqual({
             mode: "cell",
             docTitle: "AT - Cap K",
             items: [{ kind: "tag", text: "Perm solves", token: "cmsrc1.a", key: "doc-1|perm" }],
+            space: 2,
         });
     });
 
@@ -21,6 +23,16 @@ describe("parseFlowRequest", () => {
         expect(req?.mode).toBe("column");
         expect(req?.items[0]).toEqual({ kind: "analytic", text: "No link", token: "", key: "" });
         expect(req?.docTitle).toBe("");
+    });
+
+    it("limits the empty-cell count, and reads a missing or bad one as none", () => {
+        const space = (value: unknown) =>
+            parseFlowRequest({ items: [{ text: "Kept" }], space: value })?.space;
+        expect(space(99)).toBe(10);
+        expect(space(-3)).toBe(0);
+        expect(space(1.6)).toBe(2);
+        expect(space("two")).toBe(0);
+        expect(parseFlowRequest({ items: [{ text: "Kept" }] })?.space).toBe(0);
     });
 
     it("drops items with no text but keeps the rest", () => {

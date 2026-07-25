@@ -53,7 +53,6 @@ function resetStore() {
         keymapOverrides: {},
         settingsOpen: true,
         cardmirrorEnabled: true,
-        cardmirrorPasteSpace: 0,
     });
 }
 
@@ -349,64 +348,6 @@ describe("SettingsPanel", () => {
             act(() => useFlowStore.getState().setCardmirrorEnabled(false));
             expect(screen.queryByTestId("cmd-cell.jumpToSource")).toBeNull();
             expect(screen.queryByTestId("cmd-cell.sendToDoc")).toBeNull();
-        });
-
-        it("turns the paste space on at one cell and shows the count", async () => {
-            const user = userEvent.setup();
-            renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
-
-            const toggle = screen.getByTestId("paste-space-toggle");
-            expect(toggle).not.toBeChecked();
-            expect(screen.queryByTestId("paste-space-input")).toBeNull();
-
-            await user.click(toggle);
-            expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(1);
-            expect(screen.getByTestId("paste-space-input")).toHaveValue("1");
-        });
-
-        it("turns the paste space off again", async () => {
-            const user = userEvent.setup();
-            useFlowStore.getState().setCardmirrorPasteSpace(3);
-            renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
-
-            const toggle = screen.getByTestId("paste-space-toggle");
-            expect(toggle).toBeChecked();
-            await user.click(toggle);
-            expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(0);
-            expect(screen.queryByTestId("paste-space-input")).toBeNull();
-        });
-
-        it("commits an edited count on blur and limits it", async () => {
-            const user = userEvent.setup();
-            useFlowStore.getState().setCardmirrorPasteSpace(1);
-            renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
-
-            const input = screen.getByTestId("paste-space-input");
-            await user.clear(input);
-            await user.type(input, "40");
-            await user.tab();
-            expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(10);
-            expect(screen.getByTestId("paste-space-input")).toHaveValue("10");
-        });
-
-        it("resets the field to the stored value when the typed value clamps to it unchanged", async () => {
-            const user = userEvent.setup();
-            useFlowStore.getState().setCardmirrorPasteSpace(10);
-            renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
-
-            const input = screen.getByTestId("paste-space-input");
-            await user.clear(input);
-            await user.type(input, "40");
-            await user.tab();
-            // The clamp lands back on 10, the value already in the store, so
-            // the mirroring effect never re-fires; commitSpace must still
-            // correct the field itself.
-            expect(useFlowStore.getState().cardmirrorPasteSpace).toBe(10);
-            expect(screen.getByTestId("paste-space-input")).toHaveValue("10");
         });
     });
 

@@ -39,8 +39,7 @@ function applyFlow(req: FlowRequest): BridgeReply {
     if (!selection) return bridgeError("no-active-cell");
 
     const [row, col] = selection;
-    const space = state.cardmirrorPasteSpace;
-    const cells = planFlowWrite(req.items, req.mode, req.docTitle, space);
+    const cells = planFlowWrite(req.items, req.mode, req.docTitle, req.space);
     // Insert-paste pushes the column's tail down, so the grid has to hold the
     // whole displaced run; an overwrite only has to hold the write itself.
     const needed = state.insertPaste
@@ -71,7 +70,7 @@ function applyFlow(req: FlowRequest): BridgeReply {
     return {
         status: 200,
         // The empty separator cells are not items, so they do not count.
-        body: { ok: true, written: cells.length - space, sheet: sheet.title, row, col },
+        body: { ok: true, written: cells.length - req.space, sheet: sheet.title, row, col },
     };
 }
 

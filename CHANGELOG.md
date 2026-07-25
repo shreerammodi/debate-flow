@@ -16,11 +16,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   cheatsheet. The integration stays on unless you turn it off, and it exists
   only in the desktop app: the web build has no CardMirror commands, no section
   in Settings, and answers nothing on the bridge.
-- The CardMirror section in Settings then Editor now has an "Insert space
-  after paste" switch and a count of empty cells. On, a CardMirror send writes
-  that many empty cells below itself, so consecutive sends read as separate
-  cards instead of one continuous run. Off, or a count of 0, a send leaves no
-  empty cells, the same as before.
+- A CardMirror send can leave empty cells below itself, so consecutive sends
+  read as separate cards instead of one continuous run. The count is a setting
+  of the ebb plugin inside CardMirror (its gear in CardMirror's Settings then
+  Plugins), not an ebb setting, and it travels with each send. Sends that name
+  no count, including those from an older plugin, leave no empty cells.
 
 ## [0.7.0] - 2026-07-24
 

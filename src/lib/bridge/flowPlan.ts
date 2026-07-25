@@ -43,7 +43,7 @@ function metaFor(item: FlowItem, docTitle: string): CellMeta {
     return meta;
 }
 
-/** The empty separator cells a send leaves below it, given the setting. */
+/** The empty separator cells a send leaves below it, as the send asked. */
 function spacerCells(space: number): PlannedCell[] {
     return Array.from({ length: space }, () => ({ text: "", meta: {} }));
 }

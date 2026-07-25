@@ -48,8 +48,8 @@ function makeGrid(rows: number, cols: number) {
     return { hot, data, at, select: (row: number, col: number) => hot.selectCell(row, col) };
 }
 
-const send = (items: unknown[], mode = "column") =>
-    handleBridgeRequest("flow", { mode, docTitle: "AT - Cap K", items });
+const send = (items: unknown[], mode = "column", space = 0) =>
+    handleBridgeRequest("flow", { mode, docTitle: "AT - Cap K", items, space });
 
 const tag = { kind: "tag", text: "Perm solves", source: "cmsrc1.a", key: "doc-1|perm solves" };
 const cite = { kind: "cite", text: "Smith 24", source: "cmsrc1.b", key: "doc-1|smith 24" };
@@ -77,7 +77,6 @@ beforeEach(() => {
         insertPaste: false,
         revealTarget: null,
         cardmirrorEnabled: true,
-        cardmirrorPasteSpace: 0,
     });
 });
 
@@ -192,12 +191,11 @@ describe("the flow route", () => {
 
     it("leaves the empty cells below a send and lands the cursor below them", () => {
         loadRound();
-        useFlowStore.setState({ cardmirrorPasteSpace: 2 });
         const grid = makeGrid(10, 3);
         grid.select(0, 0);
         setActiveHot(grid.hot as never, vi.fn());
 
-        const reply = send([block, tag]);
+        const reply = send([block, tag], "column", 2);
 
         // `written` counts the items, not the rows the empty cells took.
         expect(reply.body).toMatchObject({ ok: true, written: 2 });
@@ -210,13 +208,12 @@ describe("the flow route", () => {
 
     it("overwrites text and decoration below the send when insert paste is off", () => {
         loadRound();
-        useFlowStore.setState({ cardmirrorPasteSpace: 1 });
         const grid = makeGrid(10, 3);
         grid.data[1][0] = "old note";
         grid.at(1, 0).className = "flow-highlight";
         setActiveHot(grid.hot as never, vi.fn());
 
-        send([tag]);
+        send([tag], "column", 1);
 
         expect(grid.data[0][0]).toBe("Perm solves");
         expect(grid.data[1][0]).toBe("");
@@ -225,13 +222,13 @@ describe("the flow route", () => {
 
     it("keeps the empty cells clear of the tail an insert paste pushes down", () => {
         loadRound();
-        useFlowStore.setState({ insertPaste: true, cardmirrorPasteSpace: 1 });
+        useFlowStore.setState({ insertPaste: true });
         const grid = makeGrid(10, 3);
         grid.data[0][0] = "old";
         grid.at(0, 0).className = "flow-bold";
         setActiveHot(grid.hot as never, vi.fn());
 
-        send([tag]);
+        send([tag], "column", 1);
 
         expect(grid.data[0][0]).toBe("Perm solves");
         expect(grid.data[1][0]).toBe("");
@@ -242,12 +239,11 @@ describe("the flow route", () => {
 
     it("grows the grid to hold the empty cells", () => {
         loadRound();
-        useFlowStore.setState({ cardmirrorPasteSpace: 3 });
         const grid = makeGrid(3, 3);
         grid.select(2, 0);
         setActiveHot(grid.hot as never, vi.fn());
 
-        send([tag]);
+        send([tag], "column", 3);
 
         expect(grid.data.length).toBeGreaterThanOrEqual(6);
         expect(grid.data[2][0]).toBe("Perm solves");

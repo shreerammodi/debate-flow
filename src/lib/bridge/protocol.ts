@@ -23,6 +23,8 @@ export interface FlowRequest {
     mode: "column" | "cell";
     docTitle: string;
     items: FlowItem[];
+    /** Empty cells to leave below the send, from CardMirror's plugin setting. */
+    space: number;
 }
 
 export interface RevealRequest {
@@ -44,6 +46,15 @@ export function bridgeError(error: string): BridgeReply {
 }
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
+
+/** The most empty cells a send may ask for below itself. */
+const MAX_SPACE = 10;
+
+/** A usable empty-cell count off the wire: whole and in range, else none. */
+function space(value: unknown): number {
+    if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+    return Math.min(MAX_SPACE, Math.max(0, Math.round(value)));
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" && !Array.isArray(value)
@@ -70,7 +81,12 @@ export function parseFlowRequest(body: unknown): FlowRequest | null {
         });
     }
     if (items.length === 0) return null;
-    return { mode: o.mode === "cell" ? "cell" : "column", docTitle: str(o.docTitle), items };
+    return {
+        mode: o.mode === "cell" ? "cell" : "column",
+        docTitle: str(o.docTitle),
+        items,
+        space: space(o.space),
+    };
 }
 
 /** Null when the body is not a usable `/reveal` request. */
