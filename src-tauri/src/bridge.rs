@@ -30,6 +30,11 @@ const APP_ID: &str = "ebb";
 const KIND: &str = "flow";
 const SCHEMA: u32 = 1;
 const TOKEN_HEADER: &str = "x-bridge-token";
+/// Identifies ebb to CardMirror on every gated outbound route. CardMirror
+/// pins one consent decision per app id, and rejects an unidentified caller
+/// outright, so this rides on all of them. `/ping` is spec'd identity-free:
+/// discovery has to work before an identity is known.
+const APP_ID_HEADER: &str = "X-App-Id";
 /// An inbound body is a handful of extracted items at worst; past this it is a
 /// resource attack, not a request.
 const MAX_BODY: usize = 4 * 1024 * 1024;
@@ -429,6 +434,7 @@ fn post(path: &str, body: &Json) -> Result<Json, String> {
     let sent = ureq::post(&format!("http://127.0.0.1:{}{path}", peer.port))
         .set("Content-Type", "application/json")
         .set("X-Bridge-Token", &peer.token)
+        .set(APP_ID_HEADER, APP_ID)
         .timeout(OUTBOUND_TIMEOUT)
         .send_string(&body.to_string());
     let text = match sent {
@@ -820,14 +826,19 @@ mod tests {
             for mut request in server.incoming_requests() {
                 let mut body = Vec::new();
                 let _ = request.as_reader().read_to_end(&mut body);
-                let token = request
-                    .headers()
-                    .iter()
-                    .find(|header| header.field.equiv("X-Bridge-Token"))
-                    .map(|header| header.value.as_str().to_string());
+                let header = |name: &'static str| {
+                    request
+                        .headers()
+                        .iter()
+                        .find(|header| header.field.equiv(name))
+                        .map(|header| header.value.as_str().to_string())
+                };
+                let token = header("X-Bridge-Token");
+                let app_id = header(APP_ID_HEADER);
                 seen.lock().push(json!({
                     "url": request.url(),
                     "token": token,
+                    "appId": app_id,
                     "body": serde_json::from_slice::<Json>(&body).unwrap_or(Json::Null),
                 }));
                 let reply = json!({ "ok": false, "error": "doc-not-open", "docTitle": "AT" });
@@ -865,6 +876,13 @@ mod tests {
             calls[2]["body"],
             json!({ "text": "Perm solves", "role": "cite", "newParagraph": true, "omitted": false })
         );
+
+        // CardMirror gates every route but /ping on a per-app consent
+        // decision, and rejects an unidentified caller outright.
+        assert_eq!(calls[1]["appId"], APP_ID, "/jump identifies ebb");
+        assert_eq!(calls[2]["appId"], APP_ID, "/insert identifies ebb");
+        // /ping is spec'd identity-free: discovery precedes identity.
+        assert_eq!(calls[0]["appId"], Json::Null, "/ping stays identity-free");
 
         // CardMirror quits: the identity file stays, the session file goes.
         std::fs::remove_file(dir.join("cardmirror.session.json")).unwrap();

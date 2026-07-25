@@ -72,6 +72,13 @@ export interface CardMirrorReply {
     /** Present on `doc-not-open`, so the user can be told what to open. */
     docTitle?: string;
     inserted?: boolean;
+    /**
+     * `"consent"` means the route is queued behind a consent prompt in
+     * CardMirror and answered `ok: true` with nothing done yet. The user's
+     * click on Allow replays the queued action, so this is never a retry
+     * signal, and never a success either.
+     */
+    pending?: string;
 }
 
 function asReply(value: unknown): CardMirrorReply {
@@ -81,6 +88,7 @@ function asReply(value: unknown): CardMirrorReply {
         error: typeof o.error === "string" ? o.error : undefined,
         docTitle: typeof o.docTitle === "string" ? o.docTitle : undefined,
         inserted: o.inserted === true,
+        pending: typeof o.pending === "string" ? o.pending : undefined,
     };
 }
 

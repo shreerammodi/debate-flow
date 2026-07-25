@@ -202,3 +202,76 @@ describe("the desktop-only gate", () => {
         expect(toasted).not.toHaveBeenCalled();
     });
 });
+
+describe("CardMirror's consent gate", () => {
+    const WAITING = "Waiting for approval in CardMirror. No need to try again.";
+
+    beforeEach(() => {
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+    });
+
+    it("waits instead of claiming a send that has not happened yet", async () => {
+        // A queued insert answers ok:true with inserted:false - accepted for
+        // delivery, nothing written. Reporting that as "Sent" would be a lie.
+        invoked.mockResolvedValue({ ok: true, inserted: false, pending: "consent" });
+
+        await runSendToDoc();
+
+        expect(lastToast()).toBe(WAITING);
+    });
+
+    it("says a queued jump is waiting rather than staying silent", async () => {
+        invoked.mockResolvedValue({ ok: true, jumped: false, pending: "consent" });
+
+        await runJumpToSource();
+
+        expect(lastToast()).toBe(WAITING);
+    });
+
+    it("leaves a queued action queued, since approving replays it", async () => {
+        invoked.mockResolvedValue({ ok: true, inserted: false, pending: "consent" });
+
+        await runSendToDoc();
+
+        expect(invoked).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats an unknown pending kind as unfinished, not as success", async () => {
+        invoked.mockResolvedValue({ ok: true, inserted: false, pending: "something-new" });
+
+        await runSendToDoc();
+
+        expect(lastToast()).not.toBe("Sent to CardMirror.");
+    });
+
+    it("explains every consent refusal, on both routes alike", async () => {
+        const cases: [string, string][] = [
+            ["unidentified", "CardMirror did not recognize ebb. Check for an ebb update."],
+            ["inserts-disabled", "CardMirror is refusing inserts from other apps."],
+            [
+                "not-allowed",
+                "CardMirror is blocking ebb. Allow it under External apps in its settings.",
+            ],
+        ];
+        for (const [error, message] of cases) {
+            invoked.mockResolvedValue({ ok: false, error });
+
+            await runSendToDoc();
+            expect(lastToast(), `insert ${error}`).toBe(message);
+
+            await runJumpToSource();
+            expect(lastToast(), `jump ${error}`).toBe(message);
+        }
+    });
+
+    it("never routes around a refusal with a second attempt", async () => {
+        invoked.mockResolvedValue({ ok: false, error: "not-allowed" });
+
+        await runSendToDoc();
+        await runJumpToSource();
+
+        // One call per command: a denial is the user's decision, so there is
+        // no retry and no other way to the document.
+        expect(invoked).toHaveBeenCalledTimes(2);
+    });
+});

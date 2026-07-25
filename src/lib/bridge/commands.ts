@@ -41,6 +41,28 @@ const INSERT_MESSAGE: Record<string, string> = {
     "bad-request": "CardMirror would not take that text.",
 };
 
+/**
+ * CardMirror's consent layer. One decision per app governs its whole gated
+ * surface, so these read the same on jump and insert alike.
+ *
+ * All three are terminal: the user either made this choice deliberately or
+ * has to change it in CardMirror. Retrying would nag them, and reaching the
+ * document another way would route around a decision they made on purpose,
+ * so ebb does neither - it says what happened and stops.
+ */
+const CONSENT_MESSAGE: Record<string, string> = {
+    unidentified: "CardMirror did not recognize ebb. Check for an ebb update.",
+    "inserts-disabled": "CardMirror is refusing inserts from other apps.",
+    "not-allowed": "CardMirror is blocking ebb. Allow it under External apps in its settings.",
+};
+
+/**
+ * CardMirror queued the action behind its consent prompt and has done
+ * nothing yet. Approving there replays what was queued, so the user's click
+ * is the redo and a second send would only queue a duplicate.
+ */
+const CONSENT_PENDING = "Waiting for approval in CardMirror. No need to try again.";
+
 /** The provenance on the focused cell, or null when it was typed here. */
 function selectedSource(): CellSource | null {
     const hot = getActiveHot();
@@ -75,20 +97,28 @@ function selectedText(): string {
     return parts.join("\n");
 }
 
-/** Null when the call and CardMirror both succeeded, else what to tell the user. */
-function failureMessage(
+/**
+ * Null when CardMirror finished the job, else what to tell the user: a
+ * transport failure, a refusal, or a consent prompt still waiting on them.
+ */
+function outcomeMessage(
     call: BridgeCall<CardMirrorReply>,
     errors: Record<string, string>,
     fallback: string,
 ): string | null {
     if (!call.ok) return TRANSPORT_MESSAGE[call.error];
+    // Checked before `ok`, because a queued action answers `ok: true` with
+    // nothing done. Consent is the only pending kind the bridge spec defines;
+    // treating any other as unfinished keeps a future one from being reported
+    // as a success that never happened.
+    if (call.value.pending) return CONSENT_PENDING;
     if (call.value.ok) return null;
     const error = call.value.error ?? "";
     if (error === "doc-not-open") {
         const title = call.value.docTitle;
         return title ? `Open "${title}" in CardMirror first.` : "Open the document in CardMirror.";
     }
-    return errors[error] ?? fallback;
+    return CONSENT_MESSAGE[error] ?? errors[error] ?? fallback;
 }
 
 export async function runJumpToSource(): Promise<void> {
@@ -98,7 +128,7 @@ export async function runJumpToSource(): Promise<void> {
         toast("This cell did not come from CardMirror.");
         return;
     }
-    const message = failureMessage(
+    const message = outcomeMessage(
         await cardmirrorJump(source.token),
         JUMP_MESSAGE,
         "CardMirror could not open this cell's source.",
@@ -114,7 +144,7 @@ export async function runSendToDoc(): Promise<void> {
         return;
     }
     const call = await cardmirrorInsert(text, useFlowStore.getState().cardmirrorTextType);
-    const message = failureMessage(call, INSERT_MESSAGE, "CardMirror could not take that text.");
+    const message = outcomeMessage(call, INSERT_MESSAGE, "CardMirror could not take that text.");
     if (message) {
         toast(message);
         return;

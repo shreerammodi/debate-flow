@@ -7,6 +7,19 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- CardMirror can now ask your permission before another app writes into a
+  document, and ebb identifies itself so that prompt names it. The choice you
+  make there sticks: allow ebb once, allow it always, or deny it, and change
+  your mind later under External apps in CardMirror's settings. While the
+  prompt is waiting, ebb says it is waiting for approval rather than claiming
+  the text went through. Approving finishes the send or jump that was already
+  queued, so there is nothing to do again on this side. If you deny ebb, or
+  turn off inbound inserts entirely, ebb says which of the two happened and
+  stops there instead of retrying or reaching the document some other way. A
+  CardMirror too old to ask keeps working exactly as before.
+
 ## [0.7.1] - 2026-07-25
 
 ### Added
