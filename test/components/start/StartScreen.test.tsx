@@ -139,18 +139,6 @@ describe("StartScreen", () => {
         expect(push).toHaveBeenCalledWith(`/flow?path=${encodeURIComponent(`${FLOWS_DIR}/a.ebb`)}`);
     });
 
-    it("forgets a recent without deleting its file", async () => {
-        const path = `${FLOWS_DIR}/a.ebb`;
-        seedRecents([path]);
-        render(<StartScreen />);
-        await screen.findByTestId("start-recent-1");
-
-        await userEvent.click(screen.getByRole("button", { name: /Remove .* from recent flows/ }));
-
-        expect(screen.queryByTestId("start-recent-1")).not.toBeInTheDocument();
-        expect(fs.files.has(path)).toBe(true);
-    });
-
     it("links out to the docs, the repo, and the author", () => {
         render(<StartScreen />);
         expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute(

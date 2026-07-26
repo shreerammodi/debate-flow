@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 import { parseFlowFile } from "@/lib/persistence/flowFile";
 import { getFlowFs } from "@/lib/persistence/flowFs";
 import { displayPath } from "@/lib/persistence/flowPaths";
-import { forgetRecent } from "@/lib/persistence/flowSession";
 import { loadRecents, RECENTS_SHOWN, saveRecents } from "@/lib/persistence/recents";
 import { buildSummary, recentDetail, recentLabel } from "@/lib/start/summary";
 
@@ -25,8 +24,6 @@ export interface RecentEntry {
 export interface RecentFlows {
     /** Null while loading, so the screen can hold its frame instead of flashing. */
     entries: RecentEntry[] | null;
-    /** Drop a row without touching the file it points at. */
-    forget: (path: string) => void;
     /** Re-read the list, after a migration has written new files. */
     refresh: () => void;
 }
@@ -47,11 +44,6 @@ export function useRecentFlows(): RecentFlows {
     const [entries, setEntries] = useState<RecentEntry[] | null>(null);
     // Bumped after a migration so the list re-reads and shows the new files.
     const [nonce, setNonce] = useState(0);
-
-    const forget = useCallback((path: string) => {
-        setEntries((current) => current?.filter((e) => e.path !== path) ?? null);
-        void forgetRecent(path);
-    }, []);
 
     const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
@@ -103,5 +95,5 @@ export function useRecentFlows(): RecentFlows {
         };
     }, [nonce]);
 
-    return { entries, forget, refresh };
+    return { entries, refresh };
 }

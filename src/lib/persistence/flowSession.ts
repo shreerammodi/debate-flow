@@ -20,7 +20,7 @@ import { parseFlowFile, parseLegacyExport, serializeFlow } from "./flowFile";
 import { getFlowFs, type FlowFs } from "./flowFs";
 import { EBB_EXT, basename, suggestFilename } from "./flowPaths";
 import { resolveFlowsDir } from "./flowsDir";
-import { dropRecent, loadRecents, promoteRecent, saveRecents } from "./recents";
+import { loadRecents, promoteRecent, saveRecents } from "./recents";
 
 /** Lifecycle of a single save, reported so the header can reassure the user. */
 export type SaveStatus = "saving" | "saved" | "error";
@@ -33,12 +33,6 @@ const DEBOUNCE_MS = 500;
 export async function noteOpened(path: string, fs?: FlowFs): Promise<void> {
     const io = fs ?? (await getFlowFs());
     await saveRecents(io, promoteRecent(await loadRecents(io), path, Date.now()));
-}
-
-/** Forget a path without touching the file it points at. */
-export async function forgetRecent(path: string, fs?: FlowFs): Promise<void> {
-    const io = fs ?? (await getFlowFs());
-    await saveRecents(io, dropRecent(await loadRecents(io), path));
 }
 
 // --- Reading -------------------------------------------------------------------

@@ -6,7 +6,6 @@ import { FLOW_FILE_VERSION, parseFlowFile, serializeFlow } from "@/lib/persisten
 import {
     attachFlowAutosave,
     createFlowFile,
-    forgetRecent,
     pickFlowToOpen,
     readFlowAt,
     saveFlowAs,
@@ -101,16 +100,6 @@ describe("saveFlowAs", () => {
         fs.nextSave = null;
         expect(await saveFlowAs(makeFlowRound({}), fs)).toBeNull();
         expect(fs.writes).toEqual([]);
-    });
-});
-
-describe("forgetRecent", () => {
-    it("drops the entry without touching the file", async () => {
-        const path = await createFlowFile(makeFlowRound({}), fs);
-        await forgetRecent(path, fs);
-
-        expect(await loadRecents(fs)).toEqual([]);
-        expect(fs.files.has(path)).toBe(true);
     });
 });
 

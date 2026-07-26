@@ -40,7 +40,7 @@ export default function StartScreen() {
     const setNewFlowOpen = useFlowStore((s) => s.setNewFlowOpen);
     const setSettingsOpen = useFlowStore((s) => s.setSettingsOpen);
     const setCheatsheetOpen = useFlowStore((s) => s.setCheatsheetOpen);
-    const { entries, forget, refresh } = useRecentFlows();
+    const { entries, refresh } = useRecentFlows();
     const [cursor, setCursor] = useState(0);
     const [version, setVersion] = useState(process.env.NEXT_PUBLIC_EBB_VERSION ?? "");
 
@@ -169,7 +169,6 @@ export default function StartScreen() {
                             active={cursor === actions.length + i}
                             onHover={() => setCursor(actions.length + i)}
                             onSelect={() => open(entry.path)}
-                            onForget={() => forget(entry.path)}
                         />
                     ))
                 )}
@@ -232,42 +231,27 @@ interface RecentRowProps {
     active: boolean;
     onHover: () => void;
     onSelect: () => void;
-    onForget: () => void;
 }
 
-function RecentRow({ entry, index, active, onHover, onSelect, onForget }: RecentRowProps) {
+function RecentRow({ entry, index, active, onHover, onSelect }: RecentRowProps) {
     return (
-        <div className="group relative">
-            <Row
-                badge={String(index + 1)}
-                active={active}
-                onHover={onHover}
-                onSelect={onSelect}
-                testid={`start-recent-${index + 1}`}
-            >
-                <span className="flex items-baseline gap-2">
-                    <span className="truncate">{entry.label}</span>
-                    {entry.detail && (
-                        <span className="text-muted-foreground truncate text-xs">
-                            {entry.detail}
-                        </span>
-                    )}
-                    <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs">
-                        {relativeTime(entry.updatedAt)}
-                    </span>
+        <Row
+            badge={String(index + 1)}
+            active={active}
+            onHover={onHover}
+            onSelect={onSelect}
+            testid={`start-recent-${index + 1}`}
+        >
+            <span className="flex items-baseline gap-2">
+                <span className="truncate">{entry.label}</span>
+                {entry.detail && (
+                    <span className="text-muted-foreground truncate text-xs">{entry.detail}</span>
+                )}
+                <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs">
+                    {relativeTime(entry.updatedAt)}
                 </span>
-                <span className="text-muted-foreground/70 block truncate text-xs">
-                    {entry.display}
-                </span>
-            </Row>
-            <button
-                type="button"
-                aria-label={`Remove ${entry.label} from recent flows`}
-                onClick={onForget}
-                className="text-muted-foreground hover:text-foreground absolute top-1.5 right-1 hidden px-1 text-xs group-hover:block"
-            >
-                x
-            </button>
-        </div>
+            </span>
+            <span className="text-muted-foreground/70 block truncate text-xs">{entry.display}</span>
+        </Row>
     );
 }

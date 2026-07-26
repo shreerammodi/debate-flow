@@ -35,10 +35,6 @@ export function promoteRecent(
     return [{ path, openedAt }, ...list.filter((r) => r.path !== path)].slice(0, RECENTS_KEPT);
 }
 
-export function dropRecent(list: readonly RecentFlow[], path: string): RecentFlow[] {
-    return list.filter((r) => r.path !== path);
-}
-
 export function serializeRecents(list: readonly RecentFlow[]): string {
     return JSON.stringify({ version: 1, flows: list }, null, 2) + "\n";
 }

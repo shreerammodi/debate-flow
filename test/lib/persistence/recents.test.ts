@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-    dropRecent,
     parseRecents,
     promoteRecent,
     RECENTS_KEPT,
@@ -28,12 +27,6 @@ describe("promoteRecent", () => {
         for (let i = 0; i < RECENTS_KEPT + 5; i++) list = promoteRecent(list, `/f${i}`, i);
         expect(list).toHaveLength(RECENTS_KEPT);
         expect(list[0].path).toBe(`/f${RECENTS_KEPT + 4}`);
-    });
-});
-
-describe("dropRecent", () => {
-    it("removes only the named path", () => {
-        expect(dropRecent([entry("/a"), entry("/b")], "/a").map((r) => r.path)).toEqual(["/b"]);
     });
 });
 
