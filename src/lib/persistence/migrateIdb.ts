@@ -126,8 +126,7 @@ export async function migrateFromIndexedDb(
     }
 
     const io = fs ?? (await getFlowFs());
-    const flowsDir = targetDir;
-    const trashDir = joinPath(flowsDir, "trash");
+    const trashDir = joinPath(targetDir, "trash");
 
     const written: { path: string; live: boolean }[] = [];
     for (const record of records) {
@@ -140,7 +139,7 @@ export async function migrateFromIndexedDb(
         // normalizeFlow drops deletedAt; the subfolder carries that fact now.
         const round = normalizeFlow(record as FlowRound);
         const path = await io.createFlow(
-            trashed ? trashDir : flowsDir,
+            trashed ? trashDir : targetDir,
             suggestFilename(round),
             serializeFlow(round),
         );
@@ -169,6 +168,6 @@ export async function migrateFromIndexedDb(
     return {
         moved: live.length,
         trashed: written.length - live.length,
-        flowsDir,
+        flowsDir: targetDir,
     };
 }
