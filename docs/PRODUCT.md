@@ -15,7 +15,10 @@ context: prepping and organizing past flows from the dashboard between rounds.
 ## Product Purpose
 
 Ebb is a local-first, privacy-centric, keyboard-first tool for flowing debate
-rounds. There is no backend and no network. It exists to be a purpose-built
+rounds. There is no backend, no account, and no telemetry, and it works with no
+network at all. Sharing a flow with a partner is the one networked feature: it
+is opt-in, off by default, and reaches only the peers you invite. It exists to
+be a purpose-built
 instrument for flowing, faster and more precise than a spreadsheet or paper,
 with debate-native structure (sides, columns per speech, response numbering,
 drops, extensions). Success is a debater reaching for it instead of Excel
@@ -31,12 +34,12 @@ speed, density, and correctness rather than decoration or hand-holding.
 
 ## Anti-references
 
-- **Generic SaaS dashboard** — no card grids, gradient hero-metric panels, or
+- **Generic SaaS dashboard** - no card grids, gradient hero-metric panels, or
   marketing chrome. This is not a startup template.
-- **Heavy / chrome-laden UI** — no toolbar thickets, modal-heavy flows, or
+- **Heavy / chrome-laden UI** - no toolbar thickets, modal-heavy flows, or
   mouse-first affordances that slow flowing. Chrome stays minimal; the flow grid
   is the page.
-- **Colorful / playful** — color is reserved and meaningful
+- **Colorful / playful** - color is reserved and meaningful
   (Aff/Neg/selection/status), never decorative. No playful accents or rainbow
   data viz.
 
@@ -52,16 +55,22 @@ speed, density, and correctness rather than decoration or hand-holding.
   dashboard.
 - **The tool disappears.** Chrome recedes so the flow is the only thing
   competing for attention mid-round. Non-intrusive controls, no nagging.
-- **Local-first and lossless.** No network, no telemetry. The user trusts it
-  with a round because it cannot lose data or phone home.
+- **Local-first and lossless.** No telemetry, no accounts, no backend. It cannot
+  phone home. Every flow is a file on the user's own disk, and the app never
+  requires a network to open, edit, or save one. The user trusts it with a round
+  because it cannot lose data and never talks to anyone uninvited.
+- **Consent, not abstinence.** A flow leaves the machine only when the user
+  sends it somewhere: an export they choose, or a peer they invite. Shared
+  editing sits behind a master switch that is off by default, and the off state
+  is proven by test, not promised.
 
 ## Accessibility & Inclusion
 
-- **WCAG AA contrast** for all text (body ≥4.5:1, large text ≥3:1). No
+- **WCAG AA contrast** for all text (body >=4.5:1, large text >=3:1). No
   light-gray body text on tinted near-white.
-- **Full keyboard operability** — every action reachable without a mouse; a core
+- **Full keyboard operability** - every action reachable without a mouse; a core
   product value, not an add-on.
-- **Color-blind safe** — Aff/Neg and status are never distinguished by hue
+- **Color-blind safe** - Aff/Neg and status are never distinguished by hue
   alone; pair with text, position, labels, or borders so meaning survives
   without color.
 - Motion stays subtle and purposeful; honor `prefers-reduced-motion` where

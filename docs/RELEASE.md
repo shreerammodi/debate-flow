@@ -19,10 +19,18 @@ links carry the internals.
 | **Web build**   | Static export in `out/`                | Vercel CDN, no backend            | User reloads; the CDN always serves current         |
 | **Desktop app** | Tauri 2 shell wrapping the same `out/` | Signed installers, GitHub Release | In-app signed auto-updater, install on user confirm |
 
-Local-first invariant holds for all three: no backend, no telemetry. The only
-network the runtime touches is fetching `latest.json` + update artifacts from
-GitHub Releases, and that path is **desktop-only** and **opt-in** (`isDesktop()`
-short-circuits the whole update layer on web).
+Local-first invariant holds for all three: no backend, no telemetry, no
+accounts. Two network paths exist, and the user opts into each one:
+
+1. **Updates.** Fetching `latest.json` + update artifacts from GitHub Releases.
+   **Desktop-only** and **opt-in** (`isDesktop()` short-circuits the whole
+   update layer on web), and the install waits on user confirm.
+2. **Shared editing.** A direct peer connection to a partner the user invited,
+   behind a master switch that is off by default
+   (`docs/specs/2026-07-26-shared-editing.md`). Off binds no endpoint and
+   contacts nothing, which is asserted by test.
+
+Neither path sends a flow anywhere the user did not choose.
 
 ## 2. Versioning
 
@@ -42,9 +50,9 @@ Then commit all four, tag `vX.Y.Z`, and push with `git push --follow-tags`.
 Runs on every push to `main` and every PR. Two parallel jobs, both on
 `ubuntu-22.04`:
 
-- **`web`** — `npm ci -> npm test -> npm run lint -> npm run build`. Gates all
+- **`web`** - `npm ci -> npm test -> npm run lint -> npm run build`. Gates all
   logic, including the pure update-policy tests in `src/lib/update/*.test.ts`.
-- **`desktop`** — `npm ci -> npm run build -> cargo check`. The web build runs
+- **`desktop`** - `npm ci -> npm run build -> cargo check`. The web build runs
   first because Tauri's `generate_context!` reads `frontendDist: ../out`, which
   must exist for `cargo check` to compile.
 

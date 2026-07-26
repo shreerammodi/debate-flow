@@ -146,7 +146,7 @@ reserved hues carry all meaning.
 
 ### Reserved (meaning-carrying)
 
-- **Aff Blue** (#1d4ed8, dark #7da2ff): everything affirmative — speech
+- **Aff Blue** (#1d4ed8, dark #7da2ff): everything affirmative - speech
   headers, side badges, team names, sheet markers.
 - **Neg Red** (#c0271f, dark #f0776b): everything negative. Never used
   for errors; that's `destructive`'s job.
@@ -162,7 +162,7 @@ reserved hues carry all meaning.
 
 **The Reserved Ink Rule.** Color always encodes information: side,
 selection, or status. Spending a hue on decoration is prohibited. If an
-element needs emphasis, use weight, size, or position — never a new color.
+element needs emphasis, use weight, size, or position - never a new color.
 
 **The Paper Rule.** The flow sheet stays on fixed light values in both
 themes, like a physical page under any light. Side colors are re-pinned to

@@ -24,15 +24,32 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
   test-driven where practical.
 - **Pure logic goes in `src/lib`**, not in components. Keep `lib/`
   framework-agnostic and testable; components wire it to React.
-- **Local-first**: never add network calls, telemetry, or backend dependencies.
-  All state is on the user's machine.
+- **Local-first**: never add a network call the user has not explicitly opted
+  into. The rule is consent, not a ban. Storage is unconditional: every flow is
+  a file on the user's own disk, and the user can read, write, and open one with
+  no network at all.
+  - **Never, under any toggle**: telemetry, analytics, crash reporting, remote
+    config, update pings outside the signed updater, accounts, or a backend of
+    our own.
+  - **Permitted, behind an explicit opt-in**: sending a flow to a peer the user
+    invited. Shared editing (`docs/specs/2026-07-26-shared-editing.md`) is the
+    only such feature. It sits behind a master switch that is off by default,
+    like `cardmirrorEnabled`, and off leaves every route dead.
+  - **The opt-in is an invariant, so it is test-proven, not asserted.** With the
+    switch off, the app binds no endpoint, dials no peer, publishes no
+    discovery record, and contacts no relay. A test asserts each of those four
+    against a fake transport. DNS-based peer discovery stays disabled in every
+    state, so an idle ebb publishes nothing about itself.
+  - A peer link carries one round and nothing else: no folder listing, no path
+    access, no arbitrary read. Hold it to the standard
+    `docs/security-review.md` sets for the loopback bridge.
 - **All flow I/O goes through the `FlowFs` port** (`src/lib/persistence/flowFs.ts`),
   never directly through `invoke` or a Tauri plugin. That is what lets the
   session, recents, and migration be tested against `flowFsMemory` instead of a
   mocked IPC layer. `tauri-plugin-fs` is deliberately not installed: flow I/O
   uses the five narrow commands in `src-tauri/src/flowfile.rs` so the webview
   never holds a general filesystem capability.
-- Keyboard-first UX is a core product value — preserve and extend keybindings
+- Keyboard-first UX is a core product value - preserve and extend keybindings
   rather than replacing them with mouse-only flows.
 
 ## Comments
