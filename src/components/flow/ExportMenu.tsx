@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tip } from "@/components/ui/tooltip";
+import { errorMessage } from "@/lib/errorMessage";
 import { downloadXlsx } from "@/lib/export/xlsx";
 import type { FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -22,7 +23,7 @@ export default function ExportMenu() {
         try {
             await fn(round);
         } catch (err) {
-            toast.error(`Export failed: ${err instanceof Error ? err.message : "unknown error"}`);
+            toast.error(`Export failed: ${errorMessage(err, "unknown error")}`);
         }
     }
 

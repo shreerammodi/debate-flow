@@ -87,9 +87,10 @@ function Choices({ onPick }: { onPick: () => void }) {
                     type="button"
                     data-testid={`new-flow-${choice.event}${choice.firstSide ? `-${choice.firstSide}` : ""}`}
                     onMouseEnter={() => setCursor(i)}
+                    onFocus={() => setCursor(i)}
                     onClick={() => choose(choice)}
                     className={cn(
-                        "flex w-full items-center gap-3 rounded px-2 py-1.5 text-left",
+                        "flex w-full items-center gap-3 rounded px-2 py-1.5 text-left outline-none",
                         i === cursor ? "bg-accent text-accent-foreground" : "",
                     )}
                 >

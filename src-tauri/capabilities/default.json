@@ -17,9 +17,11 @@
         "opener:allow-reveal-item-in-dir",
         {
             "identifier": "opener:allow-open-url",
+            "comment": "Matched with glob::Pattern against the raw URL string, not URLPattern, so a bare origin needs its own entry: 'https://smodi.net/*' cannot match 'https://smodi.net'.",
             "allow": [
                 { "url": "https://ebb.smodi.net/*" },
                 { "url": "https://github.com/shreerammodi/ebb*" },
+                { "url": "https://smodi.net" },
                 { "url": "https://smodi.net/*" }
             ]
         }

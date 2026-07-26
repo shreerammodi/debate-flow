@@ -26,6 +26,7 @@ const EXT: &str = "ebb";
 /// Where the start screen files new flows, and the home dir it shortens for
 /// display. Resolution only; nothing is created until a flow is written.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FlowPaths {
     flows_dir: String,
     home: String,
@@ -217,6 +218,24 @@ pub fn flow_paths_in(args: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frontend reads `flowsDir`. Serde defaults to the field name, so
+    /// without the camelCase rename this struct silently hands over
+    /// `flows_dir`, the frontend reads undefined, and every new flow is
+    /// created with no directory. Nothing in the type system catches that -
+    /// only this does.
+    #[test]
+    fn paths_cross_the_wire_in_camel_case() {
+        let json = serde_json::to_value(FlowPaths {
+            flows_dir: "/home/a/Documents/ebb".into(),
+            home: "/home/a".into(),
+        })
+        .unwrap();
+
+        assert_eq!(json["flowsDir"], "/home/a/Documents/ebb");
+        assert_eq!(json["home"], "/home/a");
+        assert!(json.get("flows_dir").is_none());
+    }
 
     fn tmpdir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ebb-flowfile-{tag}-{}", std::process::id()));

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { navigateToFlow } from "@/lib/commands/flowNav";
+import { errorMessage } from "@/lib/errorMessage";
 import { noteOpened } from "@/lib/persistence/flowSession";
 import { isDesktop } from "@/lib/update/adapter";
 
@@ -49,7 +50,7 @@ export default function OpenWithHost() {
                 // would just be a flicker on the way to it.
                 if (pending.length) openPath(pending[pending.length - 1]);
             } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Could not open that flow");
+                toast.error(errorMessage(err, "Could not open that flow"));
             }
         })();
 

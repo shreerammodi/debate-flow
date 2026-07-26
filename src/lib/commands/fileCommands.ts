@@ -9,6 +9,7 @@
 
 import { toast } from "sonner";
 
+import { errorMessage } from "@/lib/errorMessage";
 import { getFlowFs } from "@/lib/persistence/flowFs";
 import { pickFlowToOpen, saveFlowAs, saveFlowNow } from "@/lib/persistence/flowSession";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -17,7 +18,7 @@ import { useSaveStatus } from "@/lib/store/useSaveStatus";
 import { navigateToFlow, navigateToStart } from "./flowNav";
 
 function report(fallback: string, err: unknown): void {
-    toast.error(err instanceof Error ? err.message : fallback);
+    toast.error(errorMessage(err, fallback));
 }
 
 export async function openFlowFromPicker(): Promise<void> {

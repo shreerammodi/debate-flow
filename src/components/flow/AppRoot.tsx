@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { flowRouteFor } from "@/lib/commands/flowNav";
+import { errorMessage } from "@/lib/errorMessage";
 import { applyFlowFont } from "@/lib/fonts/applyFlowFont";
 import { basename } from "@/lib/persistence/flowPaths";
 import { attachFlowAutosave, noteOpened, readFlowAt } from "@/lib/persistence/flowSession";
@@ -81,7 +82,7 @@ export default function AppRoot() {
                 if (newFlow) router.replace(flowRouteFor(path));
             })
             .catch((err: unknown) => {
-                toast.error(err instanceof Error ? err.message : "Could not open that flow");
+                toast.error(errorMessage(err, "Could not open that flow"));
                 router.replace("/");
             })
             .finally(() => {

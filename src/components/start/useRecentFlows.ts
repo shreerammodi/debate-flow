@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { errorMessage } from "@/lib/errorMessage";
 import { parseFlowFile } from "@/lib/persistence/flowFile";
 import { getFlowFs } from "@/lib/persistence/flowFs";
 import { displayPath } from "@/lib/persistence/flowPaths";
@@ -66,9 +67,7 @@ export function useRecentFlows(): RecentFlows {
                     toast.success(`Moved ${report.moved} ${noun} to ${report.flowsDir}`);
                 }
             } catch (err) {
-                toast.error(
-                    err instanceof Error ? err.message : "Could not move your existing flows",
-                );
+                toast.error(errorMessage(err, "Could not move your existing flows"));
             }
 
             const { home } = await fs.locations();

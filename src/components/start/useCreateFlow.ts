@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 
 import { flowRouteFor } from "@/lib/commands/flowNav";
+import { errorMessage } from "@/lib/errorMessage";
 import type { EventId } from "@/lib/format/events";
 import { makeFlowRound } from "@/lib/model/flow";
 import type { Side } from "@/lib/model/types";
@@ -27,7 +28,7 @@ export function useCreateFlow(): (event?: EventId, firstSide?: Side) => void {
             void createFlowFile(makeFlowRound({ event, firstSide }))
                 .then((path) => router.push(`${flowRouteFor(path)}&new=1`))
                 .catch((err: unknown) => {
-                    toast.error(err instanceof Error ? err.message : "Could not create that flow");
+                    toast.error(errorMessage(err, "Could not create that flow"));
                 });
         },
         [router],
