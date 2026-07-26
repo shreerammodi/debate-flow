@@ -21,6 +21,7 @@ const sample: AppConfig = {
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
+    flowsDir: null,
     keymapOverrides: { [aCommandId]: "g g" },
     updateConfig: { autoCheckEnabled: true },
 };

@@ -1,11 +1,15 @@
 /**
- * In-memory adapter for `npm run dev` in a browser and for the test suite.
+ * Browser adapter for `npm run dev` and the test suite.
  *
- * Paths are virtual but behave like real ones, so everything above the port -
- * the session, recents, the migration - runs unchanged without Tauri. It is
- * backed by localStorage purely so a dev reload does not wipe the flow you were
- * looking at; this is a development surface, not a product one. The static
- * export exists only as Tauri's frontend and is not deployed anywhere.
+ * Where the File System Access API exists (Chromium), this is a real editor:
+ * the pickers are the OS's own, and a file opened through one is written back
+ * through its handle, so edits land on disk. Everywhere else - other browsers,
+ * and jsdom - it falls back to an in-memory map with virtual paths, which is
+ * what the tests run against.
+ *
+ * The map is mirrored to localStorage so a dev reload does not lose the flow
+ * you were looking at. That is a development convenience, not a product
+ * surface: the static export exists only as Tauri's frontend.
  */
 
 import type { FlowFs } from "./flowFs";
@@ -16,7 +20,25 @@ const RECENTS_KEY = "ebb-dev-recents";
 const HOME = "/home/dev";
 const FLOWS_DIR = "/home/dev/Documents/ebb";
 
+const EBB_TYPES = [{ description: "ebb flow", accept: { "application/json": [".ebb"] } }];
+const OPEN_TYPES = [{ description: "ebb flow", accept: { "application/json": [".ebb", ".json"] } }];
+
 type Files = Record<string, string>;
+
+interface FilePickers {
+    showOpenFilePicker?: (opts?: unknown) => Promise<FileSystemFileHandle[]>;
+    showSaveFilePicker?: (opts?: unknown) => Promise<FileSystemFileHandle>;
+    showDirectoryPicker?: (opts?: unknown) => Promise<FileSystemDirectoryHandle>;
+}
+
+function pickers(): FilePickers {
+    return typeof window === "undefined" ? {} : (window as unknown as FilePickers);
+}
+
+/** A cancelled picker throws AbortError; every other failure is real. */
+function cancelled(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
+}
 
 function load(): Files {
     if (typeof localStorage === "undefined") return {};
@@ -28,36 +50,77 @@ function load(): Files {
     }
 }
 
-function persist(files: Files): void {
-    if (typeof localStorage === "undefined") return;
-    try {
-        localStorage.setItem(STORE_KEY, JSON.stringify(files));
-    } catch {
-        // A dev-only convenience; a full quota is not worth an error path.
-    }
-}
-
 export function createFlowFs(): FlowFs {
     let files = load();
 
     /**
-     * There is no picker without a native shell, so open and save fall back to
-     * a prompt. Enough to exercise the real code paths in a browser.
+     * Handles for files opened through a real picker, keyed by the virtual path
+     * they were given. Writing through one is what makes the browser adapter an
+     * editor rather than a scratchpad.
      */
-    const ask = (message: string, seed: string): string | null => {
-        if (typeof window === "undefined") return null;
-        const answer = window.prompt(message, seed);
-        return answer?.trim() ? answer.trim() : null;
-    };
+    const handles = new Map<string, FileSystemFileHandle>();
+
+    function persist(): void {
+        if (typeof localStorage === "undefined") return;
+        try {
+            localStorage.setItem(STORE_KEY, JSON.stringify(files));
+        } catch {
+            // A dev convenience; a full quota is not worth an error path.
+        }
+    }
+
+    async function adopt(handle: FileSystemFileHandle): Promise<string> {
+        const path = joinPath(FLOWS_DIR, handle.name);
+        files = { ...files, [path]: await (await handle.getFile()).text() };
+        handles.set(path, handle);
+        persist();
+        return path;
+    }
 
     return {
         locations: () => Promise.resolve({ flowsDir: FLOWS_DIR, home: HOME }),
 
-        pickOpenPath: () =>
-            Promise.resolve(ask("Open which flow?", Object.keys(files)[0] ?? FLOWS_DIR)),
+        async pickOpenPath() {
+            const show = pickers().showOpenFilePicker;
+            if (!show) return Object.keys(files)[0] ?? null;
+            try {
+                const [handle] = await show({ multiple: false, types: OPEN_TYPES });
+                return handle ? await adopt(handle) : null;
+            } catch (err) {
+                if (cancelled(err)) return null;
+                throw err;
+            }
+        },
 
-        pickSavePath: (suggested) =>
-            Promise.resolve(ask("Save the flow as?", joinPath(FLOWS_DIR, basename(suggested)))),
+        async pickDirectory() {
+            const show = pickers().showDirectoryPicker;
+            // A browser never exposes a real path, only the folder's name, so
+            // this is a stand-in good enough to exercise the setting in dev.
+            if (!show) return null;
+            try {
+                return joinPath(HOME, (await show()).name);
+            } catch (err) {
+                if (cancelled(err)) return null;
+                throw err;
+            }
+        },
+
+        async pickSavePath(suggested) {
+            const show = pickers().showSaveFilePicker;
+            if (!show) return joinPath(FLOWS_DIR, basename(suggested));
+            try {
+                const handle = await show({
+                    suggestedName: basename(suggested),
+                    types: EBB_TYPES,
+                });
+                const path = joinPath(FLOWS_DIR, handle.name);
+                handles.set(path, handle);
+                return path;
+            } catch (err) {
+                if (cancelled(err)) return null;
+                throw err;
+            }
+        },
 
         createFlow: (dir, name, text) => {
             const taken = new Set(
@@ -67,16 +130,21 @@ export function createFlowFs(): FlowFs {
             );
             const path = joinPath(dir, dedupeFilename(name, taken));
             files = { ...files, [path]: text };
-            persist(files);
+            persist();
             return Promise.resolve(path);
         },
 
         readFlow: (path) => Promise.resolve(files[path] ?? null),
 
-        writeFlow: (path, text) => {
+        async writeFlow(path, text) {
             files = { ...files, [path]: text };
-            persist(files);
-            return Promise.resolve();
+            persist();
+
+            const handle = handles.get(path);
+            if (!handle) return;
+            const writable = await handle.createWritable();
+            await writable.write(text);
+            await writable.close();
         },
 
         readRecents: () =>

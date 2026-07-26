@@ -1,14 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 
-import { errorMessage } from "@/lib/errorMessage";
 import { parseFlowFile } from "@/lib/persistence/flowFile";
 import { getFlowFs } from "@/lib/persistence/flowFs";
 import { displayPath } from "@/lib/persistence/flowPaths";
 import { forgetRecent } from "@/lib/persistence/flowSession";
-import { migrateFromIndexedDb } from "@/lib/persistence/migrateIdb";
 import { loadRecents, RECENTS_SHOWN, saveRecents } from "@/lib/persistence/recents";
 import { buildSummary, recentDetail, recentLabel } from "@/lib/start/summary";
 
@@ -30,6 +27,8 @@ export interface RecentFlows {
     entries: RecentEntry[] | null;
     /** Drop a row without touching the file it points at. */
     forget: (path: string) => void;
+    /** Re-read the list, after a migration has written new files. */
+    refresh: () => void;
 }
 
 /**
@@ -46,30 +45,21 @@ export interface RecentFlows {
  */
 export function useRecentFlows(): RecentFlows {
     const [entries, setEntries] = useState<RecentEntry[] | null>(null);
+    // Bumped after a migration so the list re-reads and shows the new files.
+    const [nonce, setNonce] = useState(0);
 
     const forget = useCallback((path: string) => {
         setEntries((current) => current?.filter((e) => e.path !== path) ?? null);
         void forgetRecent(path);
     }, []);
 
+    const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
     useEffect(() => {
         let mounted = true;
 
         void (async () => {
             const fs = await getFlowFs();
-
-            // Flows that predate the file format are swept into real files
-            // before the list is read, so they appear in it immediately.
-            try {
-                const report = await migrateFromIndexedDb(fs);
-                if (report?.moved) {
-                    const noun = report.moved === 1 ? "flow" : "flows";
-                    toast.success(`Moved ${report.moved} ${noun} to ${report.flowsDir}`);
-                }
-            } catch (err) {
-                toast.error(errorMessage(err, "Could not move your existing flows"));
-            }
-
             const { home } = await fs.locations();
             const recents = await loadRecents(fs);
             const shown = recents.slice(0, RECENTS_SHOWN);
@@ -111,7 +101,7 @@ export function useRecentFlows(): RecentFlows {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [nonce]);
 
-    return { entries, forget };
+    return { entries, forget, refresh };
 }

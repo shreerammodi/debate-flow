@@ -41,6 +41,8 @@ export interface ConfigFileShape {
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
+    /** Folder new flows are filed in; null follows the platform default. */
+    flows_dir: string | null;
     /**
      * The full keybinding set as a nested tree: a dotted commandId like
      * `theme.dark` becomes `[keymap.theme]` / `dark`, so related bindings group
@@ -115,6 +117,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         tooltips: s.tooltips,
         cardmirror_enabled: s.cardmirrorEnabled,
         cardmirror_text_type: s.cardmirrorTextType,
+        flows_dir: s.flowsDir,
         aff_color: s.affColor,
         neg_color: s.negColor,
         keymap: nestByNamespace(byCommand(effectiveKeymap(s.keymapOverrides).bindings)),
@@ -158,6 +161,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         cardmirrorEnabled: bool(o.cardmirror_enabled, true),
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         theme: resolveThemeMode(o.theme),
+        flowsDir: typeof o.flows_dir === "string" && o.flows_dir.trim() ? o.flows_dir.trim() : null,
         affColor: resolveColor(o.aff_color),
         negColor: resolveColor(o.neg_color),
         keymapOverrides,

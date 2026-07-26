@@ -21,6 +21,8 @@ export interface FlowFs {
     locations(): Promise<FlowLocations>;
     /** Native open picker. Null when the user cancels. */
     pickOpenPath(): Promise<string | null>;
+    /** Native folder picker for the flows directory. Null when cancelled. */
+    pickDirectory(): Promise<string | null>;
     /** Native save picker seeded with a filename. Null when the user cancels. */
     pickSavePath(suggested: string): Promise<string | null>;
     /** Create without ever overwriting; resolves to the path actually used. */

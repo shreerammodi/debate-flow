@@ -25,6 +25,12 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   blinks like the one on ebb.smodi.net.
 - The File menu gained New Flow, Open, Save, Save As, Show in Finder, and
   Close Flow, above the sheet items that were already there.
+- Existing flows are no longer moved out of the old storage on their own. The
+  first launch asks, shows where they would land, and lets you pick a different
+  folder before anything is written. Declining leaves them untouched and asks
+  again next time, so nothing is stranded.
+- **Flows folder** is now a setting, under Settings > Editor. It decides where
+  new flows are filed; files already written stay where they are.
 - Double-clicking a `.ebb` file opens it in ebb. macOS and Linux also know a
   flow is a kind of JSON, so Quick Look previews one and any text editor will
   open it; ebb stays the default. On Windows and Linux, opening a second flow

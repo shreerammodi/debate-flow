@@ -13,6 +13,8 @@ export interface FakeFlowFs extends FlowFs {
     nextOpen: string | null;
     /** What the next save picker returns; null cancels. */
     nextSave: string | null;
+    /** What the next folder picker returns; null cancels. */
+    nextDirectory: string | null;
     /** Paths passed to reveal, in order. */
     revealed: string[];
     /** Writes performed, in order, so tests can assert on autosave behavior. */
@@ -33,6 +35,7 @@ export function installFakeFlowFs(): FakeFlowFs {
         files: new Map(),
         nextOpen: null,
         nextSave: null,
+        nextDirectory: null,
         revealed: [],
         writes: [],
         failWrites: null,
@@ -41,6 +44,7 @@ export function installFakeFlowFs(): FakeFlowFs {
 
         pickOpenPath: () => Promise.resolve(fs.nextOpen),
         pickSavePath: () => Promise.resolve(fs.nextSave),
+        pickDirectory: () => Promise.resolve(fs.nextDirectory),
 
         createFlow: (dir, name, text) => {
             if (fs.failWrites) return Promise.reject(new Error(fs.failWrites));

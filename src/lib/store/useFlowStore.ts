@@ -63,6 +63,11 @@ export interface FlowState {
     /** Custom aff/neg ink; null keeps the theme default. */
     affColor: string | null;
     negColor: string | null;
+    /**
+     * Folder new flows are filed in. null follows the platform default that
+     * `flow_paths` resolves; a value here overrides it.
+     */
+    flowsDir: string | null;
     /** Desktop auto-update behavior (background checks opt-in). */
     updateConfig: UpdateConfig;
     /** The unified command/search palette. */
@@ -147,6 +152,8 @@ export interface FlowActions {
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
     setSideColor(side: Side, color: string | null): void;
+    /** null restores the platform default. */
+    setFlowsDir(dir: string | null): void;
     /** Merges a partial update config, persisting the result. */
     setUpdateConfig(patch: Partial<UpdateConfig>): void;
     /**
@@ -189,6 +196,7 @@ export interface AppConfig {
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
+    flowsDir: string | null;
     keymapOverrides: Record<string, string>;
     updateConfig: UpdateConfig;
 }
@@ -250,6 +258,7 @@ interface DisplaySettings {
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
+    flowsDir: string | null;
 }
 
 /** Accepts only a `#rrggbb` literal, the shape native color inputs emit. */
@@ -272,6 +281,7 @@ function loadDisplaySettings(): DisplaySettings {
         theme: "system",
         affColor: null,
         negColor: null,
+        flowsDir: null,
     };
     if (typeof window === "undefined") return fallback;
     try {
@@ -291,6 +301,7 @@ function loadDisplaySettings(): DisplaySettings {
                 typeof p.cardmirrorEnabled === "boolean" ? p.cardmirrorEnabled : true,
             cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
             theme: resolveThemeMode(p.theme),
+            flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
             affColor: resolveColor(p.affColor),
             negColor: resolveColor(p.negColor),
         };
@@ -322,6 +333,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         cardmirrorEnabled: s.cardmirrorEnabled,
         cardmirrorTextType: s.cardmirrorTextType,
         theme: s.theme,
+        flowsDir: s.flowsDir,
         affColor: s.affColor,
         negColor: s.negColor,
     };
@@ -374,6 +386,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     gridZoom: initialDisplaySettings.defaultGridZoom,
     defaultGridZoom: initialDisplaySettings.defaultGridZoom,
     theme: initialDisplaySettings.theme,
+    flowsDir: initialDisplaySettings.flowsDir,
     affColor: initialDisplaySettings.affColor,
     negColor: initialDisplaySettings.negColor,
     updateConfig: loadUpdateConfig(),
@@ -687,6 +700,12 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         const patch = side === "aff" ? { affColor: color } : { negColor: color };
         saveDisplaySettings({ ...displaySettingsOf(get()), ...patch });
         set(patch);
+    },
+
+    setFlowsDir(dir) {
+        const flowsDir = dir?.trim() ? dir.trim() : null;
+        saveDisplaySettings({ ...displaySettingsOf(get()), flowsDir });
+        set({ flowsDir });
     },
 
     setUpdateConfig(patch) {

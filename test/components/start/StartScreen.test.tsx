@@ -42,6 +42,16 @@ beforeEach(() => {
 });
 
 describe("StartScreen", () => {
+    it("never sweeps the old storage without being asked", async () => {
+        // The marker is cleared so the legacy check actually looks; with no old
+        // database present nothing should be written and nothing prompted.
+        localStorage.removeItem("ebb-idb-migrated");
+        render(<StartScreen />);
+        await waitFor(() => expect(screen.getByTestId("start-new")).toBeInTheDocument());
+        expect(fs.writes).toEqual([]);
+        expect(screen.queryByTestId("migration-dialog")).not.toBeInTheDocument();
+    });
+
     it("offers the three commands", async () => {
         render(<StartScreen />);
         expect(screen.getByTestId("start-new")).toHaveTextContent("New flow");

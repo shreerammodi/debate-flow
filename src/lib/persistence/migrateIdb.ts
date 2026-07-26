@@ -65,12 +65,49 @@ function deleteDb(): Promise<void> {
 }
 
 /**
- * Move every stored round into files. Resolves to null when there is nothing to
- * migrate, which is the case for every launch after the first.
+ * How many rounds are still sitting in the old database.
+ *
+ * Read-only and side-effect free, so the start screen can ask before deciding
+ * whether to prompt. `indexedDB.open` would create the database if it were
+ * absent, which is the wrong thing to do while merely looking, so existence is
+ * checked first where the browser can answer that.
  */
-export async function migrateFromIndexedDb(fs?: FlowFs): Promise<MigrationReport | null> {
+export async function countLegacyFlows(): Promise<number> {
+    if (typeof indexedDB === "undefined") return 0;
+    if (typeof localStorage !== "undefined" && localStorage.getItem(DONE_KEY)) return 0;
+
+    if (typeof indexedDB.databases === "function") {
+        const present = (await indexedDB.databases()).some((d) => d.name === DB_NAME);
+        if (!present) return 0;
+    }
+
+    const db = await openDb();
+    if (!db) return 0;
+    try {
+        return (await readAll(db)).length;
+    } finally {
+        db.close();
+    }
+}
+
+/** Record that there is nothing left to move, so no launch prompts again. */
+export function markMigrationSettled(): void {
+    localStorage?.setItem(DONE_KEY, "1");
+}
+
+/**
+ * Move every stored round into `targetDir`. Never runs on its own: the user is
+ * asked first, because where their rounds land is their decision, and a silent
+ * bulk write into a folder they did not choose is not a migration they can
+ * disagree with.
+ *
+ * Resolves to null when there was nothing to move.
+ */
+export async function migrateFromIndexedDb(
+    targetDir: string,
+    fs?: FlowFs,
+): Promise<MigrationReport | null> {
     if (typeof indexedDB === "undefined") return null;
-    if (typeof localStorage !== "undefined" && localStorage.getItem(DONE_KEY)) return null;
 
     const db = await openDb();
     if (!db) return null;
@@ -84,12 +121,12 @@ export async function migrateFromIndexedDb(fs?: FlowFs): Promise<MigrationReport
 
     if (!records.length) {
         await deleteDb();
-        localStorage?.setItem(DONE_KEY, "1");
+        markMigrationSettled();
         return null;
     }
 
     const io = fs ?? (await getFlowFs());
-    const { flowsDir } = await io.locations();
+    const flowsDir = targetDir;
     const trashDir = joinPath(flowsDir, "trash");
 
     const written: { path: string; live: boolean }[] = [];
@@ -120,7 +157,7 @@ export async function migrateFromIndexedDb(fs?: FlowFs): Promise<MigrationReport
     }
 
     await deleteDb();
-    localStorage?.setItem(DONE_KEY, "1");
+    markMigrationSettled();
 
     // Seed the start screen oldest-first, so the most recently updated round
     // ends up at the top of the list.

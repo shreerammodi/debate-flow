@@ -19,6 +19,7 @@ import type { FlowRound } from "@/lib/model/flow";
 import { parseFlowFile, parseLegacyExport, serializeFlow } from "./flowFile";
 import { getFlowFs, type FlowFs } from "./flowFs";
 import { EBB_EXT, basename, suggestFilename } from "./flowPaths";
+import { resolveFlowsDir } from "./flowsDir";
 import { dropRecent, loadRecents, promoteRecent, saveRecents } from "./recents";
 
 /** Lifecycle of a single save, reported so the header can reassure the user. */
@@ -59,8 +60,8 @@ export async function readFlowAt(path: string, fs?: FlowFs): Promise<FlowRound |
 /** Write a brand-new flow into the flows folder; resolves to the path used. */
 export async function createFlowFile(round: FlowRound, fs?: FlowFs): Promise<string> {
     const io = fs ?? (await getFlowFs());
-    const { flowsDir } = await io.locations();
-    const path = await io.createFlow(flowsDir, suggestFilename(round), serializeFlow(round));
+    const dir = await resolveFlowsDir(io);
+    const path = await io.createFlow(dir, suggestFilename(round), serializeFlow(round));
     await noteOpened(path, io);
     return path;
 }
@@ -93,10 +94,10 @@ async function importLegacyExport(path: string, io: FlowFs): Promise<string> {
     const rounds = parseLegacyExport(text);
     if (!rounds.length) throw new Error(`${basename(path)} holds no flows`);
 
-    const { flowsDir } = await io.locations();
+    const dir = await resolveFlowsDir(io);
     const written: string[] = [];
     for (const round of rounds) {
-        written.push(await io.createFlow(flowsDir, suggestFilename(round), serializeFlow(round)));
+        written.push(await io.createFlow(dir, suggestFilename(round), serializeFlow(round)));
     }
     await noteOpened(written[0], io);
     return written[0];

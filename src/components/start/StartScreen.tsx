@@ -14,6 +14,7 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion, isDesktop } from "@/lib/update/adapter";
 import { cn } from "@/lib/utils";
 
+import MigrationDialog from "./MigrationDialog";
 import { useRecentFlows, type RecentEntry } from "./useRecentFlows";
 
 const LINKS = [
@@ -39,7 +40,7 @@ export default function StartScreen() {
     const setNewFlowOpen = useFlowStore((s) => s.setNewFlowOpen);
     const setSettingsOpen = useFlowStore((s) => s.setSettingsOpen);
     const setCheatsheetOpen = useFlowStore((s) => s.setCheatsheetOpen);
-    const { entries, forget } = useRecentFlows();
+    const { entries, forget, refresh } = useRecentFlows();
     const [cursor, setCursor] = useState(0);
     const [version, setVersion] = useState(process.env.NEXT_PUBLIC_EBB_VERSION ?? "");
 
@@ -193,6 +194,7 @@ export default function StartScreen() {
                     ))}
                 </p>
             </div>
+            <MigrationDialog onMigrated={refresh} />
         </main>
     );
 }

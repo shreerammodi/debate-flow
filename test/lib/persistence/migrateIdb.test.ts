@@ -59,7 +59,7 @@ describe("migrateFromIndexedDb", () => {
         const live = [makeFlowRound({ event: "policy" }), makeFlowRound({ event: "ld" })];
         await seedDb(live);
 
-        const report = await migrateFromIndexedDb(fs);
+        const report = await migrateFromIndexedDb(FLOWS_DIR, fs);
 
         expect(report).toMatchObject({ moved: 2, trashed: 0, flowsDir: FLOWS_DIR });
         const written = [...fs.files.keys()].filter((p) => p.endsWith(".ebb"));
@@ -72,7 +72,7 @@ describe("migrateFromIndexedDb", () => {
         round.sheets[1].data = [["framework"]];
         await seedDb([round]);
 
-        await migrateFromIndexedDb(fs);
+        await migrateFromIndexedDb(FLOWS_DIR, fs);
 
         const [path] = [...fs.files.keys()].filter((p) => p.endsWith(".ebb"));
         const migrated = parseFlowFile(fs.files.get(path)!);
@@ -88,7 +88,7 @@ describe("migrateFromIndexedDb", () => {
         };
         await seedDb([makeFlowRound({}), trashed]);
 
-        const report = await migrateFromIndexedDb(fs);
+        const report = await migrateFromIndexedDb(FLOWS_DIR, fs);
 
         expect(report).toMatchObject({ moved: 1, trashed: 1 });
         const inTrash = [...fs.files.keys()].filter((p) => p.startsWith(`${FLOWS_DIR}/trash/`));
@@ -99,7 +99,7 @@ describe("migrateFromIndexedDb", () => {
 
     it("seeds recents with the live flows only", async () => {
         await seedDb([makeFlowRound({}), { ...makeFlowRound({}), deletedAt: 1 }]);
-        await migrateFromIndexedDb(fs);
+        await migrateFromIndexedDb(FLOWS_DIR, fs);
 
         const recents = await loadRecents(fs);
         expect(recents).toHaveLength(1);
@@ -108,7 +108,7 @@ describe("migrateFromIndexedDb", () => {
 
     it("deletes the database once every file has been read back", async () => {
         await seedDb([makeFlowRound({})]);
-        await migrateFromIndexedDb(fs);
+        await migrateFromIndexedDb(FLOWS_DIR, fs);
         expect(await dbExists()).toBe(false);
     });
 
@@ -116,22 +116,22 @@ describe("migrateFromIndexedDb", () => {
         await seedDb([makeFlowRound({})]);
         fs.failWrites = "disk full";
 
-        await expect(migrateFromIndexedDb(fs)).rejects.toThrow(/disk full/);
+        await expect(migrateFromIndexedDb(FLOWS_DIR, fs)).rejects.toThrow(/disk full/);
         expect(await dbExists()).toBe(true);
         expect(localStorage.getItem(DONE_KEY)).toBeNull();
     });
 
     it("runs once; a second launch finds nothing to do", async () => {
         await seedDb([makeFlowRound({})]);
-        expect(await migrateFromIndexedDb(fs)).not.toBeNull();
+        expect(await migrateFromIndexedDb(FLOWS_DIR, fs)).not.toBeNull();
 
         const before = fs.files.size;
-        expect(await migrateFromIndexedDb(fs)).toBeNull();
+        expect(await migrateFromIndexedDb(FLOWS_DIR, fs)).toBeNull();
         expect(fs.files.size).toBe(before);
     });
 
     it("reports nothing when there was never a database", async () => {
-        expect(await migrateFromIndexedDb(fs)).toBeNull();
+        expect(await migrateFromIndexedDb(FLOWS_DIR, fs)).toBeNull();
         expect([...fs.files.keys()].filter((p) => p.endsWith(".ebb"))).toEqual([]);
     });
 });

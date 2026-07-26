@@ -31,6 +31,11 @@ export function createFlowFs(): FlowFs {
             return typeof picked === "string" ? picked : null;
         },
 
+        async pickDirectory() {
+            const picked = await open({ multiple: false, directory: true });
+            return typeof picked === "string" ? picked : null;
+        },
+
         async pickSavePath(suggested) {
             const picked = await save({ defaultPath: suggested, filters: [EBB_FILTER] });
             if (!picked) return null;

@@ -37,6 +37,7 @@ import type { ThemeMode } from "@/lib/theme/mode";
 import { isDesktop } from "@/lib/update/adapter";
 import { cn } from "@/lib/utils";
 
+import FlowsFolderControl from "./FlowsFolderControl";
 import SettingRow from "./SettingRow";
 import UpdateSettings from "./UpdateSettings";
 
@@ -504,6 +505,11 @@ export default function SettingsPanel() {
                                             aria-label="Insert paste"
                                         />
                                     }
+                                />
+                                <SettingRow
+                                    title="Flows folder"
+                                    description="Where new flows are filed. Existing files stay where they are; this only decides where the next one lands."
+                                    control={<FlowsFolderControl />}
                                 />
                                 {isDesktop() && (
                                     <section
