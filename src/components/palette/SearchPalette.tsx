@@ -186,7 +186,7 @@ function SearchPaletteInner() {
                     el?.setSelectionRange(seed.length, seed.length);
                     return false;
                 }}
-                className="bg-popover motion-safe:animate-palette-pulse top-[12vh] w-full max-w-[560px] translate-y-0 gap-0 overflow-hidden rounded-md border p-0 shadow-2xl"
+                className="bg-popover top-[12vh] w-full max-w-[560px] translate-y-0 gap-0 overflow-hidden rounded-md border p-0 shadow-2xl"
             >
                 <DialogTitle className="sr-only">{label}</DialogTitle>
                 <input
