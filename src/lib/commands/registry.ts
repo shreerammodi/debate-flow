@@ -8,6 +8,12 @@
  */
 
 export type CommandId =
+    | "flow.new"
+    | "flow.open"
+    | "flow.save"
+    | "flow.saveAs"
+    | "flow.reveal"
+    | "flow.close"
     | "edit.undo"
     | "edit.redo"
     | "format.toggleBold"
@@ -59,6 +65,12 @@ export interface CommandDef {
 }
 
 export const COMMANDS: Record<CommandId, CommandDef> = {
+    "flow.new": { id: "flow.new", label: "New flow" },
+    "flow.open": { id: "flow.open", label: "Open flow" },
+    "flow.save": { id: "flow.save", label: "Save flow" },
+    "flow.saveAs": { id: "flow.saveAs", label: "Save flow as" },
+    "flow.reveal": { id: "flow.reveal", label: "Show flow in file manager" },
+    "flow.close": { id: "flow.close", label: "Close flow" },
     "edit.undo": { id: "edit.undo", label: "Undo" },
     "edit.redo": { id: "edit.redo", label: "Redo" },
     "format.toggleBold": { id: "format.toggleBold", label: "Toggle bold" },

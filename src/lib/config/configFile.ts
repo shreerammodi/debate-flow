@@ -13,7 +13,6 @@
 
 import { resolveCardMirrorTextType } from "@/lib/bridge/cardmirror";
 import { COMMANDS } from "@/lib/commands/registry";
-import { DEFAULT_KEYTIPS, effectiveKeytips } from "@/lib/dashboard/keytips";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { getPresetKeymap } from "@/lib/keymap/presets";
@@ -50,12 +49,6 @@ export interface ConfigFileShape {
      * Reading keeps only the leaves that differ from the preset as overrides.
      */
     keymap: KeymapTree;
-    /**
-     * The dashboard keytip chords, nested like `keymap`: `root.search` becomes
-     * `[keytips.root]` / `search`. Every keytip ships, so the file is editable in
-     * place; reading keeps only the leaves that differ from the defaults.
-     */
-    keytips: KeymapTree;
     update: { auto_check_enabled: boolean };
 }
 
@@ -125,7 +118,6 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         aff_color: s.affColor,
         neg_color: s.negColor,
         keymap: nestByNamespace(byCommand(effectiveKeymap(s.keymapOverrides).bindings)),
-        keytips: nestByNamespace(effectiveKeytips(s.keytipOverrides)),
         update: {
             auto_check_enabled: s.updateConfig.autoCheckEnabled,
         },
@@ -151,17 +143,6 @@ export function toAppConfig(raw: unknown): AppConfig {
         }
     }
 
-    // Same rule for keytips: keep only the chords that deviate from the default.
-    const keytipsFromFile: Record<string, string> = {};
-    flattenNamespaces(o.keytips, "", keytipsFromFile);
-    const keytipDefaults: Record<string, string> = DEFAULT_KEYTIPS;
-    const keytipOverrides: Record<string, string> = {};
-    for (const [id, chord] of Object.entries(keytipsFromFile)) {
-        if (id in keytipDefaults && chord.length > 0 && chord !== keytipDefaults[id]) {
-            keytipOverrides[id] = chord;
-        }
-    }
-
     const update =
         o.update && typeof o.update === "object" ? (o.update as Record<string, unknown>) : {};
 
@@ -180,7 +161,6 @@ export function toAppConfig(raw: unknown): AppConfig {
         affColor: resolveColor(o.aff_color),
         negColor: resolveColor(o.neg_color),
         keymapOverrides,
-        keytipOverrides,
         updateConfig: {
             autoCheckEnabled: bool(
                 update.auto_check_enabled,

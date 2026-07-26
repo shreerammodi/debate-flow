@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tauri writes MimeType= into the .desktop entry but ships no shared-mime-info
+  package, so without this file nothing tells the desktop that a .ebb file *is*
+  the type that entry claims to handle, and a double-click goes nowhere.
+
+  sub-class-of application/json is the Linux counterpart to the macOS UTI
+  conformance declared in tauri.conf.json: a flow shows up as JSON, opens in a
+  text editor, and still lists ebb as its default application.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+    <mime-type type="application/x-ebb-flow">
+        <comment>ebb debate flow</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.ebb"/>
+    </mime-type>
+</mime-info>

@@ -52,8 +52,6 @@ export interface FlowRound {
     id: string;
     createdAt: number;
     updatedAt: number;
-    /** ms timestamp when soft-deleted (moved to Trash); absent/null = live. */
-    deletedAt?: number | null;
     /** Debate event; absent (legacy rounds) = "policy". */
     event?: EventId;
     /** First-speaking side; meaningful only for variable-order events (PF). */
@@ -108,7 +106,6 @@ export function makeFlowRound(input: { event?: EventId; firstSide?: Side } = {})
         id: uid("round"),
         createdAt: now,
         updatedAt: now,
-        deletedAt: null,
         event,
         firstSide,
         scouting: emptyScouting(),
@@ -121,10 +118,15 @@ export function makeFlowRound(input: { event?: EventId; firstSide?: Side } = {})
     };
 }
 
-/** Fill defaults on a round read from storage or import. Never mutates input. */
+/**
+ * Fill defaults on a round read from a file. Never mutates input. Drops the
+ * legacy `deletedAt` field, which soft-deleted a round back when flows lived in
+ * a database; a flow is now a file, and the filesystem owns deletion.
+ */
 export function normalizeFlow(raw: FlowRound): FlowRound {
+    const { deletedAt: _legacyDeletedAt, ...rest } = raw as FlowRound & { deletedAt?: unknown };
     const r: FlowRound = {
-        ...raw,
+        ...rest,
         event: raw.event ?? "policy",
         firstSide: raw.firstSide ?? "aff",
         scouting: raw.scouting ? { ...raw.scouting } : emptyScouting(),

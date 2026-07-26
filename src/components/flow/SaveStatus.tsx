@@ -5,7 +5,7 @@ import { AnimatePresence, m } from "motion/react";
 import { useEffect, useState } from "react";
 
 import { Tip } from "@/components/ui/tooltip";
-import { saveFlowNow } from "@/lib/persistence/flowPersistence";
+import { saveFlowNow } from "@/lib/persistence/flowSession";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { useSaveStatus } from "@/lib/store/useSaveStatus";
 
@@ -56,8 +56,8 @@ export default function SaveStatus() {
                     type="button"
                     data-testid="save-retry"
                     onClick={() => {
-                        const round = useFlowStore.getState().round;
-                        if (round) void saveFlowNow(round, report);
+                        const { round, docPath } = useFlowStore.getState();
+                        if (round && docPath) void saveFlowNow(docPath, round, report);
                     }}
                     className="rounded-sm underline underline-offset-2 hover:no-underline focus-visible:outline-2"
                 >

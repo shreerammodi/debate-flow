@@ -27,13 +27,21 @@ const FLOW_ROUTE = "/flow";
 
 /**
  * Commands safe to run from any route. Everything else touches the in-memory
- * round (sheets, cells, panels) or persists a flow-only display setting, and
- * the store never clears `round` on navigation, so off the flow screen that
- * state is stale: running them would mutate a round that isn't showing,
- * persist a setting nobody can see change, or latch a panel open for the
- * next flow load.
+ * round (sheets, cells, panels) or persists a flow-only display setting, so off
+ * the flow screen that state is absent or stale: running them would mutate a
+ * round that isn't showing, persist a setting nobody can see change, or latch a
+ * panel open for the next flow load.
+ *
+ * The flow.* commands belong here because they are exactly the ones the start
+ * screen needs, and each already no-ops when no flow is open.
  */
 const GLOBAL_COMMANDS = new Set<CommandId>([
+    "flow.new",
+    "flow.open",
+    "flow.save",
+    "flow.saveAs",
+    "flow.reveal",
+    "flow.close",
     "settings.open",
     "theme.light",
     "theme.dark",

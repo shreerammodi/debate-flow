@@ -6,7 +6,10 @@ import { BridgeHost } from "@/components/BridgeHost";
 import ConfigFileSync from "@/components/ConfigFileSync";
 import { DesktopMenu } from "@/components/DesktopMenu";
 import MotionRoot from "@/components/MotionRoot";
+import NavigatorHost from "@/components/NavigatorHost";
 import SettingsPanel from "@/components/settings/SettingsPanel";
+import NewFlowDialog from "@/components/start/NewFlowDialog";
+import OpenWithHost from "@/components/start/OpenWithHost";
 import ThemeSync from "@/components/ThemeSync";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import UpdateChip from "@/components/update/UpdateChip";
@@ -330,23 +333,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <body className="font-sans antialiased">
                 <DesktopMenu />
                 <BridgeHost />
+                <NavigatorHost />
+                <OpenWithHost />
                 <ThemeSync />
                 <ConfigFileSync />
                 <TooltipProvider>
                     <UpdateProvider>
                         {/* The chip lives inside MotionRoot (LazyMotion strict
                             requires `m.*` under it) and here, not per screen, so
-                            an update surfaces on the dashboard and trash as well
-                            as in a flow. */}
+                            an update surfaces on the start screen as well as in
+                            a flow. */}
                         <MotionRoot>
                             {children}
                             <UpdateChip />
                         </MotionRoot>
                         {/* Inside UpdateProvider so the Updates settings pane can
                             read the update context, and mounted here (not per
-                            screen) so the settings chord works on the dashboard
-                            and trash as well as in a flow. */}
+                            screen) so the settings chord and the New flow prompt
+                            work on the start screen as well as in a flow. */}
                         <SettingsPanel />
+                        <NewFlowDialog />
                     </UpdateProvider>
                 </TooltipProvider>
                 <Toaster position="bottom-center" />

@@ -36,6 +36,13 @@ export interface RemovedFlowSheet {
 
 export interface FlowState {
     round: FlowRound | null;
+    /**
+     * Absolute path of the .ebb file the open round came from, or null on the
+     * start screen. It lives beside the round rather than in its own store so
+     * autosave can never observe a new round next to a stale path and write a
+     * flow into the wrong file.
+     */
+    docPath: string | null;
     activeSheetId: string | null;
     /** Grid cell the reveal asked to jump to; carries the sheet so the matching pane selects it. */
     revealTarget: { sheetId: string; row: number; col: number } | null;
@@ -47,8 +54,6 @@ export interface FlowState {
     speechTarget: { speechId: string } | null;
     /** CommandId -> custom chord, overriding the preset binding. */
     keymapOverrides: Record<string, string>;
-    /** KeytipId -> custom chord, overriding the dashboard keytip default. */
-    keytipOverrides: Record<string, string>;
     flowFont: FontId;
     /** Live grid-only zoom (1 = 100%); scales the flow grid, not the chrome. Session-only, seeded from defaultGridZoom. */
     gridZoom: number;
@@ -64,6 +69,8 @@ export interface FlowState {
     quickSwitcherOpen: boolean;
     /** Initial query the palette opens with; ">" seeds command mode. */
     paletteSeed: string;
+    /** The New flow prompt, reachable from the start screen and the File menu. */
+    newFlowOpen: boolean;
     settingsOpen: boolean;
     cheatsheetOpen: boolean;
     infoOpen: boolean;
@@ -86,7 +93,12 @@ export interface FlowState {
 }
 
 export interface FlowActions {
-    loadRound(round: FlowRound, opts?: { activeSheetId?: string | null; newFlow?: boolean }): void;
+    loadRound(
+        round: FlowRound,
+        opts?: { docPath?: string | null; activeSheetId?: string | null; newFlow?: boolean },
+    ): void;
+    /** Drop the open round and its path, returning to the start screen. */
+    closeRound(): void;
     addSheet(input: { title?: string; group: "aff" | "neg" }): string;
     /** Batch version of addSheet: appends all in one update, activates the first. */
     addSheets(inputs: { title?: string; group: "aff" | "neg" }[]): string[];
@@ -119,8 +131,6 @@ export interface FlowActions {
     setScouting(patch: Partial<Scouting>): void;
     setKeymapOverride(commandId: CommandId, chord: string): void;
     clearKeymapOverride(commandId: CommandId): void;
-    setKeytipOverride(id: string, chord: string): void;
-    clearKeytipOverride(id: string): void;
     setFlowFont(id: FontId): void;
     /** Sets the live grid zoom to an absolute factor, clamped to the zoom bounds. */
     setGridZoom(zoom: number): void;
@@ -148,6 +158,9 @@ export interface FlowActions {
     applyExternalConfig(config: AppConfig): void;
     /** Opens/closes the palette; `seed` sets the initial query (">" = command mode). */
     setQuickSwitcherOpen(open: boolean, seed?: string): void;
+    /** Follow the open round to a new file after Save As. */
+    setDocPath(path: string): void;
+    setNewFlowOpen(open: boolean): void;
     setSettingsOpen(open: boolean): void;
     setCheatsheetOpen(open: boolean): void;
     setInfoOpen(open: boolean): void;
@@ -177,7 +190,6 @@ export interface AppConfig {
     affColor: string | null;
     negColor: string | null;
     keymapOverrides: Record<string, string>;
-    keytipOverrides: Record<string, string>;
     updateConfig: UpdateConfig;
 }
 
@@ -185,7 +197,6 @@ export interface AppConfig {
 
 const KEYMAP_SETTINGS_KEY = "ebb-keymap-settings";
 const DISPLAY_SETTINGS_KEY = "ebb-display-settings";
-const KEYTIP_SETTINGS_KEY = "ebb-keytip-settings";
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
 /** One "zoom in/out" step: 10%. */
@@ -220,27 +231,6 @@ function saveKeymapOverrides(keymapOverrides: Record<string, string>): void {
     if (typeof window === "undefined") return;
     try {
         window.localStorage.setItem(KEYMAP_SETTINGS_KEY, JSON.stringify({ keymapOverrides }));
-    } catch {
-        // localStorage unavailable (private mode, quota) - ignore.
-    }
-}
-
-function loadKeytipOverrides(): Record<string, string> {
-    if (typeof window === "undefined") return {};
-    try {
-        const raw = window.localStorage.getItem(KEYTIP_SETTINGS_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw) as { keytipOverrides?: Record<string, string> };
-        return parsed.keytipOverrides ?? {};
-    } catch {
-        return {};
-    }
-}
-
-function saveKeytipOverrides(keytipOverrides: Record<string, string>): void {
-    if (typeof window === "undefined") return;
-    try {
-        window.localStorage.setItem(KEYTIP_SETTINGS_KEY, JSON.stringify({ keytipOverrides }));
     } catch {
         // localStorage unavailable (private mode, quota) - ignore.
     }
@@ -373,13 +363,13 @@ function assignFocused(
 
 export const useFlowStore = create<FlowStore>()((set, get) => ({
     round: null,
+    docPath: null,
     activeSheetId: null,
     revealTarget: null,
     splitSheetId: null,
     focusedPane: 1,
     speechTarget: null,
     keymapOverrides: loadKeymapOverrides(),
-    keytipOverrides: loadKeytipOverrides(),
     flowFont: initialDisplaySettings.flowFont,
     gridZoom: initialDisplaySettings.defaultGridZoom,
     defaultGridZoom: initialDisplaySettings.defaultGridZoom,
@@ -389,6 +379,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     updateConfig: loadUpdateConfig(),
     quickSwitcherOpen: false,
     paletteSeed: "",
+    newFlowOpen: false,
     settingsOpen: false,
     cheatsheetOpen: false,
     infoOpen: false,
@@ -405,6 +396,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     loadRound(round, opts) {
         set({
             round,
+            docPath: opts?.docPath ?? null,
             activeSheetId:
                 opts?.activeSheetId !== undefined ? opts.activeSheetId : firstFlowSheetId(round),
             splitSheetId: null,
@@ -414,6 +406,16 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             // persists rfdOpen, so forcing it closed here stays transient.
             rfdOpen: opts?.newFlow ? false : loadDisplaySettings().rfdOpen,
             quickSwitcherOpen: false,
+            renamingSheetId: null,
+        });
+    },
+
+    closeRound() {
+        set({
+            round: null,
+            docPath: null,
+            activeSheetId: null,
+            splitSheetId: null,
             renamingSheetId: null,
         });
     },
@@ -625,19 +627,6 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         set({ keymapOverrides });
     },
 
-    setKeytipOverride(id, chord) {
-        const keytipOverrides = { ...get().keytipOverrides, [id]: chord };
-        saveKeytipOverrides(keytipOverrides);
-        set({ keytipOverrides });
-    },
-
-    clearKeytipOverride(id) {
-        const keytipOverrides = { ...get().keytipOverrides };
-        delete keytipOverrides[id];
-        saveKeytipOverrides(keytipOverrides);
-        set({ keytipOverrides });
-    },
-
     setFlowFont(id) {
         saveDisplaySettings({ ...displaySettingsOf(get()), flowFont: id });
         set({ flowFont: id });
@@ -707,23 +696,27 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     },
 
     applyExternalConfig(config) {
-        const { keymapOverrides, keytipOverrides, updateConfig, ...display } = config;
+        const { keymapOverrides, updateConfig, ...display } = config;
         saveDisplaySettings(display);
         saveKeymapOverrides(keymapOverrides);
-        saveKeytipOverrides(keytipOverrides);
         saveUpdateConfig(updateConfig);
         // The live grid follows the incoming default; on boot they already match.
         set({
             ...display,
             gridZoom: display.defaultGridZoom,
             keymapOverrides,
-            keytipOverrides,
             updateConfig,
         });
     },
 
     setQuickSwitcherOpen(open, seed = "") {
         set({ quickSwitcherOpen: open, paletteSeed: open ? seed : "" });
+    },
+    setDocPath(path) {
+        set({ docPath: path });
+    },
+    setNewFlowOpen(open) {
+        set({ newFlowOpen: open });
     },
     setSettingsOpen(open) {
         set({ settingsOpen: open });

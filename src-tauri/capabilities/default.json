@@ -11,6 +11,17 @@
         "core:event:default",
         "core:menu:default",
         "updater:default",
-        "process:default"
+        "process:default",
+        "dialog:allow-open",
+        "dialog:allow-save",
+        "opener:allow-reveal-item-in-dir",
+        {
+            "identifier": "opener:allow-open-url",
+            "allow": [
+                { "url": "https://ebb.smodi.net/*" },
+                { "url": "https://github.com/shreerammodi/ebb*" },
+                { "url": "https://smodi.net/*" }
+            ]
+        }
     ]
 }

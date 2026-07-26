@@ -1,15 +1,15 @@
 /**
- * useSaveStatus — a tiny store for the editor's autosave indicator.
+ * useSaveStatus - the editor's autosave indicator.
  *
- * Kept separate from `useRoundStore` on purpose: save status is a
+ * Kept separate from `useFlowStore` on purpose: save status is a
  * persistence-layer concern, not round data, and must never enter the
- * undo/redo history. The autosave wiring (`attachAutosave`) reports
- * transitions here; the header's <SaveStatus /> renders them.
+ * undo/redo history. `attachFlowAutosave` reports transitions here; the
+ * header's <SaveStatus /> renders them.
  */
 
 import { create } from "zustand";
 
-import type { SaveStatus } from "@/lib/persistence/flowPersistence";
+import type { SaveStatus } from "@/lib/persistence/flowSession";
 
 /** "idle" = nothing to report yet (no round loaded / left the editor). */
 export type SaveState = SaveStatus | "idle";

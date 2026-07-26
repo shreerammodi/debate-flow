@@ -26,10 +26,7 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-// Mock io functions used by the header
-vi.mock("@/lib/persistence/flowIo", () => ({
-    downloadFlowFile: vi.fn(),
-}));
+// Mock the exporter the header reaches for.
 vi.mock("@/lib/export/xlsx", () => ({
     downloadXlsx: vi.fn().mockResolvedValue(undefined),
 }));

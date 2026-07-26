@@ -23,6 +23,13 @@ import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
+import {
+    closeOpenFlow,
+    openFlowFromPicker,
+    revealOpenFlow,
+    saveOpenFlow,
+    saveOpenFlowAs,
+} from "./fileCommands";
 import type { CommandId } from "./registry";
 
 /** Jumps to the Nth (1-indexed, order-sorted) flow sheet, no-op if out of range. */
@@ -219,6 +226,28 @@ export function executeCommand(id: CommandId): void {
             jumpToSheet(Number(id.slice("sheet.jump".length)));
             return;
         }
+
+        // --- Flow files ---------------------------------------------------------
+        // These are the only asynchronous commands. Each reports its own
+        // failures with a toast, so nothing here needs to await them.
+        case "flow.new":
+            state.setNewFlowOpen(true);
+            return;
+        case "flow.open":
+            void openFlowFromPicker();
+            return;
+        case "flow.save":
+            void saveOpenFlow();
+            return;
+        case "flow.saveAs":
+            void saveOpenFlowAs();
+            return;
+        case "flow.reveal":
+            void revealOpenFlow();
+            return;
+        case "flow.close":
+            void closeOpenFlow();
+            return;
 
         // --- UI ---------------------------------------------------------------
         case "settings.open":

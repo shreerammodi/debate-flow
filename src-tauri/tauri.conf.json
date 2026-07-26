@@ -36,6 +36,38 @@
             "icons/icon.icns",
             "icons/icon.ico"
         ],
+        "fileAssociations": [
+            {
+                "ext": ["ebb"],
+                "name": "ebb flow",
+                "description": "ebb debate flow",
+                "role": "Editor",
+                "mimeType": "application/x-ebb-flow",
+                "exportedType": {
+                    "identifier": "net.smodi.ebb.flow",
+                    "conformsTo": ["public.json"]
+                }
+            }
+        ],
+        "linux": {
+            "deb": {
+                "files": {
+                    "/usr/share/mime/packages/ebb.xml": "mime/ebb.xml"
+                },
+                "postInstallScript": "scripts/postinstall.sh"
+            },
+            "rpm": {
+                "files": {
+                    "/usr/share/mime/packages/ebb.xml": "mime/ebb.xml"
+                },
+                "postInstallScript": "scripts/postinstall.sh"
+            }
+        },
+        "windows": {
+            "nsis": {
+                "installerHooks": "nsis/hooks.nsh"
+            }
+        },
         "macOS": {
             "signingIdentity": "-"
         }

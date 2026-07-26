@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
-vi.mock("@/lib/persistence/flowIo", () => ({ downloadFlowFile: vi.fn() }));
 vi.mock("@/lib/export/xlsx", () => ({
     downloadXlsx: vi.fn().mockResolvedValue(undefined),
 }));
@@ -17,7 +16,7 @@ beforeEach(() => {
 });
 
 describe("ExportMenu", () => {
-    it("opens on click and exposes the two formats", async () => {
+    it("opens on click and offers Excel", async () => {
         const user = userEvent.setup();
         render(
             <TooltipProvider>
@@ -25,21 +24,19 @@ describe("ExportMenu", () => {
             </TooltipProvider>,
         );
         await user.click(screen.getByTestId("export-btn"));
-        expect(await screen.findByTestId("export-json")).toBeInTheDocument();
-        expect(screen.getByTestId("export-excel")).toBeInTheDocument();
+        expect(await screen.findByTestId("export-excel")).toBeInTheDocument();
     });
 
-    it("JSON item invokes downloadFlowFile", async () => {
+    it("no longer offers JSON, because a .ebb file already is the round's JSON", async () => {
         const user = userEvent.setup();
-        const { downloadFlowFile } = await import("@/lib/persistence/flowIo");
         render(
             <TooltipProvider>
                 <ExportMenu />
             </TooltipProvider>,
         );
         await user.click(screen.getByTestId("export-btn"));
-        await user.click(await screen.findByTestId("export-json"));
-        expect(downloadFlowFile).toHaveBeenCalled();
+        await screen.findByTestId("export-excel");
+        expect(screen.queryByTestId("export-json")).not.toBeInTheDocument();
     });
 
     it("Excel item invokes downloadXlsx", async () => {

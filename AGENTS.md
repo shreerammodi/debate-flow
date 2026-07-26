@@ -4,9 +4,14 @@ Guidance for AI agents working in this repository.
 
 ## Project
 
-**ebb** is a local-first, privacy-centric, keyboard-first web app for
-flowing competitive debate rounds. All data lives in the browser (IndexedDB via
-Dexie); there is no backend. The app is built as a static export.
+**ebb** is a local-first, privacy-centric, keyboard-first app for flowing
+competitive debate rounds. It is a flow _editor_: each flow is a `.ebb` file on
+the user's own filesystem, reached through the `FlowFs` port in
+`src/lib/persistence/` and the narrow Rust commands in
+`src-tauri/src/flowfile.rs`. There is no backend and no database. The app is
+built as a static export, which Tauri consumes as its frontend; that export is
+not deployed anywhere, so a browser is a development target rather than a
+product surface, and `flowFsMemory` exists to serve it.
 
 Run `npm test` and `npm run lint` before considering a change complete.
 Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
@@ -20,7 +25,13 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
 - **Pure logic goes in `src/lib`**, not in components. Keep `lib/`
   framework-agnostic and testable; components wire it to React.
 - **Local-first**: never add network calls, telemetry, or backend dependencies.
-  All state is client-side.
+  All state is on the user's machine.
+- **All flow I/O goes through the `FlowFs` port** (`src/lib/persistence/flowFs.ts`),
+  never directly through `invoke` or a Tauri plugin. That is what lets the
+  session, recents, and migration be tested against `flowFsMemory` instead of a
+  mocked IPC layer. `tauri-plugin-fs` is deliberately not installed: flow I/O
+  uses the five narrow commands in `src-tauri/src/flowfile.rs` so the webview
+  never holds a general filesystem capability.
 - Keyboard-first UX is a core product value — preserve and extend keybindings
   rather than replacing them with mouse-only flows.
 
@@ -81,5 +92,10 @@ edge case; otherwise leave the code bare.
   guard resolves such chords (bare keys, Alt+key) against the keymap and runs
   them itself so the grid never touches the cell; keep new printable bindings
   flowing through that path, not around it.
+- **`Meta+O` is Insert Cell, not Open.** Both `Meta+o` and `Meta+O` belong to
+  the cell and row insert commands a debater uses mid-speech, so `flow.open`
+  carries no editor chord and no menu accelerator; the start screen binds a
+  bare `o` instead. Check `presets.ts` and `reserved.ts` before claiming a
+  chord - flowing owns most of the letter space.
 - Prefer `git rebase` over `git merge` when integrating changes to maintain a
   linear history.

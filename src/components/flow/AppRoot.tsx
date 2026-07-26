@@ -2,11 +2,13 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { flowRouteFor } from "@/lib/commands/flowNav";
 import { applyFlowFont } from "@/lib/fonts/applyFlowFont";
-import { loadFlow } from "@/lib/persistence/flowPersistence";
-import { attachFlowAutosave } from "@/lib/persistence/flowPersistence";
+import { basename } from "@/lib/persistence/flowPaths";
+import { attachFlowAutosave, noteOpened, readFlowAt } from "@/lib/persistence/flowSession";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { useSaveStatus } from "@/lib/store/useSaveStatus";
 import { applySideColors } from "@/lib/theme/applySideColors";
@@ -14,14 +16,18 @@ import { applySideColors } from "@/lib/theme/applySideColors";
 import Workspace from "./Workspace";
 
 /**
- * AppRoot - boots the editor for the flow identified by ?id=.
- * Attaches autosave, loads the round, and selects an initial sheet.
- * Redirects to "/" when the id is missing, not found, or trashed.
+ * AppRoot - boots the editor for the flow file named by ?path=.
+ *
+ * The path is the flow's identity, so it rides in the URL the way the database
+ * id used to: a reload, or the relaunch after an update installs, reopens the
+ * same file. Anything that cannot be read sends the user back to the start
+ * screen with a reason, because a flow silently not opening is indistinguishable
+ * from a flow that is gone.
  */
 export default function AppRoot() {
     const router = useRouter();
     const params = useSearchParams();
-    const id = params.get("id");
+    const path = params.get("path");
     const round = useFlowStore((s) => s.round);
     const flowFont = useFlowStore((s) => s.flowFont);
     const affColor = useFlowStore((s) => s.affColor);
@@ -40,40 +46,51 @@ export default function AppRoot() {
         let mounted = true;
         const unsubscribe = attachFlowAutosave(useFlowStore, useSaveStatus.getState().report);
 
-        if (!id) {
-            router.replace("/");
-            return () => {
-                mounted = false;
-                unsubscribe();
-                useSaveStatus.getState().reset();
-            };
-        }
-
-        loadFlow(id)
-            .then((r) => {
-                if (!mounted) return;
-                if (!r || r.deletedAt != null) {
-                    router.replace("/");
-                    return;
-                }
-                const newFlow = params.get("new") != null;
-                useFlowStore.getState().loadRound(r, { newFlow });
-                // Drop the one-shot marker so a later refresh loads this flow
-                // as existing and restores the persisted RFD preference.
-                if (newFlow) router.replace(`/flow?id=${id}`);
-            })
-            .catch(() => router.replace("/"))
-            .finally(() => {
-                if (mounted) setLoaded(true);
-            });
-
-        return () => {
+        const leave = () => {
             mounted = false;
             unsubscribe();
             useSaveStatus.getState().reset();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- id keys the load; params is read as a one-shot snapshot
-    }, [id, router]);
+
+        if (!path) {
+            router.replace("/");
+            return leave;
+        }
+
+        // Save As rewrites the URL to the file it just wrote, which the store
+        // is already editing. Reloading it would discard nothing but would
+        // flash the loading frame for no reason.
+        if (useFlowStore.getState().docPath === path) {
+            setLoaded(true);
+            return leave;
+        }
+
+        readFlowAt(path)
+            .then((r) => {
+                if (!mounted) return;
+                if (!r) {
+                    toast.error(`${basename(path)} no longer exists`);
+                    router.replace("/");
+                    return;
+                }
+                const newFlow = params.get("new") != null;
+                useFlowStore.getState().loadRound(r, { docPath: path, newFlow });
+                void noteOpened(path);
+                // Drop the one-shot marker so a later refresh loads this flow
+                // as existing and restores the persisted RFD preference.
+                if (newFlow) router.replace(flowRouteFor(path));
+            })
+            .catch((err: unknown) => {
+                toast.error(err instanceof Error ? err.message : "Could not open that flow");
+                router.replace("/");
+            })
+            .finally(() => {
+                if (mounted) setLoaded(true);
+            });
+
+        return leave;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- path keys the load; params is read as a one-shot snapshot
+    }, [path, router]);
 
     if (!loaded || !round) {
         // Held frame mirroring the editor shell, so loading a round never

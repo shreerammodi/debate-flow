@@ -15,12 +15,12 @@ function renderSaveStatus() {
 }
 
 const saveFlowNow = vi.fn();
-vi.mock("@/lib/persistence/flowPersistence", () => ({
+vi.mock("@/lib/persistence/flowSession", () => ({
     saveFlowNow: (...args: unknown[]) => saveFlowNow(...args),
 }));
 
-// A round must exist for Retry to act on.
-const flowState = { round: { id: "r1" }, tooltips: true };
+// A round and its file must both exist for Retry to have somewhere to write.
+const flowState = { round: { id: "r1" }, docPath: "/a.ebb", tooltips: true };
 vi.mock("@/lib/store/useFlowStore", () => ({
     useFlowStore: Object.assign((selector: (s: unknown) => unknown) => selector(flowState), {
         getState: () => flowState,
@@ -74,6 +74,6 @@ describe("SaveStatus", () => {
 
         await user.click(screen.getByTestId("save-retry"));
         expect(saveFlowNow).toHaveBeenCalledTimes(1);
-        expect(saveFlowNow).toHaveBeenCalledWith({ id: "r1" }, expect.any(Function));
+        expect(saveFlowNow).toHaveBeenCalledWith("/a.ebb", { id: "r1" }, expect.any(Function));
     });
 });

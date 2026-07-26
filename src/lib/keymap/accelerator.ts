@@ -98,6 +98,12 @@ export function chordToAccelerator(chord: string): string | null {
 
 /** The menu commands whose accelerators follow the effective keymap. */
 export const MENU_COMMAND_IDS = [
+    "flow.new",
+    "flow.open",
+    "flow.save",
+    "flow.saveAs",
+    "flow.reveal",
+    "flow.close",
     "settings.open",
     "sheet.newAff",
     "sheet.newNeg",

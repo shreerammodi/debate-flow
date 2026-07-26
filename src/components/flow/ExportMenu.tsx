@@ -13,7 +13,6 @@ import {
 import { Tip } from "@/components/ui/tooltip";
 import { downloadXlsx } from "@/lib/export/xlsx";
 import type { FlowRound } from "@/lib/model/flow";
-import { downloadFlowFile } from "@/lib/persistence/flowIo";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 export default function ExportMenu() {
@@ -44,12 +43,8 @@ export default function ExportMenu() {
                 </DropdownMenuTrigger>
             </Tip>
             <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                    data-testid="export-json"
-                    onSelect={() => run((r) => downloadFlowFile(r))}
-                >
-                    JSON
-                </DropdownMenuItem>
+                {/* No JSON entry: a .ebb file already is the round's JSON, and
+                    Save As writes one wherever the user wants it. */}
                 <DropdownMenuItem
                     data-testid="export-excel"
                     onSelect={() => run((r) => downloadXlsx(r))}

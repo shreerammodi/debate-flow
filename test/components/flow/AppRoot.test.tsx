@@ -1,26 +1,20 @@
-/**
- * AppRoot integration tests.
- *
- * IMPORTANT: fake-indexeddb/auto MUST be imported first so it polyfills
- * the global indexedDB before Dexie is imported.
- */
-import "fake-indexeddb/auto";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateProvider } from "@/components/update/UpdateProvider";
-import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
-import { flowDb } from "@/lib/persistence/flowDb";
-import { persistFlow } from "@/lib/persistence/flowPersistence";
+import { makeFlowRound } from "@/lib/model/flow";
+import { serializeFlow } from "@/lib/persistence/flowFile";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
-// ─── Navigation mock ──────────────────────────────────────────────────────────
+import { installFakeFlowFs, type FakeFlowFs } from "../../support/fakeFlowFs";
+
+// --- Navigation mock ----------------------------------------------------------
 
 const replace = vi.fn();
 let mockSearch = "";
 
-// Stable router object — recreating it each render would change the useEffect
+// Stable router object - recreating it each render would change the useEffect
 // dependency and cause the effect to re-run indefinitely in tests.
 const stableRouter = { replace };
 
@@ -29,91 +23,91 @@ vi.mock("next/navigation", () => ({
     useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 
-// Import AppRoot AFTER mock is set up
+// Import AppRoot AFTER the mock is set up.
 import AppRoot from "@/components/flow/AppRoot";
 
-// ─── Fixtures ─────────────────────────────────────────────────────────────────
-
-function makeRound(overrides: Partial<FlowRound> = {}): FlowRound {
-    return { ...makeFlowRound({}), ...overrides };
+function mount() {
+    return render(
+        <TooltipProvider>
+            <UpdateProvider>
+                <AppRoot />
+            </UpdateProvider>
+        </TooltipProvider>,
+    );
 }
 
-// ─── Setup ────────────────────────────────────────────────────────────────────
+const route = (path: string) => `path=${encodeURIComponent(path)}`;
 
-beforeEach(async () => {
-    await flowDb.flows.clear();
+let fs: FakeFlowFs;
+
+beforeEach(() => {
+    fs = installFakeFlowFs();
     mockSearch = "";
     replace.mockReset();
-    useFlowStore.setState({
-        round: null,
-        activeSheetId: null,
-    });
+    useFlowStore.setState({ round: null, docPath: null, activeSheetId: null });
 });
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
-
 describe("AppRoot", () => {
-    it("redirects to / when no ?id= param", async () => {
-        mockSearch = "";
-        render(
-            <TooltipProvider>
-                <UpdateProvider>
-                    <AppRoot />
-                </UpdateProvider>
-            </TooltipProvider>,
-        );
+    it("redirects to the start screen with no ?path=", async () => {
+        mount();
+        await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
+    });
+
+    it("redirects when the file no longer exists", async () => {
+        mockSearch = route("/gone.ebb");
+        mount();
+        await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
+    });
+
+    it("redirects when the file cannot be parsed", async () => {
+        fs.files.set("/broken.ebb", "{ truncated");
+        mockSearch = route("/broken.ebb");
+        mount();
+        await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
+    });
+
+    it("opens the workspace for a readable flow", async () => {
+        const round = makeFlowRound({});
+        fs.files.set("/a.ebb", serializeFlow(round));
+        mockSearch = route("/a.ebb");
+
+        mount();
+
+        await waitFor(() => expect(screen.getByTestId("workspace")).toBeInTheDocument());
+        expect(useFlowStore.getState().round?.id).toBe(round.id);
+    });
+
+    it("records the path so autosave writes back to the file it opened", async () => {
+        const round = makeFlowRound({});
+        fs.files.set("/a.ebb", serializeFlow(round));
+        mockSearch = route("/a.ebb");
+
+        mount();
+
+        await waitFor(() => expect(useFlowStore.getState().docPath).toBe("/a.ebb"));
+    });
+
+    it("adds the flow to recents when it opens", async () => {
+        fs.files.set("/a.ebb", serializeFlow(makeFlowRound({})));
+        mockSearch = route("/a.ebb");
+
+        mount();
+
         await waitFor(() => {
-            expect(replace).toHaveBeenCalledWith("/");
+            expect(fs.files.get("/config/recents.json")).toContain("/a.ebb");
         });
     });
 
-    it("redirects to / when ?id= does not match any round", async () => {
-        mockSearch = "id=nonexistent_id";
-        render(
-            <TooltipProvider>
-                <UpdateProvider>
-                    <AppRoot />
-                </UpdateProvider>
-            </TooltipProvider>,
-        );
-        await waitFor(() => {
-            expect(replace).toHaveBeenCalledWith("/");
-        });
-    });
+    it("does not reload a file the store is already editing", async () => {
+        const round = makeFlowRound({});
+        // Save As leaves the store on the new path and then rewrites the URL;
+        // re-reading would only flash the loading frame.
+        useFlowStore.setState({ round, docPath: "/a.ebb" });
+        mockSearch = route("/a.ebb");
 
-    it("shows Workspace when ?id= matches a live round", async () => {
-        const round = makeRound();
-        await persistFlow(round);
-        mockSearch = `id=${round.id}`;
+        mount();
 
-        render(
-            <TooltipProvider>
-                <UpdateProvider>
-                    <AppRoot />
-                </UpdateProvider>
-            </TooltipProvider>,
-        );
-
-        await waitFor(() => {
-            expect(screen.getByTestId("workspace")).toBeInTheDocument();
-        });
-    });
-
-    it("redirects to / when the round is trashed", async () => {
-        const round = makeRound({ deletedAt: 1 });
-        await persistFlow(round);
-        mockSearch = `id=${round.id}`;
-
-        render(
-            <TooltipProvider>
-                <UpdateProvider>
-                    <AppRoot />
-                </UpdateProvider>
-            </TooltipProvider>,
-        );
-
-        await waitFor(() => {
-            expect(replace).toHaveBeenCalledWith("/");
-        });
+        await waitFor(() => expect(screen.getByTestId("workspace")).toBeInTheDocument());
+        expect(replace).not.toHaveBeenCalled();
     });
 });

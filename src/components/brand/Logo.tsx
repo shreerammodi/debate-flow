@@ -10,8 +10,21 @@ import { cn } from "@/lib/utils";
 
 const ACCENT = "#7c3aed";
 
+interface WordmarkProps extends SVGProps<SVGSVGElement> {
+    /**
+     * Blink the block caret, as on ebb.smodi.net. Reserved for the start
+     * screen: a caret pulsing in the chrome beside a live grid would compete
+     * with the flow for attention.
+     */
+    animated?: boolean;
+}
+
 /** Wordmark: "ebb" + block caret. Letters follow `currentColor`. */
-export function Wordmark({ "aria-label": ariaLabel = "ebb", ...props }: SVGProps<SVGSVGElement>) {
+export function Wordmark({
+    "aria-label": ariaLabel = "ebb",
+    animated = false,
+    ...props
+}: WordmarkProps) {
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -31,7 +44,15 @@ export function Wordmark({ "aria-label": ariaLabel = "ebb", ...props }: SVGProps
                     d="M728 -20Q633 -20 569 12.5Q505 45 467 91Q429 137 409 177L392 177L392 0L138 0L138 1490L398 1490L398 933L409 933Q429 973 466 1019Q503 1065 566.5 1098.5Q630 1132 729 1132Q859 1132 963 1066Q1067 1000 1128.5 871.5Q1190 743 1190 557Q1190 373 1130 244Q1070 115 965.5 47.5Q861 -20 728 -20ZM658 194Q745 194 804 241.5Q863 289 893 371.5Q923 454 923 558Q923 662 893.5 743.5Q864 825 805 871.5Q746 918 658 918Q572 918 513 873Q454 828 423.5 747.5Q393 667 393 558Q393 449 423.5 367Q454 285 513.5 239.5Q573 194 658 194Z"
                 />
             </g>
-            <rect x="4000" y="0" width="560" height="1510" rx="48" fill={ACCENT} />
+            <rect
+                className={animated ? "ebb-caret" : undefined}
+                x="4000"
+                y="0"
+                width="560"
+                height="1510"
+                rx="48"
+                fill={ACCENT}
+            />
         </svg>
     );
 }

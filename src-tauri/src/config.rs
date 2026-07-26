@@ -27,31 +27,31 @@ pub struct ConfigState {
     last: LastSeen,
 }
 
-/// `$XDG_CONFIG_HOME/ebb/config.toml`, else the platform-native config dir.
+/// `$XDG_CONFIG_HOME/ebb`, else the platform-native config dir.
 ///
 /// Honors `XDG_CONFIG_HOME` on any platform when set; otherwise `%APPDATA%\ebb`
-/// on Windows and `~/.config/ebb` elsewhere.
-fn config_path() -> Option<PathBuf> {
+/// on Windows and `~/.config/ebb` elsewhere. Shared with `flowfile.rs`, which
+/// keeps the recent-flows list alongside the config file.
+pub fn config_dir() -> Option<PathBuf> {
     if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
-            return Some(PathBuf::from(xdg).join("ebb").join("config.toml"));
+            return Some(PathBuf::from(xdg).join("ebb"));
         }
     }
     #[cfg(windows)]
     {
         let appdata = std::env::var_os("APPDATA")?;
-        Some(PathBuf::from(appdata).join("ebb").join("config.toml"))
+        Some(PathBuf::from(appdata).join("ebb"))
     }
     #[cfg(not(windows))]
     {
         let home = std::env::var_os("HOME")?;
-        Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("ebb")
-                .join("config.toml"),
-        )
+        Some(PathBuf::from(home).join(".config").join("ebb"))
     }
+}
+
+fn config_path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("config.toml"))
 }
 
 // --- TOML <-> JSON -------------------------------------------------------------

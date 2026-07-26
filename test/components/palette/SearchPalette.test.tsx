@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach } from "vitest";
 
 import SearchPalette from "@/components/palette/SearchPalette";
+import { COMMANDS } from "@/lib/commands/registry";
 import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -120,8 +121,11 @@ describe("SearchPalette", () => {
         useFlowStore.getState().setQuickSwitcherOpen(true, ">");
         render(<SearchPalette />);
         expect(screen.getByTestId("search-palette-input")).toHaveValue(">");
-        // Empty command query lists commands in registry order; Undo is first.
-        expect(screen.getByTestId("sp-row-0")).toHaveTextContent("Undo");
+        // An empty command query lists commands in registry order. Asserting
+        // against the registry rather than a name keeps this from breaking
+        // every time a command is added at the top.
+        const [first] = Object.values(COMMANDS);
+        expect(screen.getByTestId("sp-row-0")).toHaveTextContent(first.label);
     });
 
     it("places the caret past the > seed rather than selecting it", () => {

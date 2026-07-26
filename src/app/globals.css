@@ -415,3 +415,28 @@ html .ht-theme-main {
         @apply bg-background text-foreground;
     }
 }
+
+/* The wordmark's block caret blinks like a terminal cursor, matching the mark
+   on ebb.smodi.net. step-end holds each half rather than fading, which is what
+   a real caret does. Only the start screen turns it on; chrome-sized marks stay
+   still so nothing pulses beside the grid mid-round. */
+@keyframes ebb-caret-blink {
+    0%,
+    45% {
+        opacity: 1;
+    }
+    50%,
+    95% {
+        opacity: 0;
+    }
+}
+
+.ebb-caret {
+    animation: ebb-caret-blink 1.2s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ebb-caret {
+        animation: none;
+    }
+}

@@ -35,6 +35,15 @@ pub const QUIT_ID: &str = "quit";
 /// Menu item id for Select All; handled in JS (not a CommandId).
 pub const SELECT_ALL_ID: &str = "selectAll";
 
+/// Every platform words this differently, and using the wrong word is the kind
+/// of detail that makes an app feel ported rather than native.
+#[cfg(target_os = "macos")]
+const REVEAL_LABEL: &str = "Show in Finder";
+#[cfg(target_os = "windows")]
+const REVEAL_LABEL: &str = "Show in Explorer";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const REVEAL_LABEL: &str = "Show in File Manager";
+
 /// Builds the application menu. `accels` maps a CommandId to its current
 /// accelerator (empty string = click-only); each item's preset accelerator
 /// applies until the frontend syncs the effective keymap via rebuild_menu.
@@ -81,10 +90,23 @@ pub fn build<R: Runtime>(
         .item(&quit)
         .build()?;
 
-    // File: sheet creation / structure commands. The Settings duplicate here
-    // is click-only; the app-menu item owns the accelerator (two items with
-    // the same key-equivalent would race).
+    // File: the document commands first, then the sheet-structure ones that
+    // act inside the open flow. The Settings duplicate here is click-only; the
+    // app-menu item owns the accelerator (two items with the same
+    // key-equivalent would race).
+    //
+    // Open carries no accelerator: CmdOrCtrl+O is Insert Cell in the editor,
+    // which a debater uses mid-speech, so the start screen binds a bare "o"
+    // for opening instead.
     let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&cmd("flow.new", "New Flow", "CmdOrCtrl+N")?)
+        .item(&cmd("flow.open", "Open Flow...", "")?)
+        .separator()
+        .item(&cmd("flow.save", "Save", "CmdOrCtrl+S")?)
+        .item(&cmd("flow.saveAs", "Save As...", "CmdOrCtrl+Shift+S")?)
+        .item(&cmd("flow.reveal", REVEAL_LABEL, "")?)
+        .item(&cmd("flow.close", "Close Flow", "")?)
+        .separator()
         .item(&cmd("sheet.newAff", "New Aff Sheet", "CmdOrCtrl+Shift+A")?)
         .item(&cmd("sheet.newNeg", "New Neg Sheet", "CmdOrCtrl+Shift+N")?)
         .item(&cmd("sheet.rename", "Rename Sheet", "CmdOrCtrl+R")?)

@@ -13,6 +13,16 @@ const GUIDE_URL = "https://ebb.smodi.net/docs";
 /** Grid-native gestures owned by Handsontable; fixed, not rebindable. */
 const FIXED_GROUPS: { label: string; rows: { chord: string; label: string }[] }[] = [
     {
+        label: "Start screen (fixed)",
+        rows: [
+            { chord: "n", label: "New flow" },
+            { chord: "o", label: "Open a flow" },
+            { chord: "s", label: "Settings" },
+            { chord: "1 - 6", label: "Open a recent flow" },
+            { chord: "j / k", label: "Move the cursor" },
+        ],
+    },
+    {
         label: "Editing (fixed)",
         rows: [
             { chord: "Enter", label: "Next row / commit edit" },
@@ -83,6 +93,16 @@ const GROUPS: { label: string; rows: { commandId: CommandId }[] }[] = [
             { commandId: "split.focusLeft" as CommandId },
             { commandId: "split.focusRight" as CommandId },
             { commandId: "sheet.jump1" as CommandId },
+        ],
+    },
+    {
+        label: "Flow files",
+        rows: [
+            { commandId: "flow.new" as CommandId },
+            { commandId: "flow.save" as CommandId },
+            { commandId: "flow.saveAs" as CommandId },
+            { commandId: "flow.reveal" as CommandId },
+            { commandId: "flow.close" as CommandId },
         ],
     },
     {
