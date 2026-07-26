@@ -7,6 +7,14 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Added
+
+- Right-clicking a cell that came in from CardMirror now offers "Jump to
+  source" below the row items, so the jump is reachable without remembering
+  its shortcut. It acts on the cell you clicked, which in split view can sit
+  in the pane that does not hold the cursor. A cell you typed yourself, and
+  every cell while the integration is switched off, shows the row items alone.
+
 ## [0.7.2] - 2026-07-25
 
 ### Added

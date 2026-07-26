@@ -12,6 +12,7 @@ import "handsontable/styles/ht-theme-main.min.css";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
 import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "@/lib/grid/codec";
+import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
 import {
@@ -44,7 +45,6 @@ registerAllModules();
 // the grid further as cells past this fill, so it is headroom, not a cap; kept
 // modest because every sheet switch re-renders and re-measures the full pad.
 const MIN_ROWS = 250;
-const CONTEXT_MENU = ["row_above", "row_below", "remove_row"] as const;
 
 const ARROW_DELTAS: Record<string, { dr: number; dc: number }> = {
     ArrowUp: { dr: -1, dc: 0 },
@@ -631,7 +631,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     enterBeginsEditing={false}
                     undo={true}
                     outsideClickDeselects={false}
-                    contextMenu={CONTEXT_MENU as unknown as string[]}
+                    contextMenu={FLOW_CONTEXT_MENU as unknown as string[]}
                     copyPaste={{ pasteMode: insertPaste ? "shift_down" : "overwrite" }}
                     afterGetColHeader={afterGetColHeader}
                     afterRenderer={afterRenderer}

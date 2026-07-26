@@ -121,9 +121,13 @@ function outcomeMessage(
     return CONSENT_MESSAGE[error] ?? errors[error] ?? fallback;
 }
 
-export async function runJumpToSource(): Promise<void> {
+/**
+ * Jump to the document position a given cell came from. The caller names the
+ * cell, so the right-click menu can act on the cell it was opened over rather
+ * than on whatever the keyboard last selected.
+ */
+export async function jumpToSource(source: CellSource | null): Promise<void> {
     if (!cardmirrorLive()) return;
-    const source = selectedSource();
     if (!source) {
         toast("This cell did not come from CardMirror.");
         return;
@@ -134,6 +138,10 @@ export async function runJumpToSource(): Promise<void> {
         "CardMirror could not open this cell's source.",
     );
     if (message) toast(message);
+}
+
+export function runJumpToSource(): Promise<void> {
+    return jumpToSource(selectedSource());
 }
 
 export async function runSendToDoc(): Promise<void> {
