@@ -508,7 +508,7 @@ export default function SettingsPanel() {
                                 />
                                 <SettingRow
                                     title="Flows folder"
-                                    description="Where new flows are filed. Existing files stay where they are; this only decides where the next one lands."
+                                    description="Where new flows are filed. Existing files stay where they are."
                                     control={<FlowsFolderControl />}
                                 />
                                 {isDesktop() && (
