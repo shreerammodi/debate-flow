@@ -14,6 +14,9 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   its shortcut. It acts on the cell you clicked, which in split view can sit
   in the pane that does not hold the cursor. A cell you typed yourself, and
   every cell while the integration is switched off, shows the row items alone.
+- Right-clicking a flow card on the dashboard now opens ebb's own menu instead
+  of the browser's: View details, Export to JSON or Excel, and Delete, the same
+  actions as the card's three-dot menu.
 
 ## [0.7.2] - 2026-07-25
 

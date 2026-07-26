@@ -27,6 +27,7 @@ import { isMacPlatform } from "@/lib/platform";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import FlowCard from "./FlowCard";
+import FlowCardContextMenu from "./FlowCardContextMenu";
 import FlowCardMenu from "./FlowCardMenu";
 import FlowDetailDrawer from "./FlowDetailDrawer";
 import ImportExportControls from "./ImportExportControls";
@@ -349,19 +350,27 @@ export default function Dashboard() {
                                                                     animate={{ opacity: 1 }}
                                                                     exit={{ opacity: 0 }}
                                                                 >
-                                                                    <FlowCard
-                                                                        summary={s}
-                                                                        onOpen={open}
-                                                                        menu={
-                                                                            <FlowCardMenu
-                                                                                id={s.id}
-                                                                                onViewDetails={
-                                                                                    setDetailId
-                                                                                }
-                                                                                onChanged={refresh}
-                                                                            />
-                                                                        }
-                                                                    />
+                                                                    <FlowCardContextMenu
+                                                                        id={s.id}
+                                                                        onViewDetails={setDetailId}
+                                                                        onChanged={refresh}
+                                                                    >
+                                                                        <FlowCard
+                                                                            summary={s}
+                                                                            onOpen={open}
+                                                                            menu={
+                                                                                <FlowCardMenu
+                                                                                    id={s.id}
+                                                                                    onViewDetails={
+                                                                                        setDetailId
+                                                                                    }
+                                                                                    onChanged={
+                                                                                        refresh
+                                                                                    }
+                                                                                />
+                                                                            }
+                                                                        />
+                                                                    </FlowCardContextMenu>
                                                                 </m.div>
                                                             ))}
                                                         </AnimatePresence>
@@ -387,17 +396,23 @@ export default function Dashboard() {
                                                         animate={{ opacity: 1 }}
                                                         exit={{ opacity: 0 }}
                                                     >
-                                                        <FlowCard
-                                                            summary={match.summary}
-                                                            onOpen={open}
-                                                            menu={
-                                                                <FlowCardMenu
-                                                                    id={match.summary.id}
-                                                                    onViewDetails={setDetailId}
-                                                                    onChanged={refresh}
-                                                                />
-                                                            }
-                                                        />
+                                                        <FlowCardContextMenu
+                                                            id={match.summary.id}
+                                                            onViewDetails={setDetailId}
+                                                            onChanged={refresh}
+                                                        >
+                                                            <FlowCard
+                                                                summary={match.summary}
+                                                                onOpen={open}
+                                                                menu={
+                                                                    <FlowCardMenu
+                                                                        id={match.summary.id}
+                                                                        onViewDetails={setDetailId}
+                                                                        onChanged={refresh}
+                                                                    />
+                                                                }
+                                                            />
+                                                        </FlowCardContextMenu>
                                                     </m.div>
                                                 ))}
                                             </AnimatePresence>
