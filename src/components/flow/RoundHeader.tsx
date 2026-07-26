@@ -32,17 +32,18 @@ export default function RoundHeader() {
 
     return (
         <header
-            className="border-border bg-card flex h-12 flex-none items-center gap-4 border-b px-4"
+            className="border-border bg-card flex h-12 flex-none items-center gap-2 border-b px-3 lg:gap-4 lg:px-4"
             data-testid="round-header"
         >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden lg:gap-3">
                 <Link
                     href="/"
                     className="text-muted-foreground hover:text-foreground flex flex-none items-center gap-1.5 text-[13px]"
+                    aria-label="Flows"
                     data-testid="back-to-flows"
                 >
                     <House className="size-4" aria-hidden="true" />
-                    Flows
+                    <span className="hidden sm:inline">Flows</span>
                 </Link>
                 <span aria-hidden="true" className="bg-border h-4 w-px flex-none" />
                 <span className="text-foreground truncate text-sm font-semibold">
@@ -51,7 +52,7 @@ export default function RoundHeader() {
                 <SaveStatus />
             </div>
 
-            <div className="no-print flex flex-none items-center gap-2">
+            <div className="no-print flex flex-none items-center gap-1 lg:gap-2">
                 <SpeechSwitcher />
                 <ZoomControl />
                 <Tip label="Round info" command="info.open">

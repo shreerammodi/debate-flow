@@ -24,7 +24,12 @@ export default function SpeechSwitcher() {
         <DropdownMenu>
             <Tip label="Jump to a speech across every sheet">
                 <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" data-testid="speech-switcher-btn">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="speech-switcher-btn"
+                        className="hidden lg:inline-flex"
+                    >
                         Speech
                         <CaretDown className="size-4 opacity-60" />
                     </Button>

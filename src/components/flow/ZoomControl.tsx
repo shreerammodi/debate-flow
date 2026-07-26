@@ -8,7 +8,11 @@ import { Slider } from "@/components/ui/slider";
 import { Tip } from "@/components/ui/tooltip";
 import { useFlowStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
-/** Header zoom control: minus, slider, plus, and a click-to-edit percentage. */
+/**
+ * Header zoom control: minus, slider, plus, and a click-to-edit percentage.
+ * The slider and the percentage readout drop out on narrow windows so the
+ * buttons alone survive; both are conveniences over `view.zoomIn/Out`.
+ */
 export default function ZoomControl() {
     const gridZoom = useFlowStore((s) => s.gridZoom);
     const setGridZoom = useFlowStore((s) => s.setGridZoom);
@@ -45,7 +49,7 @@ export default function ZoomControl() {
                 onValueChange={(v) => setGridZoom(Array.isArray(v) ? v[0] : v)}
                 aria-label="Zoom"
                 data-testid="zoom-slider"
-                className="w-24"
+                className="hidden w-24 xl:flex"
             />
             <Tip label="Zoom in" command="view.zoomIn">
                 <Button
@@ -73,7 +77,7 @@ export default function ZoomControl() {
                     }}
                     aria-label="Zoom percentage"
                     data-testid="zoom-input"
-                    className="border-input focus-visible:border-ring h-6 w-12 rounded-md border bg-transparent px-1 text-right text-[13px] tabular-nums outline-none"
+                    className="border-input focus-visible:border-ring hidden h-6 w-12 rounded-md border bg-transparent px-1 text-right text-[13px] tabular-nums outline-none lg:block"
                 />
             ) : (
                 <button
@@ -84,7 +88,7 @@ export default function ZoomControl() {
                     }}
                     aria-label="Edit zoom percentage"
                     data-testid="zoom-pct"
-                    className="text-muted-foreground hover:text-foreground w-12 rounded px-1 py-0.5 text-right text-[13px] tabular-nums transition-colors"
+                    className="text-muted-foreground hover:text-foreground hidden w-12 rounded px-1 py-0.5 text-right text-[13px] tabular-nums transition-colors lg:block"
                 >
                     {pct}%
                 </button>

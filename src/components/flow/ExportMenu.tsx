@@ -31,10 +31,15 @@ export default function ExportMenu() {
         <DropdownMenu>
             <Tip label="Export round">
                 <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" data-testid="export-btn">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label="Export"
+                        data-testid="export-btn"
+                    >
                         <Export className="size-4" />
-                        Export
-                        <CaretDown className="size-4 opacity-60" />
+                        <span className="hidden lg:inline">Export</span>
+                        <CaretDown className="hidden size-4 opacity-60 lg:block" />
                     </Button>
                 </DropdownMenuTrigger>
             </Tip>
