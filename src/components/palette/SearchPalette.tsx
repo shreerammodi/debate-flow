@@ -5,10 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { executeCommand } from "@/lib/commands/commands";
-import { getEvent } from "@/lib/format/events";
+import { getEvent, speechOrder } from "@/lib/format/events";
 import { keyHintFor } from "@/lib/keymap/displayChord";
 import { searchCells } from "@/lib/search/cellSearch";
-import { searchCommands } from "@/lib/search/commandSearch";
+import { searchCommands, searchSpeechCommands } from "@/lib/search/commandSearch";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 /**
@@ -51,6 +51,7 @@ function SearchPaletteInner() {
     const seed = useFlowStore((s) => s.paletteSeed);
     const round = useFlowStore((s) => s.round);
     const revealCell = useFlowStore((s) => s.revealCell);
+    const switchSpeech = useFlowStore((s) => s.switchSpeech);
     const setOpen = useFlowStore((s) => s.setQuickSwitcherOpen);
 
     const [query, setQuery] = useState(seed);
@@ -70,7 +71,8 @@ function SearchPaletteInner() {
 
     const allRows = useMemo<Row[]>(() => {
         if (isCommandMode) {
-            return searchCommands(query.slice(1))
+            const q = query.slice(1);
+            const commands: Row[] = searchCommands(q)
                 .filter(
                     (c) =>
                         c.id !== "round.swapOrder" ||
@@ -83,6 +85,18 @@ function SearchPaletteInner() {
                     hint: keyHintFor(c.id),
                     run: () => executeCommand(c.id),
                 }));
+            if (!round) return commands;
+            const speeches = searchSpeechCommands(
+                q,
+                speechOrder(getEvent(round.event), round.firstSide ?? "aff"),
+            ).map<Row>((s) => ({
+                kind: "command",
+                id: `speech:${s.speechId}`,
+                text: s.label,
+                hint: null,
+                run: () => switchSpeech(s.speechId),
+            }));
+            return [...commands, ...speeches];
         }
         if (!round) return [];
         return searchCells(round, query).map((hit) => ({
@@ -94,7 +108,7 @@ function SearchPaletteInner() {
             meta: hit.card ? `${hit.sheetTitle} · Card` : hit.sheetTitle,
             run: () => revealCell(hit.sheetId, hit.row, hit.col),
         }));
-    }, [isCommandMode, query, round, revealCell]);
+    }, [isCommandMode, query, round, revealCell, switchSpeech]);
 
     const rows = visibleCount < allRows.length ? allRows.slice(0, visibleCount) : allRows;
 
