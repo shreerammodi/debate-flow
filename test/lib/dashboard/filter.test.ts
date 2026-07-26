@@ -8,7 +8,6 @@ function s(id: string, over: Partial<RoundSummary> = {}): RoundSummary {
         id,
         createdAt: 0,
         updatedAt: 0,
-        role: "aff",
         affTeam: "",
         negTeam: "",
         ...over,

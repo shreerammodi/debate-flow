@@ -14,21 +14,15 @@ import SpeechSwitcher from "./SpeechSwitcher";
 import ZoomControl from "./ZoomControl";
 
 export default function RoundHeader() {
-    const role = useFlowStore((s) => s.round?.role);
     const scouting = useFlowStore((s) => s.round?.scouting);
 
-    if (!role || !scouting) return null;
+    if (!scouting) return null;
 
     const affCode =
         teamCode(scouting.affSchool ?? "", scouting.aff.first, scouting.aff.second) || "Aff";
     const negCode =
         teamCode(scouting.negSchool ?? "", scouting.neg.first, scouting.neg.second) || "Neg";
-    const participants =
-        role === "judge"
-            ? `${affCode} (Aff) vs ${negCode} (Neg)`
-            : role === "neg"
-              ? `${negCode} vs ${affCode}`
-              : `${affCode} vs ${negCode}`;
+    const participants = `${affCode} vs ${negCode}`;
 
     return (
         <header

@@ -19,7 +19,6 @@ function round(sheets: FlowSheet[]): FlowRound {
         id: "round1",
         createdAt: 0,
         updatedAt: 0,
-        role: "aff",
         event: "policy",
         scouting: {
             aff: {

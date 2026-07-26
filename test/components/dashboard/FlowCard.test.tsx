@@ -10,7 +10,6 @@ function summary(over: Partial<RoundSummary> = {}): RoundSummary {
         id: "r1",
         createdAt: 1,
         updatedAt: 2,
-        role: "aff",
         affTeam: "Westwood GM",
         negTeam: "Harvard BS",
         tournament: "Berkeley",

@@ -5,8 +5,8 @@ import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
 
-function loadFresh(role: "aff" | "neg" = "aff") {
-    const round = makeFlowRound({ role });
+function loadFresh() {
+    const round = makeFlowRound();
     useFlowStore.getState().loadRound(round);
     return round;
 }
@@ -34,7 +34,7 @@ describe("loadRound", () => {
     });
 
     it("honors an explicit activeSheetId option", () => {
-        const round = makeFlowRound({ role: "aff" });
+        const round = makeFlowRound({});
         const cx = round.sheets.find((s) => s.kind === "cx")!;
         useFlowStore.getState().loadRound(round, { activeSheetId: cx.id });
         expect(useFlowStore.getState().activeSheetId).toBe(cx.id);
@@ -43,12 +43,12 @@ describe("loadRound", () => {
     it("forces the RFD drawer closed for a new flow but restores the preference otherwise", () => {
         useFlowStore.getState().setRfdOpen(true);
 
-        useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }), { newFlow: true });
+        useFlowStore.getState().loadRound(makeFlowRound({}), { newFlow: true });
         expect(useFlowStore.getState().rfdOpen).toBe(false);
         // Forcing it closed stays transient: the persisted preference is intact.
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"rfdOpen":true');
 
-        useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({}));
         expect(useFlowStore.getState().rfdOpen).toBe(true);
     });
 
@@ -82,9 +82,7 @@ describe("loadRound", () => {
 
 describe("swapSpeakingOrder", () => {
     it("flips firstSide on a pf round", () => {
-        useFlowStore
-            .getState()
-            .loadRound(makeFlowRound({ role: "aff", event: "pf", firstSide: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({ event: "pf", firstSide: "aff" }));
         useFlowStore.getState().swapSpeakingOrder();
         expect(useFlowStore.getState().round?.firstSide).toBe("neg");
         useFlowStore.getState().swapSpeakingOrder();
@@ -92,7 +90,7 @@ describe("swapSpeakingOrder", () => {
     });
 
     it("no-ops on a policy round", () => {
-        useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({}));
         const before = useFlowStore.getState().round;
         useFlowStore.getState().swapSpeakingOrder();
         expect(useFlowStore.getState().round).toBe(before);
@@ -110,9 +108,7 @@ describe("swapSpeakingOrder", () => {
     };
 
     it("preserves an overflow column's text across a swap round-trip", () => {
-        useFlowStore
-            .getState()
-            .loadRound(makeFlowRound({ role: "aff", event: "pf", firstSide: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({ event: "pf", firstSide: "aff" }));
         const affSheet = useFlowStore
             .getState()
             .round!.sheets.find((s) => s.kind !== "cx" && s.group === "aff")!;
@@ -176,7 +172,7 @@ describe("sheet operations", () => {
     });
 
     it("addSheets appends all in one update, numbering per side and activating the first", () => {
-        loadFresh("aff"); // starts with CX + one aff flow sheet
+        loadFresh(); // starts with CX + one aff flow sheet
         const state = () => useFlowStore.getState();
         const before = state().round!.updatedAt;
         const beforeCount = state().round!.sheets.length;
@@ -280,7 +276,7 @@ describe("setScouting", () => {
 
 function threeFlowSheets() {
     // Fresh aff round has CX + one flow sheet ("1.", order 0). Add two more.
-    const round = makeFlowRound({ role: "aff" });
+    const round = makeFlowRound({});
     useFlowStore.getState().loadRound(round);
     const a = round.sheets.find((s) => s.kind !== "cx")!.id;
     const b = useFlowStore.getState().addSheet({ title: "DA", group: "neg" });

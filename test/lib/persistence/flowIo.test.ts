@@ -10,7 +10,7 @@ import {
 
 describe("flowIo", () => {
     it("round-trips a round with a fresh identity", () => {
-        const r = makeFlowRound({ role: "aff" });
+        const r = makeFlowRound({});
         const flow = r.sheets.find((s) => s.kind !== "cx")!;
         flow.data = [["hello", null]];
         flow.meta = { "0,0": { bold: true } };
@@ -28,22 +28,22 @@ describe("flowIo", () => {
         expect(() => importFlowJSON(JSON.stringify({ version: 2, round: {} }))).toThrow(
             "Unsupported file version: 2",
         );
-        expect(() =>
-            importFlowJSON(JSON.stringify({ version: 3, round: { id: "x", role: "aff" } })),
-        ).toThrow("Invalid round file");
+        expect(() => importFlowJSON(JSON.stringify({ version: 3, round: { id: "x" } }))).toThrow(
+            "Invalid round file",
+        );
         expect(() =>
             importFlowJSON(
                 JSON.stringify({
                     version: 3,
-                    round: { id: "x", role: "aff", sheets: [{ id: "s", title: "t" }] },
+                    round: { id: "x", sheets: [{ id: "s", title: "t" }] },
                 }),
             ),
         ).toThrow("Invalid round file");
     });
 
     it("parses both single and backup envelopes with fresh ids", () => {
-        const a = makeFlowRound({ role: "aff" });
-        const b = makeFlowRound({ role: "neg" });
+        const a = makeFlowRound({});
+        const b = makeFlowRound({});
         const fromBackup = parseFlowImportFile(exportFlowBackupJSON([a, b]));
         expect(fromBackup).toHaveLength(2);
         expect(fromBackup.map((r) => r.id)).not.toContain(a.id);

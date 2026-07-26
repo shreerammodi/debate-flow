@@ -17,7 +17,7 @@ function resetStore() {
 }
 
 function setup() {
-    const round = makeFlowRound({ role: "aff" });
+    const round = makeFlowRound({});
     const flow = round.sheets.find((s) => s.kind !== "cx")!;
     flow.title = "Case";
     flow.data = Array.from({ length: 60 }, (_, r) => [`arg ${r}`, null]);

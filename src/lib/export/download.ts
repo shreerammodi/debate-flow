@@ -16,13 +16,9 @@ export function isoDate(ts: number): string {
     return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}`;
 }
 
-function sanitize(s: string): string {
-    return s.replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
-}
-
-/** e.g. debate-flow-aff-20260602.xlsx */
-export function exportFilename(role: string, ts: number, ext: string): string {
-    return `debate-flow-${sanitize(role)}-${compactDate(ts)}.${ext}`;
+/** e.g. debate-flow-20260602.xlsx */
+export function exportFilename(ts: number, ext: string): string {
+    return `debate-flow-${compactDate(ts)}.${ext}`;
 }
 
 const MIME_BY_EXT: Record<string, string> = {

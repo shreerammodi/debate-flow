@@ -17,7 +17,7 @@ function renderInfoPanel() {
 
 describe("InfoPanel", () => {
     beforeEach(() => {
-        useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({}));
         useFlowStore.getState().setInfoOpen(true);
     });
 

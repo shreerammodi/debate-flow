@@ -24,7 +24,7 @@ function renderDashboard() {
 
 function mk(id: string, over: Partial<FlowRound> = {}): FlowRound {
     return {
-        ...makeFlowRound({ role: "aff" }),
+        ...makeFlowRound({}),
         id,
         createdAt: 1,
         updatedAt: 1,
@@ -150,8 +150,8 @@ describe("dashboard keytips", () => {
 
         press("f");
         press("n");
-        await screen.findByTestId("new-flow-role-aff");
-        press("a");
+        await screen.findByTestId("new-flow-policy");
+        press("p");
         await waitFor(() => expect(push).toHaveBeenCalled());
         expect(push.mock.calls[0][0]).toContain("/flow?id=");
     });

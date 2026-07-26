@@ -12,44 +12,44 @@ import {
 } from "@/lib/model/flow";
 
 describe("makeFlowRound", () => {
-    it("creates a CX sheet plus one flow sheet numbered for the side", () => {
-        const r = makeFlowRound({ role: "neg" });
+    it("creates a CX sheet plus one flow sheet grouped to the first speaker", () => {
+        const r = makeFlowRound();
         expect(r.sheets).toHaveLength(2);
         const cx = r.sheets.find((s) => s.kind === "cx")!;
         const flow = r.sheets.find((s) => s.kind !== "cx")!;
         expect(cx.order).toBe(-1);
         expect(flow.title).toBe("1.");
-        expect(flow.group).toBe("neg");
+        expect(flow.group).toBe("aff");
         expect(flow.startSpeechId).toBeUndefined();
         expect(flow.data).toEqual([]);
         expect(flow.meta).toEqual({});
     });
 
-    it("judge rounds get an aff-grouped first sheet", () => {
-        const r = makeFlowRound({ role: "judge" });
+    it("groups the first sheet to neg when neg speaks first", () => {
+        const r = makeFlowRound({ event: "pf", firstSide: "neg" });
         const flow = r.sheets.find((s) => s.kind !== "cx")!;
-        expect(flow.group).toBe("aff");
+        expect(flow.group).toBe("neg");
         expect(flow.startSpeechId).toBeUndefined();
     });
 });
 
 describe("multi-event round fields", () => {
     it("makeFlowRound defaults to a policy round with aff speaking first", () => {
-        const round = makeFlowRound({ role: "aff" });
+        const round = makeFlowRound({});
         expect(round.event).toBe("policy");
         expect(round.firstSide).toBe("aff");
         expect(round.sheets.find((s) => s.kind === "cx")?.title).toBe("CX");
     });
 
     it("makeFlowRound builds a pf round with the event's cross-ex title", () => {
-        const round = makeFlowRound({ role: "neg", event: "pf", firstSide: "neg" });
+        const round = makeFlowRound({ event: "pf", firstSide: "neg" });
         expect(round.event).toBe("pf");
         expect(round.firstSide).toBe("neg");
         expect(round.sheets.find((s) => s.kind === "cx")?.title).toBe(EVENTS.pf.crossEx.title);
     });
 
     it("normalizeFlow backfills event and firstSide on legacy rounds", () => {
-        const legacy = makeFlowRound({ role: "aff" });
+        const legacy = makeFlowRound({});
         delete (legacy as Partial<FlowRound>).event;
         delete (legacy as Partial<FlowRound>).firstSide;
         const normalized = normalizeFlow(legacy);
@@ -69,7 +69,6 @@ describe("normalizeFlow", () => {
             id: "r1",
             createdAt: 1,
             updatedAt: 2,
-            role: "aff",
             scouting: undefined,
             sheets: [{ id: "s1", title: "Aff", group: "aff", order: 0 }],
         } as unknown as FlowRound;
@@ -83,7 +82,7 @@ describe("normalizeFlow", () => {
     });
 
     it("does not duplicate an existing CX sheet and does not mutate input", () => {
-        const raw = makeFlowRound({ role: "aff" });
+        const raw = makeFlowRound({});
         const before = JSON.parse(JSON.stringify(raw));
         const r = normalizeFlow(raw);
         expect(r.sheets.filter((s) => s.kind === "cx")).toHaveLength(1);
@@ -93,7 +92,7 @@ describe("normalizeFlow", () => {
 
 describe("sheet ordering", () => {
     it("sortedSheets sorts by order; firstFlowSheetId skips CX", () => {
-        const r = makeFlowRound({ role: "aff" });
+        const r = makeFlowRound({});
         const extra = makeFlowSheet({ title: "DA", group: "neg", order: 5 });
         const round = { ...r, sheets: [extra, ...r.sheets] };
         expect(sortedSheets(round).map((s) => s.title)).toEqual(["CX", "1.", "DA"]);
@@ -102,7 +101,7 @@ describe("sheet ordering", () => {
     });
 
     it("firstFlowSheetId is null for an empty sheet list", () => {
-        const r = { ...makeFlowRound({ role: "aff" }), sheets: [] };
+        const r = { ...makeFlowRound({}), sheets: [] };
         expect(firstFlowSheetId(r)).toBeNull();
     });
 });

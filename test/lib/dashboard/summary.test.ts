@@ -5,7 +5,7 @@ import { emptyScouting, makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 function baseRound(overrides: Partial<FlowRound> = {}): FlowRound {
     return {
-        ...makeFlowRound({ role: "aff" }),
+        ...makeFlowRound({}),
         id: "r1",
         createdAt: 10,
         updatedAt: 20,
@@ -41,7 +41,6 @@ describe("buildSummary", () => {
         expect(s.round).toBe("Round 3");
         expect(s.judge).toBe("K. Strange");
         expect(s.id).toBe("r1");
-        expect(s.role).toBe("aff");
         expect(s.updatedAt).toBe(20);
     });
 

@@ -3,9 +3,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { exportFilename, isoDate, saveBlob } from "@/lib/export/download";
 
 describe("exportFilename", () => {
-    it("builds a sanitized name with role, date, and extension", () => {
+    it("builds a name from the date and extension", () => {
         const ts = Date.UTC(2026, 5, 2); // 2026-06-02
-        expect(exportFilename("aff", ts, "xlsm")).toBe("debate-flow-aff-20260602.xlsm");
+        expect(exportFilename(ts, "xlsm")).toBe("debate-flow-20260602.xlsm");
     });
 });
 

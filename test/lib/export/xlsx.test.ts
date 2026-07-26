@@ -5,7 +5,7 @@ import { fillWorkbook } from "@/lib/export/xlsx";
 import { makeFlowRound } from "@/lib/model/flow";
 
 function judgedRound() {
-    const round = makeFlowRound({ role: "judge" });
+    const round = makeFlowRound({});
     round.scouting.decision = { vote: "aff", rfd: "Won on topicality." };
     const flow = round.sheets.find((s) => s.kind !== "cx")!;
     flow.title = "1. Topicality";

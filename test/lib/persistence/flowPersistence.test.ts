@@ -18,7 +18,7 @@ import {
 
 describe("flow persistence", () => {
     it("persists, loads, and lists a round", async () => {
-        const r = makeFlowRound({ role: "aff" });
+        const r = makeFlowRound({});
         await persistFlow(r);
         const loaded = await loadFlow(r.id);
         expect(loaded?.id).toBe(r.id);
@@ -28,7 +28,7 @@ describe("flow persistence", () => {
     });
 
     it("soft delete moves between live and trash lists; restore reverses", async () => {
-        const r = makeFlowRound({ role: "neg" });
+        const r = makeFlowRound({});
         await persistFlow(r);
         await softDeleteFlow(r.id);
         expect((await listFlows()).map((s) => s.id)).not.toContain(r.id);
@@ -40,7 +40,7 @@ describe("flow persistence", () => {
     });
 
     it("serves both lists from one table read until a write invalidates it", async () => {
-        const r = makeFlowRound({ role: "aff" });
+        const r = makeFlowRound({});
         await persistFlow(r);
         const orderBy = vi.spyOn(flowDb.flows, "orderBy");
 

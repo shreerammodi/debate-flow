@@ -32,13 +32,11 @@ function freshen(round: FlowRound): FlowRound {
     };
 }
 
-/** A structurally valid FlowRound: id, role, and sheets that carry data arrays. */
+/** A structurally valid FlowRound: an id and sheets that carry data arrays. */
 function isFlowRoundShape(value: unknown): value is FlowRound {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
     const r = value as Record<string, unknown>;
-    if (typeof r.id !== "string" || typeof r.role !== "string" || !Array.isArray(r.sheets)) {
-        return false;
-    }
+    if (typeof r.id !== "string" || !Array.isArray(r.sheets)) return false;
     return (r.sheets as unknown[]).every((s) => {
         if (typeof s !== "object" || s === null) return false;
         const sheet = s as Record<string, unknown>;
@@ -112,7 +110,7 @@ function sanitizeSegment(s: string): string {
 export async function downloadFlowFile(round: FlowRound): Promise<void> {
     const blob = new Blob([exportFlowJSON(round)], { type: "application/json" });
     const date = formatDate(round.updatedAt ?? Date.now());
-    const filename = `debate-flow-${sanitizeSegment(round.role)}-${date}.json`;
+    const filename = `debate-flow-${date}.json`;
     await saveBlob(blob, filename);
 }
 

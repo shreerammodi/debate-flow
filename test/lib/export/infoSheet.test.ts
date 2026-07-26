@@ -5,7 +5,7 @@ import { applyInfoWorksheet, maybeAddRfdWorksheet } from "@/lib/export/infoSheet
 import { makeFlowRound } from "@/lib/model/flow";
 
 const roundWith = (patch: object) => {
-    const round = makeFlowRound({ role: "judge" });
+    const round = makeFlowRound({});
     Object.assign(round.scouting, patch);
     return round;
 };
@@ -44,7 +44,7 @@ describe("maybeAddRfdWorksheet", () => {
 
     it("skips the worksheet when there is no vote and no rfd", () => {
         const wb = new ExcelJS.Workbook();
-        maybeAddRfdWorksheet(wb, makeFlowRound({ role: "aff" }));
+        maybeAddRfdWorksheet(wb, makeFlowRound({}));
         expect(wb.getWorksheet("RFD")).toBeUndefined();
     });
 });

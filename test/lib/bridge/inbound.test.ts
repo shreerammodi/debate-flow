@@ -56,7 +56,7 @@ const cite = { kind: "cite", text: "Smith 24", source: "cmsrc1.b", key: "doc-1|s
 const block = { kind: "block", text: "Cap K", source: "cmsrc1.c", key: "doc-1|cap k" };
 
 function loadRound() {
-    useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }));
+    useFlowStore.getState().loadRound(makeFlowRound({}));
 }
 
 /** The sheet a write lands in: the one the store made active. */
@@ -256,7 +256,7 @@ describe("the reveal route", () => {
 
     /** Two hits on the CX sheet (order -1, so first) and one on the flow sheet. */
     function roundWithHits() {
-        const round = makeFlowRound({ role: "aff" });
+        const round = makeFlowRound({});
         round.sheets[0].meta = { "3,2": sourced("doc-1|perm"), "1,0": sourced("doc-1|perm") };
         round.sheets[1].meta = { "0,1": sourced("doc-1|smith") };
         useFlowStore.getState().loadRound(round);

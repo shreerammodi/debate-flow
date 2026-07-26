@@ -5,8 +5,6 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuSub,
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
@@ -14,36 +12,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import type { KeytipId } from "@/lib/dashboard/keytips";
-import type { Role, Side } from "@/lib/model/types";
+import type { EventId } from "@/lib/format/events";
+import type { Side } from "@/lib/model/types";
 
 import { MENU_ATTR, useKeyTips } from "./keytips/KeyTipsProvider";
 import { useCreateFlow } from "./useCreateFlow";
 
-interface FlowChoice {
-    role: Role;
+interface EventChoice {
+    event: EventId;
     label: string;
     /** Keytip whose configured chord fires this item. */
     tip: KeytipId;
 }
 
-const POLICY: FlowChoice[] = [
-    { role: "aff", label: "Aff", tip: "new.policyAff" },
-    { role: "neg", label: "Neg", tip: "new.policyNeg" },
-    { role: "judge", label: "Judge", tip: "new.policyJudge" },
+/** Events whose speaking order is fixed; picking one creates the round. */
+const FIXED_ORDER: EventChoice[] = [
+    { event: "policy", label: "Policy", tip: "new.policy" },
+    { event: "ld", label: "Lincoln-Douglas", tip: "new.ld" },
 ];
-const PF: FlowChoice[] = [
-    { role: "aff", label: "Aff", tip: "new.pfAff" },
-    { role: "neg", label: "Neg", tip: "new.pfNeg" },
-    { role: "judge", label: "Judge", tip: "new.pfJudge" },
-];
-const LD: FlowChoice[] = [
-    { role: "aff", label: "Aff", tip: "new.ldAff" },
-    { role: "neg", label: "Neg", tip: "new.ldNeg" },
-    { role: "judge", label: "Judge", tip: "new.ldJudge" },
-];
-/** Event headings are non-interactive, so they read as labels, not as picks. */
-const EVENT_LABEL =
-    "text-muted-foreground font-mono text-[9px] font-bold tracking-widest uppercase";
 
 const PF_ORDERS: { firstSide: Side; label: string; tip: KeytipId }[] = [
     { firstSide: "aff", label: "Aff speaks first", tip: "new.pfFirstAff" },
@@ -52,7 +38,7 @@ const PF_ORDERS: { firstSide: Side; label: string; tip: KeytipId }[] = [
 
 export default function NewFlowButton() {
     const create = useCreateFlow();
-    const { mode, setMode, keytips } = useKeyTips();
+    const { setMode, mode, keytips } = useKeyTips();
     const tips = mode === "new";
 
     // The menu stays uncontrolled (mouse still opens it standalone); opening
@@ -65,59 +51,43 @@ export default function NewFlowButton() {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                <DropdownMenuLabel className={EVENT_LABEL}>Policy</DropdownMenuLabel>
-                {POLICY.map(({ role, label, tip }) => (
+                {FIXED_ORDER.map(({ event, label, tip }) => (
                     <DropdownMenuItem
-                        key={role}
-                        data-testid={`new-flow-role-${role}`}
+                        key={event}
+                        data-testid={`new-flow-${event}`}
                         {...{ [MENU_ATTR]: keytips[tip] }}
-                        onSelect={() => create(role)}
+                        onSelect={() => create(event)}
                     >
                         {label}
                         {tips && keytips[tip] && <Kbd className="ml-auto">{keytips[tip]}</Kbd>}
                     </DropdownMenuItem>
                 ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className={EVENT_LABEL}>Public Forum</DropdownMenuLabel>
-                {PF.map(({ role, label, tip }) => (
-                    <DropdownMenuSub key={role}>
-                        <DropdownMenuSubTrigger
-                            data-testid={`new-flow-pf-${role}`}
-                            {...{ [MENU_ATTR]: keytips[tip] }}
-                        >
-                            {label}
-                            {tips && keytips[tip] && <Kbd className="ml-auto">{keytips[tip]}</Kbd>}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                            {PF_ORDERS.map(({ firstSide, label: orderLabel, tip: orderTip }) => (
-                                <DropdownMenuItem
-                                    key={firstSide}
-                                    data-testid={`new-flow-pf-${role}-${firstSide}`}
-                                    {...{ [MENU_ATTR]: keytips[orderTip] }}
-                                    onSelect={() => create(role, "pf", firstSide)}
-                                >
-                                    {orderLabel}
-                                    {tips && keytips[orderTip] && (
-                                        <Kbd className="ml-auto">{keytips[orderTip]}</Kbd>
-                                    )}
-                                </DropdownMenuItem>
-                            ))}
-                        </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className={EVENT_LABEL}>Lincoln-Douglas</DropdownMenuLabel>
-                {LD.map(({ role, label, tip }) => (
-                    <DropdownMenuItem
-                        key={role}
-                        data-testid={`new-flow-ld-${role}`}
-                        {...{ [MENU_ATTR]: keytips[tip] }}
-                        onSelect={() => create(role, "ld")}
+                <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                        data-testid="new-flow-pf"
+                        {...{ [MENU_ATTR]: keytips["new.pf"] }}
                     >
-                        {label}
-                        {tips && keytips[tip] && <Kbd className="ml-auto">{keytips[tip]}</Kbd>}
-                    </DropdownMenuItem>
-                ))}
+                        Public Forum
+                        {tips && keytips["new.pf"] && (
+                            <Kbd className="ml-auto">{keytips["new.pf"]}</Kbd>
+                        )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                        {PF_ORDERS.map(({ firstSide, label, tip }) => (
+                            <DropdownMenuItem
+                                key={firstSide}
+                                data-testid={`new-flow-pf-${firstSide}`}
+                                {...{ [MENU_ATTR]: keytips[tip] }}
+                                onSelect={() => create("pf", firstSide)}
+                            >
+                                {label}
+                                {tips && keytips[tip] && (
+                                    <Kbd className="ml-auto">{keytips[tip]}</Kbd>
+                                )}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuSubContent>
+                </DropdownMenuSub>
             </DropdownMenuContent>
         </DropdownMenu>
     );

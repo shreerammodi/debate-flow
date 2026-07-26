@@ -8,7 +8,7 @@ import { makeFlowRound, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 function loadRound() {
-    const round = makeFlowRound({ role: "aff" });
+    const round = makeFlowRound({});
     useFlowStore.getState().loadRound(round);
     return round;
 }
@@ -111,7 +111,7 @@ describe("UI commands", () => {
     });
 
     it("rfd.toggle flips the drawer open state", () => {
-        useFlowStore.getState().loadRound(makeFlowRound({ role: "aff" }));
+        useFlowStore.getState().loadRound(makeFlowRound({}));
         expect(useFlowStore.getState().rfdOpen).toBe(false);
 
         executeCommand("rfd.toggle");
@@ -134,7 +134,7 @@ describe("theme commands", () => {
 });
 
 function loadWithThreeSheets() {
-    const round = makeFlowRound({ role: "aff" });
+    const round = makeFlowRound({});
     useFlowStore.getState().loadRound(round);
     const a = round.sheets.find((s) => s.kind !== "cx")!.id;
     const b = useFlowStore.getState().addSheet({ title: "DA", group: "neg" });

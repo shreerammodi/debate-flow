@@ -29,7 +29,7 @@ export function keyTipParent(mode: KeyTipMode): KeyTipMode {
 /**
  * Every configurable keytip, as dotted ids. `trigger` is the key that opens the
  * overlay; the rest are grouped by the mode that paints them. The `new.*` ids
- * cover the New-flow menu, including the Public Forum first-speaker submenu.
+ * cover the New-flow menu's events, plus the Public Forum first-speaker submenu.
  */
 export type KeytipId =
     | "trigger"
@@ -43,23 +43,17 @@ export type KeytipId =
     | "root.flows"
     | "flows.sort"
     | "flows.group"
-    | "new.policyAff"
-    | "new.policyNeg"
-    | "new.policyJudge"
-    | "new.pfAff"
-    | "new.pfNeg"
-    | "new.pfJudge"
-    | "new.ldAff"
-    | "new.ldNeg"
-    | "new.ldJudge"
+    | "new.policy"
+    | "new.pf"
+    | "new.ld"
     | "new.pfFirstAff"
     | "new.pfFirstNeg";
 
 /**
  * Default chord for every keytip. A chord is unique only within its own group,
  * so `s` (search) at the root and `s` (sort) in the flows context do not clash,
- * and the New-flow menu reuses `a`/`n` in its submenu. `trigger` defaults to
- * `f`; the root flows entry therefore moves to `l` (list) to leave `f` free.
+ * and the New-flow menu reuses `f` in its submenu. `trigger` defaults to `f`;
+ * the root flows entry therefore moves to `l` (list) to leave `f` free.
  */
 export const DEFAULT_KEYTIPS: Record<KeytipId, string> = {
     trigger: "f",
@@ -73,15 +67,9 @@ export const DEFAULT_KEYTIPS: Record<KeytipId, string> = {
     "root.flows": "l",
     "flows.sort": "s",
     "flows.group": "t",
-    "new.policyAff": "a",
-    "new.policyNeg": "n",
-    "new.policyJudge": "j",
-    "new.pfAff": "f",
-    "new.pfNeg": "g",
-    "new.pfJudge": "h",
-    "new.ldAff": "l",
-    "new.ldNeg": "k",
-    "new.ldJudge": "d",
+    "new.policy": "p",
+    "new.pf": "f",
+    "new.ld": "l",
     "new.pfFirstAff": "a",
     "new.pfFirstNeg": "n",
 };

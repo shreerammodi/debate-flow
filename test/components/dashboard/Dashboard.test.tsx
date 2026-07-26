@@ -26,7 +26,7 @@ function renderDashboard() {
 
 function mk(id: string, over: Partial<FlowRound> = {}): FlowRound {
     return {
-        ...makeFlowRound({ role: "aff" }),
+        ...makeFlowRound({}),
         id,
         createdAt: 1,
         updatedAt: 1,
@@ -110,28 +110,17 @@ describe("Dashboard first-run", () => {
         localStorage.clear();
     });
 
-    it("creates an Aff flow and navigates from the empty state", async () => {
+    it("creates a policy flow and navigates from the empty state", async () => {
         renderDashboard();
-        await waitFor(() => screen.getByTestId("empty-start-aff"));
-        await userEvent.click(screen.getByTestId("empty-start-aff"));
+        await waitFor(() => screen.getByTestId("empty-start-policy"));
+        await userEvent.click(screen.getByTestId("empty-start-policy"));
         await waitFor(() =>
             expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/flow\?id=/)),
         );
         const rounds = await flowDb.flows.toArray();
         expect(rounds).toHaveLength(1);
-        expect(rounds[0].role).toBe("aff");
+        expect(rounds[0].event).toBe("policy");
         expect(rounds[0].sheets.some((s) => s.kind === "cx")).toBe(true);
-    });
-
-    it("creates a Neg flow from the empty state", async () => {
-        renderDashboard();
-        await waitFor(() => screen.getByTestId("empty-start-neg"));
-        await userEvent.click(screen.getByTestId("empty-start-neg"));
-        await waitFor(() =>
-            expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/flow\?id=/)),
-        );
-        const rounds = await flowDb.flows.toArray();
-        expect(rounds[0].role).toBe("neg");
     });
 
     it("opens the guide when the header Guide button is clicked", async () => {

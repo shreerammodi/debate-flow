@@ -6,7 +6,7 @@
 
 import { getEvent, type EventId } from "@/lib/format/events";
 import { uid } from "@/lib/model/ids";
-import type { Role, Scouting, Side } from "@/lib/model/types";
+import type { Scouting, Side } from "@/lib/model/types";
 
 /** Where this cell's text came from, when it was sent in from another app. */
 export interface CellSource {
@@ -54,7 +54,6 @@ export interface FlowRound {
     updatedAt: number;
     /** ms timestamp when soft-deleted (moved to Trash); absent/null = live. */
     deletedAt?: number | null;
-    role: Role;
     /** Debate event; absent (legacy rounds) = "policy". */
     event?: EventId;
     /** First-speaking side; meaningful only for variable-order events (PF). */
@@ -101,22 +100,23 @@ export function makeCxFlowSheet(title = "CX"): FlowSheet {
     };
 }
 
-export function makeFlowRound(input: { role: Role; event?: EventId; firstSide?: Side }): FlowRound {
+export function makeFlowRound(input: { event?: EventId; firstSide?: Side } = {}): FlowRound {
     const now = Date.now();
     const event = input.event ?? "policy";
-    const side = input.role === "judge" ? "aff" : input.role;
+    const firstSide = input.firstSide ?? "aff";
     return {
         id: uid("round"),
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
-        role: input.role,
         event,
-        firstSide: input.firstSide ?? "aff",
+        firstSide,
         scouting: emptyScouting(),
         sheets: [
             makeCxFlowSheet(getEvent(event).crossEx.title),
-            makeFlowSheet({ title: "1.", group: side, order: 0 }),
+            // The first sheet belongs to whoever speaks first, so the round
+            // opens on the constructive that actually starts it.
+            makeFlowSheet({ title: "1.", group: firstSide, order: 0 }),
         ],
     };
 }

@@ -7,12 +7,6 @@ import { cn } from "@/lib/utils";
 
 import { relativeTime, resultLabel } from "./format";
 
-const rolePill: Record<RoundSummary["role"], { label: string; cls: string }> = {
-    aff: { label: "Aff", cls: "bg-aff/10 text-aff" },
-    neg: { label: "Neg", cls: "bg-neg/10 text-neg" },
-    judge: { label: "Judge", cls: "bg-muted text-muted-foreground" },
-};
-
 export interface FlowCardProps {
     summary: RoundSummary;
     onOpen: (id: string) => void;
@@ -36,7 +30,6 @@ export default function FlowCard({
 }: FlowCardProps) {
     const r = resultLabel(summary.decision);
     const edited = useMemo(() => relativeTime(summary.updatedAt), [summary.updatedAt]);
-    const pill = rolePill[summary.role];
 
     const aff = summary.affTeam || "Untitled Aff";
     const neg = summary.negTeam || "Untitled Neg";
@@ -79,14 +72,6 @@ export default function FlowCard({
                     <span className={cn(negBlank ? "text-muted-foreground italic" : "text-neg")}>
                         {neg}
                     </span>
-                </span>
-                <span
-                    className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
-                        pill.cls,
-                    )}
-                >
-                    {pill.label}
                 </span>
             </div>
 

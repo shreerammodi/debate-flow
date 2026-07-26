@@ -73,7 +73,6 @@ export default function FlowDetailDrawer({ id, onClose }: FlowDetailDrawerProps)
                                 }
                             />
                             {sc.decision?.rfd && <Row label="RFD" value={sc.decision.rfd} />}
-                            <Row label="Role" value={round.role} />
                             <Row
                                 label="Sheets"
                                 value={String(round.sheets.filter((s) => s.kind !== "cx").length)}

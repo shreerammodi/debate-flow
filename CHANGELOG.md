@@ -18,6 +18,16 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   of the browser's: View details, Export to JSON or Excel, and Delete, the same
   actions as the card's three-dot menu.
 
+### Removed
+
+- A new flow no longer asks whether you are Aff, Neg, or the judge. The New
+  flow menu now asks only for the event: Policy, Public Forum (with its
+  first-speaker submenu), or Lincoln-Douglas. Every flow holds both sides, so
+  the choice only decided which sheet opened first, and the first speech
+  already decides that. Rounds you already have keep all of their sheets; the
+  Aff/Neg/Judge pill is gone from the dashboard cards, and exported filenames
+  drop the role segment (`debate-flow-20260725.xlsx`).
+
 ## [0.7.2] - 2026-07-25
 
 ### Added

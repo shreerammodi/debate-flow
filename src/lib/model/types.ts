@@ -1,7 +1,4 @@
-/** Participant roles in a round. */
-export type Role = "aff" | "neg" | "judge";
-
-/** Competitive sides (excludes judge). */
+/** Competitive sides. */
 export type Side = "aff" | "neg";
 
 /** One debater's name. */

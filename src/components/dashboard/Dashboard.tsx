@@ -229,42 +229,18 @@ export default function Dashboard() {
                                 </h1>
                                 <p className="text-muted-foreground text-[13px] leading-relaxed text-pretty">
                                     Ebb is a keyboard-first flowing app. Everything stays on this
-                                    device. Pick a side to start.
+                                    device.
                                 </p>
                             </div>
 
-                            <div className="flex items-center justify-center gap-2.5">
-                                <button
-                                    type="button"
-                                    data-testid="empty-start-aff"
-                                    onClick={() => createFlow("aff")}
-                                    className="border-input bg-card text-foreground hover:border-ring hover:bg-accent focus-visible:border-ring inline-flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-medium outline-none"
-                                >
-                                    <span className="bg-aff size-2 rounded-full" aria-hidden />
-                                    Aff
-                                </button>
-                                <button
-                                    type="button"
-                                    data-testid="empty-start-neg"
-                                    onClick={() => createFlow("neg")}
-                                    className="border-input bg-card text-foreground hover:border-ring hover:bg-accent focus-visible:border-ring inline-flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-medium outline-none"
-                                >
-                                    <span className="bg-neg size-2 rounded-full" aria-hidden />
-                                    Neg
-                                </button>
-                                <button
-                                    type="button"
-                                    data-testid="empty-start-judge"
-                                    onClick={() => createFlow("judge")}
-                                    className="border-input bg-card text-foreground hover:border-ring hover:bg-accent focus-visible:border-ring inline-flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-medium outline-none"
-                                >
-                                    <span
-                                        className="bg-muted-foreground size-2 rounded-full"
-                                        aria-hidden
-                                    />
-                                    Judge
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                data-testid="empty-start-policy"
+                                onClick={() => createFlow("policy")}
+                                className="border-input bg-card text-foreground hover:border-ring hover:bg-accent focus-visible:border-ring inline-flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-medium outline-none"
+                            >
+                                Start a Policy round
+                            </button>
 
                             <p className="text-muted-foreground text-[12.5px]">
                                 Flowing Public Forum or LD? Use + New flow.

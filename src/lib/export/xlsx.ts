@@ -119,8 +119,5 @@ export async function downloadXlsx(round: FlowRound): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     fillWorkbook(workbook, round);
     const out = await workbook.xlsx.writeBuffer();
-    await saveBlob(
-        new Blob([out], { type: XLSX_MIME }),
-        exportFilename(round.role, round.createdAt, "xlsx"),
-    );
+    await saveBlob(new Blob([out], { type: XLSX_MIME }), exportFilename(round.createdAt, "xlsx"));
 }

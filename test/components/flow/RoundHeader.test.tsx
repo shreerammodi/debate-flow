@@ -11,7 +11,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import RoundHeader from "@/components/flow/RoundHeader";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { makeFlowRound } from "@/lib/model/flow";
-import type { Role } from "@/lib/model/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 // Mock next/link used by the header's back-to-flows link
@@ -35,8 +34,8 @@ vi.mock("@/lib/export/xlsx", () => ({
     downloadXlsx: vi.fn().mockResolvedValue(undefined),
 }));
 
-function setupRound(role: Role) {
-    useFlowStore.getState().loadRound(makeFlowRound({ role }));
+function setupRound() {
+    useFlowStore.getState().loadRound(makeFlowRound());
 }
 
 function renderRoundHeader() {
@@ -57,20 +56,14 @@ describe("RoundHeader", () => {
         });
     });
 
-    it('renders "Aff vs Neg" fallback for role=aff with empty scouting', () => {
-        setupRound("aff");
+    it('renders "Aff vs Neg" fallback with empty scouting', () => {
+        setupRound();
         renderRoundHeader();
         expect(screen.getByText("Aff vs Neg")).toBeInTheDocument();
     });
 
-    it('renders "Neg vs Aff" fallback for role=neg with empty scouting', () => {
-        setupRound("neg");
-        renderRoundHeader();
-        expect(screen.getByText("Neg vs Aff")).toBeInTheDocument();
-    });
-
-    it('renders "<affCode> (Aff) vs <negCode> (Neg)" for role=judge with scouting', () => {
-        setupRound("judge");
+    it("renders team codes from scouting in aff-vs-neg order", () => {
+        setupRound();
         useFlowStore.getState().setScouting({
             affSchool: "Alpha",
             aff: {
@@ -84,11 +77,11 @@ describe("RoundHeader", () => {
             },
         });
         renderRoundHeader();
-        expect(screen.getByText("Alpha TA (Aff) vs Beta TB (Neg)")).toBeInTheDocument();
+        expect(screen.getByText("Alpha TA vs Beta TB")).toBeInTheDocument();
     });
 
     it("renders the back link and export menu, but no import button", () => {
-        setupRound("aff");
+        setupRound();
         renderRoundHeader();
         expect(screen.getByTestId("back-to-flows")).toBeInTheDocument();
         expect(screen.getByTestId("export-btn")).toBeInTheDocument();
@@ -98,7 +91,7 @@ describe("RoundHeader", () => {
     });
 
     it("opens settings when the settings button is clicked", async () => {
-        setupRound("aff");
+        setupRound();
         renderRoundHeader();
         const btn = screen.getByTestId("settings-btn");
         await userEvent.click(btn);
@@ -106,7 +99,7 @@ describe("RoundHeader", () => {
     });
 
     it("shows team codes from scouting", () => {
-        setupRound("aff");
+        setupRound();
         useFlowStore.getState().setScouting({
             affSchool: "Westwood",
             aff: {
@@ -119,7 +112,7 @@ describe("RoundHeader", () => {
     });
 
     it("opens the guide when the Guide button is clicked", () => {
-        setupRound("aff");
+        setupRound();
         renderRoundHeader();
         fireEvent.click(screen.getByTestId("guide-btn"));
         expect(useFlowStore.getState().cheatsheetOpen).toBe(true);

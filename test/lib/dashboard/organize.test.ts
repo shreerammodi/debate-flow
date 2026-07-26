@@ -8,7 +8,6 @@ function s(over: Partial<RoundSummary>): RoundSummary {
         id: "x",
         createdAt: 0,
         updatedAt: 0,
-        role: "aff",
         affTeam: "",
         negTeam: "",
         ...over,
