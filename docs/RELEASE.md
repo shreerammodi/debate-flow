@@ -26,9 +26,9 @@ accounts. Two network paths exist, and the user opts into each one:
    **Desktop-only** and **opt-in** (`isDesktop()` short-circuits the whole
    update layer on web), and the install waits on user confirm.
 2. **Shared editing.** A direct peer connection to a partner the user invited,
-   behind a master switch that is off by default
-   (`docs/specs/2026-07-26-shared-editing.md`). Off binds no endpoint and
-   contacts nothing, which is asserted by test.
+   behind a master switch that is off by default. Off binds no endpoint and
+   contacts nothing, which is asserted by test. See
+   `docs/superpowers/specs/2026-07-26-shared-editing-design.md`.
 
 Neither path sends a flow anywhere the user did not choose.
 

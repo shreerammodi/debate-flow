@@ -32,9 +32,10 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
     config, update pings outside the signed updater, accounts, or a backend of
     our own.
   - **Permitted, behind an explicit opt-in**: sending a flow to a peer the user
-    invited. Shared editing (`docs/specs/2026-07-26-shared-editing.md`) is the
-    only such feature. It sits behind a master switch that is off by default,
-    like `cardmirrorEnabled`, and off leaves every route dead.
+    invited. Shared editing is the only such feature, specced in
+    `docs/superpowers/specs/2026-07-26-shared-editing-design.md`. It sits behind
+    a master switch that is off by default, like `cardmirrorEnabled`, and off
+    leaves every route dead.
   - **The opt-in is an invariant, so it is test-proven, not asserted.** With the
     switch off, the app binds no endpoint, dials no peer, publishes no
     discovery record, and contacts no relay. A test asserts each of those four
