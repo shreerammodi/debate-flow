@@ -9,6 +9,21 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Changed
 
+- **Nothing ends the app with an unwritten edit.** Quitting, closing the window,
+  and installing an update all write the open flow first. If that write fails -
+  a full disk, an ejected drive - the exit is cancelled and the round stays on
+  screen instead of going down with the process. Closing a flow behaves the same
+  way: it will not discard a round it could not save.
+- Autosave now writes at least every two seconds during continuous editing.
+  The debounce alone never fired while flowing a fast speech, because each cell
+  reset it, so a crash could cost the whole burst rather than half a second.
+- The first edit after Save As is saved. It was previously mistaken for a
+  freshly opened file and skipped, so a single edit followed by closing the flow
+  was lost with no error.
+- A flow changed outside ebb - by a sync client, a backup tool, or another
+  editor - is no longer silently overwritten. The header reports "Changed on
+  disk" and offers to keep your version.
+
 - **Flows are files now.** A flow is a `.ebb` file on your disk instead of a
   row in a browser database, so you can move, copy, rename, back up, and sync
   your rounds with everything else you own. New flows are filed in

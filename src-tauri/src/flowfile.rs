@@ -90,21 +90,79 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     })
 }
 
+/// Modification time in epoch milliseconds. The frontend carries this back on
+/// the next write so we can tell whether anything else touched the file.
+fn mtime_ms(path: &Path) -> Result<f64, String> {
+    let meta =
+        fs::metadata(path).map_err(|e| format!("Could not stat {}: {e}", path.display()))?;
+    let modified = meta
+        .modified()
+        .map_err(|e| format!("Could not read the modified time of {}: {e}", path.display()))?;
+    Ok(modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("{} has a modified time before the epoch: {e}", path.display()))?
+        .as_secs_f64()
+        * 1000.0)
+}
+
+/// A flow's contents plus the stamp that identifies this version of the file.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowSnapshot {
+    text: String,
+    mtime_ms: f64,
+}
+
+/// Marks a refusal to overwrite a file that changed underneath us. The
+/// frontend matches on this prefix, so it must not drift.
+pub const CONFLICT: &str = "conflict:";
+
 /// `None` means the file is gone, which is an ordinary outcome: a recent entry
 /// whose flow was moved or deleted is dropped from the list rather than raised
 /// as an error.
 #[tauri::command]
-pub fn read_flow_file(path: String) -> Result<Option<String>, String> {
-    match fs::read_to_string(&path) {
-        Ok(text) => Ok(Some(text)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("Could not read {path}: {e}")),
-    }
+pub fn read_flow_file(path: String) -> Result<Option<FlowSnapshot>, String> {
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("Could not read {path}: {e}")),
+    };
+    Ok(Some(FlowSnapshot {
+        text,
+        mtime_ms: mtime_ms(Path::new(&path))?,
+    }))
 }
 
+/// Write a flow, refusing if the file changed since `expected_mtime_ms`.
+///
+/// The check lives here rather than in a separate stat call so it cannot race
+/// the write. `None` forces the write, which is what "keep mine" does after the
+/// user has been told about a conflict. Resolves to the new stamp.
 #[tauri::command]
-pub fn write_flow_file(path: String, contents: String) -> Result<(), String> {
-    write_atomic(Path::new(&path), &contents)
+pub fn write_flow_file(
+    path: String,
+    contents: String,
+    expected_mtime_ms: Option<f64>,
+) -> Result<f64, String> {
+    let target = Path::new(&path);
+
+    if let Some(expected) = expected_mtime_ms {
+        if let Ok(current) = mtime_ms(target) {
+            // Filesystem timestamps are coarse (1s on some filesystems), so
+            // compare with a tolerance rather than for equality.
+            if (current - expected).abs() > 1.0 {
+                return Err(format!(
+                    "{CONFLICT}{} changed outside ebb since you opened it",
+                    target.display()
+                ));
+            }
+        }
+        // A missing file is not a conflict: it was deleted or moved, and
+        // writing it back is the friendlier outcome.
+    }
+
+    write_atomic(target, &contents)?;
+    mtime_ms(target)
 }
 
 /// Create a flow without ever overwriting one, returning the path actually
@@ -287,7 +345,49 @@ mod tests {
     fn reading_a_missing_flow_is_not_an_error() {
         let dir = tmpdir("missing");
         let path = dir.join("gone.ebb").to_string_lossy().into_owned();
-        assert_eq!(read_flow_file(path).unwrap(), None);
+        assert!(read_flow_file(path).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_guarded_write_refuses_a_file_changed_underneath_it() {
+        let dir = tmpdir("conflict");
+        let path = dir.join("round.ebb").to_string_lossy().into_owned();
+
+        let stamp = write_flow_file(path.clone(), "mine".into(), None).unwrap();
+
+        // Something else rewrites the file. Timestamps are compared with a
+        // one-second tolerance, so the stamp has to move well past that.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&path, "theirs").unwrap();
+        filetime_forward(&path, 5.0);
+
+        let err = write_flow_file(path.clone(), "mine again".into(), Some(stamp)).unwrap_err();
+        assert!(err.starts_with(CONFLICT), "{err}");
+        // The other writer's content survives a refusal.
+        assert_eq!(fs::read_to_string(&path).unwrap(), "theirs");
+
+        // Forcing is how "keep mine" gets through.
+        write_flow_file(path.clone(), "mine again".into(), None).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "mine again");
+    }
+
+    #[test]
+    fn a_guarded_write_accepts_an_untouched_file() {
+        let dir = tmpdir("noconflict");
+        let path = dir.join("round.ebb").to_string_lossy().into_owned();
+
+        let stamp = write_flow_file(path.clone(), "one".into(), None).unwrap();
+        write_flow_file(path.clone(), "two".into(), Some(stamp)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "two");
+    }
+
+    /// Push a file's modification time `secs` into the future, so a test does
+    /// not have to sleep past the comparison tolerance.
+    fn filetime_forward(path: &str, secs: f64) {
+        let meta = fs::metadata(path).unwrap();
+        let later = meta.modified().unwrap() + std::time::Duration::from_secs_f64(secs);
+        let file = fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_modified(later).unwrap();
     }
 
     #[test]

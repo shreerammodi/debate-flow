@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { saveOpenFlow } from "@/lib/commands/fileCommands";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import {
@@ -120,6 +121,18 @@ export function useAutoUpdate(): AutoUpdate {
     const installAndRestart = useCallback(async () => {
         const update = staged.current;
         if (!update) return;
+
+        // Installing rewrites the binary and relaunches, which ends this
+        // process as surely as quitting does. An edit still sitting in the
+        // autosave debounce would go with it.
+        if (!(await saveOpenFlow())) {
+            setState({
+                status: "error",
+                message: "Couldn't save your flow, so the update was not installed.",
+            });
+            return;
+        }
+
         try {
             await installAndRelaunch(update);
         } catch {

@@ -9,6 +9,7 @@ import {
     pickFlowToOpen,
     readFlowAt,
     saveFlowAs,
+    overwriteFlow,
     saveFlowNow,
 } from "@/lib/persistence/flowSession";
 import { loadRecents } from "@/lib/persistence/recents";
@@ -103,6 +104,23 @@ describe("saveFlowAs", () => {
     });
 });
 
+describe("overwriteFlow", () => {
+    it("forces past a conflict so the user's round wins", async () => {
+        const round = makeFlowRound({});
+        fs.files.set("/a.ebb", serializeFlow(round));
+        // Opening records the version ebb saw; without that baseline there is
+        // nothing to detect a change against.
+        await readFlowAt("/a.ebb", fs);
+        fs.conflictOn = "/a.ebb";
+
+        // Guarded writes are refused...
+        expect(await saveFlowNow("/a.ebb", round)).toBe(false);
+        // ...but the explicit "keep mine" is not.
+        expect(await overwriteFlow("/a.ebb", round)).toBe(true);
+        expect(parseFlowFile(fs.files.get("/a.ebb")!).id).toBe(round.id);
+    });
+});
+
 describe("saveFlowNow", () => {
     it("reports saving then saved", async () => {
         const status = vi.fn();
@@ -116,6 +134,13 @@ describe("saveFlowNow", () => {
         await saveFlowNow("/a.ebb", makeFlowRound({}), status);
         expect(status.mock.calls.flat()).toEqual(["saving", "error"]);
     });
+
+    it("answers whether the flow actually reached disk", async () => {
+        // Anything about to discard the round depends on this boolean.
+        expect(await saveFlowNow("/a.ebb", makeFlowRound({}))).toBe(true);
+        fs.failWrites = "disk full";
+        expect(await saveFlowNow("/a.ebb", makeFlowRound({}))).toBe(false);
+    });
 });
 
 describe("attachFlowAutosave", () => {
@@ -125,15 +150,16 @@ describe("attachFlowAutosave", () => {
     }
 
     /**
-     * The store is empty until a flow is loaded, exactly as in the app: zustand
-     * only notifies on setState, so the notification that carries the round in
-     * is the "just opened" one autosave must not treat as an edit.
+     * Mirrors AppRoot: attach, put the round in the store, then prime, because
+     * the round just came off disk. Priming is what tells autosave the current
+     * state is already saved - it never infers that.
      */
     function openIn(round: FlowRound, docPath = "/a.ebb") {
         const s = createStore<DocState>()(() => ({ round: null, docPath: null }));
-        const stop = attachFlowAutosave(s);
+        const autosave = attachFlowAutosave(s);
         s.setState({ round, docPath });
-        return { store: s, stop };
+        autosave.prime();
+        return { store: s, stop: () => autosave.detach(), autosave };
     }
 
     beforeEach(() => vi.useFakeTimers());
@@ -186,14 +212,73 @@ describe("attachFlowAutosave", () => {
     it("writes nothing while no file is open", async () => {
         const round = makeFlowRound({});
         const s = createStore<DocState>()(() => ({ round: null, docPath: null }));
-        const stop = attachFlowAutosave(s);
+        const autosave = attachFlowAutosave(s);
 
         s.setState({ round, docPath: null });
         s.setState({ round: { ...round, updatedAt: round.updatedAt + 1 } });
         await vi.advanceTimersByTimeAsync(600);
 
         expect(fs.writes).toEqual([]);
+        autosave.detach();
+    });
+
+    it("saves a single edit made right after Save As", async () => {
+        // Save As sets docPath and then changes the route, so AppRoot tears the
+        // subscriber down and builds a fresh one that never witnesses a load.
+        // Inferring "just opened" from the round id used to swallow the next
+        // edit outright; one edit followed by a close lost it with no error.
+        const round = makeFlowRound({});
+        const s = createStore<DocState>()(() => ({ round: null, docPath: null }));
+        const first = attachFlowAutosave(s);
+        s.setState({ round, docPath: "/a.ebb" });
+        first.prime();
+
+        s.setState({ docPath: "/b.ebb" });
+        first.detach();
+        const second = attachFlowAutosave(s);
+        second.prime();
+
+        s.setState({ round: { ...round, updatedAt: round.updatedAt + 1 } });
+        second.detach();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fs.writes).toContain("/b.ebb");
+    });
+
+    it("stops waiting once edits have been arriving for the ceiling", async () => {
+        // A reset-only debounce never fires during a fast speech, so a crash
+        // would cost the whole burst instead of the last half second.
+        const round = makeFlowRound({});
+        const { store: s, stop } = openIn(round);
+
+        for (let i = 1; i <= 40; i++) {
+            s.setState({ round: { ...round, updatedAt: round.updatedAt + i } });
+            await vi.advanceTimersByTimeAsync(100); // faster than the 500ms window
+        }
+
+        expect(fs.writes.length).toBeGreaterThan(0);
         stop();
+    });
+
+    it("reports a conflict rather than overwriting a file changed on disk", async () => {
+        const round = makeFlowRound({});
+        fs.files.set("/a.ebb", serializeFlow(round));
+        // Opening is what records the version to compare against.
+        await readFlowAt("/a.ebb", fs);
+
+        const status = vi.fn();
+        const s = createStore<DocState>()(() => ({ round: null, docPath: null }));
+        const autosave = attachFlowAutosave(s, status);
+        s.setState({ round, docPath: "/a.ebb" });
+        autosave.prime();
+
+        fs.conflictOn = "/a.ebb";
+        s.setState({ round: { ...round, updatedAt: round.updatedAt + 1 } });
+        await vi.advanceTimersByTimeAsync(600);
+
+        expect(status.mock.calls.flat()).toContain("conflict");
+        expect(fs.writes).toEqual([]);
+        autosave.detach();
     });
 
     it("follows the round to a new path after Save As", async () => {

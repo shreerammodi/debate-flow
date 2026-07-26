@@ -14,10 +14,10 @@ links carry the internals.
 
 ## 1. Shipping model
 
-| Product         | What it is                             | Distribution                      | How it updates                               |
-| --------------- | -------------------------------------- | --------------------------------- | -------------------------------------------- |
-| **Web build**   | Static export in `out/`                | Vercel CDN, no backend            | User reloads; the CDN always serves current  |
-| **Desktop app** | Tauri 2 shell wrapping the same `out/` | Signed installers, GitHub Release | In-app signed auto-updater, tournament-gated |
+| Product         | What it is                             | Distribution                      | How it updates                                      |
+| --------------- | -------------------------------------- | --------------------------------- | --------------------------------------------------- |
+| **Web build**   | Static export in `out/`                | Vercel CDN, no backend            | User reloads; the CDN always serves current         |
+| **Desktop app** | Tauri 2 shell wrapping the same `out/` | Signed installers, GitHub Release | In-app signed auto-updater, install on user confirm |
 
 Local-first invariant holds for all three: no backend, no telemetry. The only
 network the runtime touches is fetching `latest.json` + update artifacts from
@@ -101,21 +101,24 @@ Full procedure and one-time signing-key setup: [`desktop/releasing.md`](desktop/
 install, no version to track.
 
 **Desktop:** the in-app updater checks GitHub Releases, downloads and verifies
-the signed artifact in the background, then applies it **only when safe**:
+the signed artifact in the background, and installs it **only when the user
+says so**:
 
 - Background checks are **opt-in** (off by default) and run on launch + every 6h
   once enabled. "Check now" in Settings always works.
 - A staged update surfaces as a subtle "Update ready - Restart" chip
-  (`UpdateChip`); clicking relaunches into the new version. It never nags
-  mid-round.
-- Applying is held during the weekly **blackout window** (default Fri->Mon) and
-  whenever **Tournament Mode** is on. Downloading is never gated - only the
-  restart-to-apply is.
-- A release marked `critical: true` can bypass the hold, but only through an
-  explicit confirm modal (`CriticalUpdateModal`), never silently.
+  (`UpdateChip`); clicking installs and relaunches. It never nags mid-round and
+  never applies on its own.
+- Installing first writes the open flow. If that write fails, the update is
+  abandoned and the round stays on screen.
 
-Full state machine, eligibility layers, and failure properties:
-[`desktop/ci-and-deployment.md`](desktop/ci-and-deployment.md) sections 7-10.
+There is no calendar-based gating: an explicit click is the whole safety model,
+which is why Tournament Mode and the weekly blackout window were removed in
+0.4.0. A user who wants no interruptions at all turns auto-update off in
+Settings.
+
+Full state machine and failure properties:
+[`desktop/ci-and-deployment.md`](desktop/ci-and-deployment.md).
 
 ## 8. Beta ship checklist
 
@@ -149,6 +152,5 @@ git push --follow-tags
 # -> the /latest/ redirect flips; desktop clients pick it up on next check.
 ```
 
-For a critical fix, edit the published release's `latest.json` to set
-`"critical": true` and upload it again over the existing asset (`tauri-action`
-does not set it). Clients read the flag on their next check.
+There is no `critical` flag. Every install waits for the user to click, so a
+fix ships as an ordinary release and reaches people the next time they check.

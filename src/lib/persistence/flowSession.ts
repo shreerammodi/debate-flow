@@ -22,10 +22,53 @@ import { EBB_EXT, basename, suggestFilename } from "./flowPaths";
 import { resolveFlowsDir } from "./flowsDir";
 import { loadRecents, promoteRecent, saveRecents } from "./recents";
 
-/** Lifecycle of a single save, reported so the header can reassure the user. */
-export type SaveStatus = "saving" | "saved" | "error";
+/**
+ * Lifecycle of a single save, reported so the header can reassure the user.
+ * "conflict" is distinct from "error" because the fix is a decision, not a
+ * retry: the file changed outside ebb and someone has to choose a winner.
+ */
+export type SaveStatus = "saving" | "saved" | "error" | "conflict";
 
 const DEBOUNCE_MS = 500;
+
+/**
+ * Longest an edit may sit unwritten. A debounce that only ever resets never
+ * fires during a fast speech, where cell edits land closer together than the
+ * window, so a crash would cost the whole burst instead of half a second.
+ */
+const MAX_WAIT_MS = 2_000;
+
+/** Rust tags a refused overwrite with this; the prefix is a shared contract. */
+const CONFLICT_PREFIX = "conflict:";
+
+export function isConflict(err: unknown): boolean {
+    return typeof err === "string" && err.startsWith(CONFLICT_PREFIX);
+}
+
+/**
+ * The version of the open file ebb last saw.
+ *
+ * Every write carries it back so the shell can tell whether anything else
+ * touched the file meanwhile - a sync client pulling a copy from another
+ * machine is the realistic case, since the default flows folder sits under
+ * Documents, which iCloud syncs by default on many Macs. Keyed by path so a
+ * stamp left over from a previously open flow can never be applied to a new
+ * one.
+ */
+let seen: { path: string; mtimeMs: number } | null = null;
+
+function stampFor(path: string): number | null {
+    return seen?.path === path ? seen.mtimeMs : null;
+}
+
+function remember(path: string, mtimeMs: number): void {
+    seen = { path, mtimeMs };
+}
+
+/** Test seam: drop the remembered stamp so suites cannot leak into each other. */
+export function forgetSeenStamp(): void {
+    seen = null;
+}
 
 // --- Recents bookkeeping -------------------------------------------------------
 
@@ -45,8 +88,10 @@ export async function noteOpened(path: string, fs?: FlowFs): Promise<void> {
  */
 export async function readFlowAt(path: string, fs?: FlowFs): Promise<FlowRound | null> {
     const io = fs ?? (await getFlowFs());
-    const text = await io.readFlow(path);
-    return text === null ? null : parseFlowFile(text);
+    const snapshot = await io.readFlow(path);
+    if (snapshot === null) return null;
+    remember(path, snapshot.mtimeMs);
+    return parseFlowFile(snapshot.text);
 }
 
 // --- Creating and saving -------------------------------------------------------
@@ -82,10 +127,10 @@ export async function pickFlowToOpen(fs?: FlowFs): Promise<string | null> {
  * rounds becomes many files; the first is the one to open.
  */
 async function importLegacyExport(path: string, io: FlowFs): Promise<string> {
-    const text = await io.readFlow(path);
-    if (text === null) throw new Error(`${basename(path)} no longer exists`);
+    const snapshot = await io.readFlow(path);
+    if (snapshot === null) throw new Error(`${basename(path)} no longer exists`);
 
-    const rounds = parseLegacyExport(text);
+    const rounds = parseLegacyExport(snapshot.text);
     if (!rounds.length) throw new Error(`${basename(path)} holds no flows`);
 
     const dir = await resolveFlowsDir(io);
@@ -105,56 +150,103 @@ export async function saveFlowAs(round: FlowRound, fs?: FlowFs): Promise<string 
     const io = fs ?? (await getFlowFs());
     const path = await io.pickSavePath(suggestFilename(round));
     if (!path) return null;
-    await io.writeFlow(path, serializeFlow(round));
+    // A path the user just chose is theirs to claim, so the write is forced.
+    remember(path, await io.writeFlow(path, serializeFlow(round), null));
     await noteOpened(path, io);
     return path;
 }
 
-/** Write immediately, reporting the outcome. Backs the manual retry affordance. */
+/**
+ * Write immediately and report whether the flow reached disk.
+ *
+ * The boolean matters: a caller that is about to discard the round - closing
+ * it, or quitting - must not treat a failed write as done. Backs the manual
+ * retry affordance too.
+ */
 export async function saveFlowNow(
     path: string,
     round: FlowRound,
     onStatus?: (status: SaveStatus) => void,
-): Promise<void> {
+): Promise<boolean> {
+    return write(path, round, stampFor(path), onStatus);
+}
+
+/**
+ * Write over a flow that changed outside ebb, keeping the round in memory and
+ * discarding whatever the other writer put there. Only reachable once the user
+ * has been told about the conflict.
+ */
+export async function overwriteFlow(
+    path: string,
+    round: FlowRound,
+    onStatus?: (status: SaveStatus) => void,
+): Promise<boolean> {
+    return write(path, round, null, onStatus);
+}
+
+async function write(
+    path: string,
+    round: FlowRound,
+    expectedMtimeMs: number | null,
+    onStatus?: (status: SaveStatus) => void,
+): Promise<boolean> {
     onStatus?.("saving");
     try {
         const io = await getFlowFs();
-        await io.writeFlow(path, serializeFlow(round));
+        remember(path, await io.writeFlow(path, serializeFlow(round), expectedMtimeMs));
         onStatus?.("saved");
-    } catch {
-        onStatus?.("error");
+        return true;
+    } catch (err) {
+        onStatus?.(isConflict(err) ? "conflict" : "error");
+        return false;
     }
 }
 
 // --- Autosave --------------------------------------------------------------------
 
+export interface FlowAutosave {
+    /**
+     * Treat the store's current round as already on disk.
+     *
+     * Called right after a flow is loaded, and after Save As has written the
+     * round to its new path. Without it the subscriber cannot tell a freshly
+     * opened round from an edited one: guessing from the round id used to skip
+     * the first edit after Save As entirely, because the new subscriber never
+     * saw the load it was inferring from.
+     */
+    prime(): void;
+    /** Stop listening, flushing anything still pending. */
+    detach(): void;
+}
+
 /**
  * Subscribe to a store holding the open round and its path, and write on every
  * change, debounced. Only the newest write reports a terminal status, so a slow
- * earlier one cannot clobber a newer one's result. The returned unsubscribe
- * flushes anything pending, so navigating away never drops the last edit.
+ * earlier one cannot clobber a newer one's result.
  */
 export function attachFlowAutosave(
     store: StoreApi<{ round: FlowRound | null; docPath: string | null }>,
     onStatus?: (status: SaveStatus) => void,
-): () => void {
+): FlowAutosave {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastSeenId: string | null = null;
     let lastSeenUpdatedAt: number | null = null;
     let pending: { path: string; round: FlowRound } | null = null;
+    let pendingSince = 0;
     let saveSeq = 0;
 
     function doSave(job: { path: string; round: FlowRound }) {
         const seq = ++saveSeq;
         onStatus?.("saving");
         getFlowFs()
-            .then((io) => io.writeFlow(job.path, serializeFlow(job.round)))
+            .then((io) => io.writeFlow(job.path, serializeFlow(job.round), stampFor(job.path)))
             .then(
-                () => {
+                (mtimeMs) => {
+                    remember(job.path, mtimeMs);
                     if (seq === saveSeq) onStatus?.("saved");
                 },
-                () => {
-                    if (seq === saveSeq) onStatus?.("error");
+                (err: unknown) => {
+                    if (seq === saveSeq) onStatus?.(isConflict(err) ? "conflict" : "error");
                 },
             );
     }
@@ -169,27 +261,43 @@ export function attachFlowAutosave(
         }
     }
 
+    function prime() {
+        const { round } = store.getState();
+        lastSeenId = round?.id ?? null;
+        lastSeenUpdatedAt = round?.updatedAt ?? null;
+        // Anything queued before priming described the state we are declaring
+        // already saved, so writing it would only rewrite identical bytes.
+        pending = null;
+        clearTimeout(timer);
+        timer = undefined;
+    }
+
     const unsubscribe = store.subscribe((state) => {
         const { round, docPath } = state;
         if (!round || !docPath) return;
         if (round.id === lastSeenId && round.updatedAt === lastSeenUpdatedAt) return;
-
-        // Every round in the store arrived from the file it would be written
-        // back to, so the notification that introduces one is not an edit.
-        // Saving it would rewrite identical bytes on every open and touch the
-        // file's mtime for nothing.
-        const justOpened = lastSeenId !== round.id;
         lastSeenId = round.id;
         lastSeenUpdatedAt = round.updatedAt;
-        if (justOpened) return;
 
+        if (pending === null) pendingSince = Date.now();
         pending = { path: docPath, round };
+
+        // A debounce that only ever resets never fires during a fast speech,
+        // where edits land closer together than the window. The ceiling bounds
+        // what a crash can cost to MAX_WAIT_MS rather than the whole burst.
+        if (Date.now() - pendingSince >= MAX_WAIT_MS) {
+            flush();
+            return;
+        }
         clearTimeout(timer);
         timer = setTimeout(flush, DEBOUNCE_MS);
     });
 
-    return () => {
-        unsubscribe();
-        flush();
+    return {
+        prime,
+        detach() {
+            unsubscribe();
+            flush();
+        },
     };
 }

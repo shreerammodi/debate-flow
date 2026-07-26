@@ -21,7 +21,7 @@ jobs:
             - run: npm run build
 
     desktop:
-        name: Desktop shell (cargo check)
+        name: Desktop shell
         runs-on: ubuntu-22.04
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,3 +46,8 @@ jobs:
             - run: npm ci
             - run: npm run build
             - run: cargo check --manifest-path src-tauri/Cargo.toml
+            # The shell's own tests cover the atomic write, the refusal to
+            # overwrite a flow changed on disk, and the camelCase wire format -
+            # all invisible to cargo check, and all load-bearing for not losing
+            # a round.
+            - run: cargo test --manifest-path src-tauri/Cargo.toml

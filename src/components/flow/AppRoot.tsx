@@ -45,11 +45,11 @@ export default function AppRoot() {
 
     useEffect(() => {
         let mounted = true;
-        const unsubscribe = attachFlowAutosave(useFlowStore, useSaveStatus.getState().report);
+        const autosave = attachFlowAutosave(useFlowStore, useSaveStatus.getState().report);
 
         const leave = () => {
             mounted = false;
-            unsubscribe();
+            autosave.detach();
             useSaveStatus.getState().reset();
         };
 
@@ -60,8 +60,11 @@ export default function AppRoot() {
 
         // Save As rewrites the URL to the file it just wrote, which the store
         // is already editing. Reloading it would discard nothing but would
-        // flash the loading frame for no reason.
+        // flash the loading frame for no reason. Priming is what makes the
+        // shortcut safe: this subscriber never witnesses a load, so without it
+        // the next edit looks like one and is skipped.
         if (useFlowStore.getState().docPath === path) {
+            autosave.prime();
             setLoaded(true);
             return leave;
         }
@@ -76,6 +79,8 @@ export default function AppRoot() {
                 }
                 const newFlow = params.get("new") != null;
                 useFlowStore.getState().loadRound(r, { docPath: path, newFlow });
+                // The round just came off disk, so it is already saved.
+                autosave.prime();
                 void noteOpened(path);
                 // Drop the one-shot marker so a later refresh loads this flow
                 // as existing and restores the persisted RFD preference.

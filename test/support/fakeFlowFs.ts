@@ -2,6 +2,7 @@ import { afterEach } from "vitest";
 
 import { setFlowFs, type FlowFs, type FlowLocations } from "@/lib/persistence/flowFs";
 import { basename, dedupeFilename, joinPath } from "@/lib/persistence/flowPaths";
+import { forgetSeenStamp } from "@/lib/persistence/flowSession";
 
 export const HOME = "/home/test";
 export const FLOWS_DIR = "/home/test/Documents/ebb";
@@ -21,6 +22,10 @@ export interface FakeFlowFs extends FlowFs {
     writes: string[];
     /** Make the next write of any kind fail with this message. */
     failWrites: string | null;
+    /** Pretend the file changed underneath ebb: the next guarded write is refused. */
+    conflictOn: string | null;
+    /** Stamps handed back by readFlow and writeFlow. */
+    stamps: Map<string, number>;
 }
 
 /**
@@ -39,6 +44,8 @@ export function installFakeFlowFs(): FakeFlowFs {
         revealed: [],
         writes: [],
         failWrites: null,
+        conflictOn: null,
+        stamps: new Map(),
 
         locations: () => Promise.resolve<FlowLocations>({ flowsDir: FLOWS_DIR, home: HOME }),
 
@@ -53,17 +60,29 @@ export function installFakeFlowFs(): FakeFlowFs {
             );
             const path = joinPath(dir, dedupeFilename(name, taken));
             fs.files.set(path, text);
+            fs.stamps.set(path, 1);
             fs.writes.push(path);
             return Promise.resolve(path);
         },
 
-        readFlow: (path) => Promise.resolve(fs.files.get(path) ?? null),
+        readFlow: (path) => {
+            const text = fs.files.get(path);
+            if (text === undefined) return Promise.resolve(null);
+            return Promise.resolve({ text, mtimeMs: fs.stamps.get(path) ?? 1 });
+        },
 
-        writeFlow: (path, text) => {
+        writeFlow: (path, text, expectedMtimeMs) => {
             if (fs.failWrites) return Promise.reject(new Error(fs.failWrites));
+            // Mirrors the shell: a guarded write over a changed file is refused
+            // with the tagged string Tauri rejects with.
+            if (fs.conflictOn === path && expectedMtimeMs != null) {
+                return Promise.reject(`conflict:${path} changed outside ebb`);
+            }
             fs.files.set(path, text);
+            const mtimeMs = (fs.stamps.get(path) ?? 1) + 1;
+            fs.stamps.set(path, mtimeMs);
             fs.writes.push(path);
-            return Promise.resolve();
+            return Promise.resolve(mtimeMs);
         },
 
         readRecents: () => Promise.resolve(fs.files.get("/config/recents.json") ?? null),
@@ -80,6 +99,10 @@ export function installFakeFlowFs(): FakeFlowFs {
     };
 
     setFlowFs(fs);
-    afterEach(() => setFlowFs(null));
+    forgetSeenStamp();
+    afterEach(() => {
+        setFlowFs(null);
+        forgetSeenStamp();
+    });
     return fs;
 }

@@ -60,6 +60,9 @@ export function createFlowFs(): FlowFs {
      */
     const handles = new Map<string, FileSystemFileHandle>();
 
+    /** Write stamps, so readFlow can hand back the shape the port promises. */
+    const stamps = new Map<string, number>();
+
     function persist(): void {
         if (typeof localStorage === "undefined") return;
         try {
@@ -130,21 +133,31 @@ export function createFlowFs(): FlowFs {
             );
             const path = joinPath(dir, dedupeFilename(name, taken));
             files = { ...files, [path]: text };
+            stamps.set(path, Date.now());
             persist();
             return Promise.resolve(path);
         },
 
-        readFlow: (path) => Promise.resolve(files[path] ?? null),
+        readFlow: (path) =>
+            Promise.resolve(
+                path in files ? { text: files[path], mtimeMs: stamps.get(path) ?? 0 } : null,
+            ),
 
         async writeFlow(path, text) {
+            // Conflict detection needs a real filesystem to observe; the dev
+            // adapter is the only writer here, so its stamp always matches.
             files = { ...files, [path]: text };
+            const mtimeMs = Date.now();
+            stamps.set(path, mtimeMs);
             persist();
 
             const handle = handles.get(path);
-            if (!handle) return;
-            const writable = await handle.createWritable();
-            await writable.write(text);
-            await writable.close();
+            if (handle) {
+                const writable = await handle.createWritable();
+                await writable.write(text);
+                await writable.close();
+            }
+            return mtimeMs;
         },
 
         readRecents: () =>

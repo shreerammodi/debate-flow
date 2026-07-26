@@ -150,9 +150,11 @@ export async function migrateFromIndexedDb(
     // success but produced something unparseable is exactly the failure this
     // guards, and it is only detectable from the far side.
     for (const { path } of written) {
-        const text = await io.readFlow(path);
-        if (text === null) throw new Error(`Migration wrote ${path} but could not read it back`);
-        parseFlowFile(text);
+        const snapshot = await io.readFlow(path);
+        if (snapshot === null) {
+            throw new Error(`Migration wrote ${path} but could not read it back`);
+        }
+        parseFlowFile(snapshot.text);
     }
 
     await deleteDb();

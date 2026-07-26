@@ -39,7 +39,6 @@ export default function StartScreen() {
     const router = useRouter();
     const setNewFlowOpen = useFlowStore((s) => s.setNewFlowOpen);
     const setSettingsOpen = useFlowStore((s) => s.setSettingsOpen);
-    const setCheatsheetOpen = useFlowStore((s) => s.setCheatsheetOpen);
     const { entries, refresh } = useRecentFlows();
     const [cursor, setCursor] = useState(0);
     const [version, setVersion] = useState(process.env.NEXT_PUBLIC_EBB_VERSION ?? "");
@@ -67,6 +66,12 @@ export default function StartScreen() {
     useEffect(() => {
         function onKeyDown(e: KeyboardEvent) {
             if (e.altKey) return;
+            const target = e.target as HTMLElement | null;
+            // Ahead of every branch: a dialog or a text field owns the keyboard
+            // while it is open, modifier chords included.
+            if (target?.closest("input, textarea, [contenteditable='true'], [role='dialog']")) {
+                return;
+            }
             // Meta/Ctrl chords are the OS's until proven otherwise; the two the
             // start screen claims are the ones the File menu also offers.
             if (e.metaKey || e.ctrlKey) {
@@ -79,11 +84,6 @@ export default function StartScreen() {
                 }
                 return;
             }
-            const target = e.target as HTMLElement | null;
-            if (target?.closest("input, textarea, [contenteditable='true'], [role='dialog']")) {
-                return;
-            }
-
             const action = actions.find((a) => a.key === e.key);
             if (action) {
                 e.preventDefault();
@@ -98,10 +98,7 @@ export default function StartScreen() {
                 }
                 return;
             }
-            if (e.key === "?") {
-                e.preventDefault();
-                setCheatsheetOpen(true);
-            } else if (e.key === "j" || e.key === "ArrowDown") {
+            if (e.key === "j" || e.key === "ArrowDown") {
                 e.preventDefault();
                 setCursor((c) => (total ? (c + 1) % total : 0));
             } else if (e.key === "k" || e.key === "ArrowUp") {

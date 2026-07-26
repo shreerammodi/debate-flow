@@ -5,7 +5,7 @@ import { AnimatePresence, m } from "motion/react";
 import { useEffect, useState } from "react";
 
 import { Tip } from "@/components/ui/tooltip";
-import { saveFlowNow } from "@/lib/persistence/flowSession";
+import { overwriteFlow, saveFlowNow } from "@/lib/persistence/flowSession";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { useSaveStatus } from "@/lib/store/useSaveStatus";
 
@@ -41,6 +41,35 @@ export default function SaveStatus() {
     }, [state, savedAt]);
 
     if (state === "idle") return null;
+
+    // A conflict is not a retry: the file changed outside ebb, so writing again
+    // unchanged would just lose whatever the other writer put there. The user
+    // has to choose, and the only choice offered keeps their round - discarding
+    // it in favour of the file on disk is what Open already does.
+    if (state === "conflict") {
+        return (
+            <span
+                role="alert"
+                data-testid="save-status"
+                data-state="conflict"
+                className="text-warn flex flex-none items-center gap-1.5 text-xs font-medium"
+            >
+                <Warning size={13} aria-hidden="true" />
+                Changed on disk
+                <button
+                    type="button"
+                    data-testid="save-overwrite"
+                    onClick={() => {
+                        const { round, docPath } = useFlowStore.getState();
+                        if (round && docPath) void overwriteFlow(docPath, round, report);
+                    }}
+                    className="rounded-sm underline underline-offset-2 hover:no-underline focus-visible:outline-2"
+                >
+                    Keep mine
+                </button>
+            </span>
+        );
+    }
 
     if (state === "error") {
         return (

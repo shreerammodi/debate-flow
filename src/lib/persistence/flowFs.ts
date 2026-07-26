@@ -17,6 +17,13 @@ export interface FlowLocations {
     home: string;
 }
 
+/** A flow's contents plus the stamp identifying the version read. */
+export interface FlowSnapshot {
+    text: string;
+    /** Modification time in epoch ms, carried back on the next write. */
+    mtimeMs: number;
+}
+
 export interface FlowFs {
     locations(): Promise<FlowLocations>;
     /** Native open picker. Null when the user cancels. */
@@ -28,8 +35,12 @@ export interface FlowFs {
     /** Create without ever overwriting; resolves to the path actually used. */
     createFlow(dir: string, name: string, text: string): Promise<string>;
     /** Null when the file no longer exists, which callers treat as ordinary. */
-    readFlow(path: string): Promise<string | null>;
-    writeFlow(path: string, text: string): Promise<void>;
+    readFlow(path: string): Promise<FlowSnapshot | null>;
+    /**
+     * Write, refusing when the file changed since `expectedMtimeMs`. Pass null
+     * to force. Resolves to the new stamp.
+     */
+    writeFlow(path: string, text: string, expectedMtimeMs?: number | null): Promise<number>;
     readRecents(): Promise<string | null>;
     writeRecents(text: string): Promise<void>;
     /** Show the file in Finder or the system file manager. */

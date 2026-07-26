@@ -31,14 +31,18 @@ export async function openFlowFromPicker(): Promise<void> {
 }
 
 /**
- * Write the open flow now rather than waiting out the autosave debounce.
+ * Write the open flow now rather than waiting out the autosave debounce, and
+ * report whether it reached disk.
+ *
  * Autosave means it is already saved a half-second after every keystroke; this
- * exists because Cmd+S is muscle memory and pressing it should say so.
+ * exists because Cmd+S is muscle memory and pressing it should say so - and
+ * because anything about to discard the round needs a real answer first.
  */
-export async function saveOpenFlow(): Promise<void> {
+export async function saveOpenFlow(): Promise<boolean> {
     const { round, docPath } = useFlowStore.getState();
-    if (!round || !docPath) return;
-    await saveFlowNow(docPath, round, useSaveStatus.getState().report);
+    // Nothing open is nothing to lose, which counts as safe.
+    if (!round || !docPath) return true;
+    return saveFlowNow(docPath, round, useSaveStatus.getState().report);
 }
 
 export async function saveOpenFlowAs(): Promise<void> {
@@ -68,9 +72,22 @@ export async function revealOpenFlow(): Promise<void> {
     }
 }
 
-/** Flush any pending write before leaving, so the last edit is on disk. */
+/**
+ * Leave the flow, but only once it is safely written.
+ *
+ * Closing is the instinctive thing to do when something looks wrong, which is
+ * exactly when the save is failing - a full disk, or an ejected drive holding
+ * the flows folder. Discarding the round on the way out would destroy it at the
+ * worst possible moment, so a failed write cancels the close and leaves the
+ * round on screen where the user can still act on it.
+ */
 export async function closeOpenFlow(): Promise<void> {
-    await saveOpenFlow();
+    if (!(await saveOpenFlow())) {
+        toast.error(
+            "This flow could not be saved, so it is still open. Free up space, reconnect the drive, or use Save As to put it somewhere else.",
+        );
+        return;
+    }
     useFlowStore.getState().closeRound();
     navigateToStart();
 }

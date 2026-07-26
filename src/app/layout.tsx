@@ -7,6 +7,7 @@ import ConfigFileSync from "@/components/ConfigFileSync";
 import { DesktopMenu } from "@/components/DesktopMenu";
 import MotionRoot from "@/components/MotionRoot";
 import NavigatorHost from "@/components/NavigatorHost";
+import QuitGuard from "@/components/QuitGuard";
 import SettingsPanel from "@/components/settings/SettingsPanel";
 import NewFlowDialog from "@/components/start/NewFlowDialog";
 import OpenWithHost from "@/components/start/OpenWithHost";
@@ -334,6 +335,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <DesktopMenu />
                 <BridgeHost />
                 <NavigatorHost />
+                <QuitGuard />
                 <OpenWithHost />
                 <ThemeSync />
                 <ConfigFileSync />

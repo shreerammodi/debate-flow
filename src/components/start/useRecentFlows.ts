@@ -58,12 +58,12 @@ export function useRecentFlows(): RecentFlows {
 
             const resolved: RecentEntry[] = [];
             for (const recent of shown) {
-                const text = await fs.readFlow(recent.path);
-                if (text === null) continue;
+                const snapshot = await fs.readFlow(recent.path);
+                if (snapshot === null) continue;
 
                 let summary = null;
                 try {
-                    summary = buildSummary(parseFlowFile(text));
+                    summary = buildSummary(parseFlowFile(snapshot.text));
                 } catch {
                     // Readable file, unreadable contents. The row stays.
                 }

@@ -8,6 +8,7 @@ mod bridge;
 mod config;
 mod flowfile;
 mod menu;
+mod shutdown;
 
 use tauri::{Emitter, Manager};
 
@@ -93,17 +94,30 @@ pub fn run() {
             flowfile::write_flow_file,
             flowfile::write_recents,
             menu::rebuild_menu,
+            shutdown::finish_quit,
             system_info
         ])
-        // Quit is the single deliberate exit; it routes here and exits directly,
-        // bypassing the close guard below. Every other menu item carries a JS
-        // CommandId, which we hand to the frontend to run (see useDesktopMenu).
+        // Quit and the window's close control both run through the flush
+        // handshake in shutdown.rs rather than exiting on the spot, so a
+        // debounced edit is never left behind in memory. Every other menu item
+        // carries a JS CommandId, which we hand to the frontend to run.
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
             if id == menu::QUIT_ID {
-                app.exit(0);
+                shutdown::request(app);
             } else {
                 let _ = app.emit("menu:command", id.to_string());
+            }
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Once the flush has been asked for, the follow-up exit must
+                // be allowed through or the window could never close.
+                if shutdown::in_progress() {
+                    return;
+                }
+                api.prevent_close();
+                shutdown::request(window.app_handle());
             }
         })
         .build(tauri::generate_context!())
