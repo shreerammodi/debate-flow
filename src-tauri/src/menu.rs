@@ -71,10 +71,10 @@ pub fn build<R: Runtime>(
         .separator()
         .item(&cmd("settings.open", "Settings", "CmdOrCtrl+Comma")?)
         .separator()
-        // No "Hide" item: its baked-in Meta+H accelerator would be consumed
-        // by macOS before the webview's keydown, shadowing the app's Meta+h
-        // (split.focusLeft). Users minimize with Meta+M instead. Hide Others /
-        // Show All keep their own non-conflicting accelerators.
+        // Hide / Minimize keep their OS-standard Meta+H / Meta+M accelerators;
+        // macOS only routes those chords when a menu item carries them. The
+        // app's pane-focus chords therefore live on Alt+h / Alt+l.
+        .item(&PredefinedMenuItem::hide(app, None)?)
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
@@ -126,13 +126,25 @@ pub fn build<R: Runtime>(
         .item(&cmd("rfd.toggle", "Toggle RFD", "CmdOrCtrl+J")?)
         .build()?;
 
+    // Window: the native window commands, whose accelerators the OS owns.
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .build()?;
+
     // Help: opens the in-app keybindings guide (bound to bare `?`).
     let help_menu = SubmenuBuilder::new(app, "Help")
         .item(&cmd("help.open", "Keyboard Shortcuts", "")?)
         .build()?;
 
     let mut builder = tauri::menu::MenuBuilder::new(app);
-    builder = builder.items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &help_menu]);
+    builder = builder.items(&[
+        &app_menu,
+        &file_menu,
+        &edit_menu,
+        &view_menu,
+        &window_menu,
+        &help_menu,
+    ]);
     builder.build()
 }
 

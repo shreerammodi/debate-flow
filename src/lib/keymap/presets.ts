@@ -61,18 +61,15 @@ const SHEET_JUMPS: Record<Chord, CommandId> = (() => {
 })();
 
 /**
- * Split-view chords. Toggle stays on Alt+\; pane focus uses the platform
- * modifier + h/l (vim-style). On macOS Meta+h shadows the native "hide app"
- * accelerator, which menu.rs drops so the chord reaches the app.
+ * Split-view chords. All three live on Alt: the platform modifier + h is the
+ * OS's hide-app chord on macOS (see src-tauri/src/menu.rs), so pane focus
+ * keeps the vim-style h/l letters under Alt instead.
  */
-const SPLIT_BINDINGS: Record<Chord, CommandId> = (() => {
-    const mod = isMacPlatform() ? "Meta" : "Ctrl";
-    return {
-        "Alt+\\": "split.toggle",
-        [`${mod}+h`]: "split.focusLeft",
-        [`${mod}+l`]: "split.focusRight",
-    };
-})();
+const SPLIT_BINDINGS: Record<Chord, CommandId> = {
+    "Alt+\\": "split.toggle",
+    "Alt+h": "split.focusLeft",
+    "Alt+l": "split.focusRight",
+};
 
 /** The single flat keymap: sheet switching, formatting, and utility chords. */
 export const FLAT_KEYMAP: Keymap = {
