@@ -10,8 +10,8 @@ import { useFlowStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "@/lib/store/useFlow
 
 /**
  * Header zoom control: minus, slider, plus, and a click-to-edit percentage.
- * The slider and the percentage readout drop out on narrow windows so the
- * buttons alone survive; both are conveniences over `view.zoomIn/Out`.
+ * As the header runs out of room it gives up the slider, then the readout,
+ * then itself; every piece is a convenience over `view.zoomIn/Out`.
  */
 export default function ZoomControl() {
     const gridZoom = useFlowStore((s) => s.gridZoom);
@@ -29,7 +29,7 @@ export default function ZoomControl() {
     }
 
     return (
-        <div className="flex items-center gap-1.5" data-testid="zoom-control">
+        <div className="ribbon-tight:flex hidden items-center gap-1.5" data-testid="zoom-control">
             <Tip label="Zoom out" command="view.zoomOut">
                 <Button
                     variant="ghost"
@@ -49,7 +49,7 @@ export default function ZoomControl() {
                 onValueChange={(v) => setGridZoom(Array.isArray(v) ? v[0] : v)}
                 aria-label="Zoom"
                 data-testid="zoom-slider"
-                className="hidden w-24 xl:flex"
+                className="ribbon-wide:flex hidden w-24"
             />
             <Tip label="Zoom in" command="view.zoomIn">
                 <Button
@@ -77,7 +77,7 @@ export default function ZoomControl() {
                     }}
                     aria-label="Zoom percentage"
                     data-testid="zoom-input"
-                    className="border-input focus-visible:border-ring hidden h-6 w-12 rounded-md border bg-transparent px-1 text-right text-[13px] tabular-nums outline-none lg:block"
+                    className="border-input focus-visible:border-ring ribbon:block hidden h-6 w-12 rounded-md border bg-transparent px-1 text-right text-[13px] tabular-nums outline-none"
                 />
             ) : (
                 <button
@@ -88,7 +88,7 @@ export default function ZoomControl() {
                     }}
                     aria-label="Edit zoom percentage"
                     data-testid="zoom-pct"
-                    className="text-muted-foreground hover:text-foreground hidden w-12 rounded px-1 py-0.5 text-right text-[13px] tabular-nums transition-colors lg:block"
+                    className="text-muted-foreground hover:text-foreground ribbon:block hidden w-12 rounded px-1 py-0.5 text-right text-[13px] tabular-nums transition-colors"
                 >
                     {pct}%
                 </button>

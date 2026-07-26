@@ -28,7 +28,7 @@ export default function SpeechSwitcher() {
                         variant="outline"
                         size="sm"
                         data-testid="speech-switcher-btn"
-                        className="hidden lg:inline-flex"
+                        className="ribbon:inline-flex hidden"
                     >
                         Speech
                         <CaretDown className="size-4 opacity-60" />

@@ -38,8 +38,8 @@ export default function ExportMenu() {
                         data-testid="export-btn"
                     >
                         <Export className="size-4" />
-                        <span className="hidden lg:inline">Export</span>
-                        <CaretDown className="hidden size-4 opacity-60 lg:block" />
+                        <span className="ribbon:inline hidden">Export</span>
+                        <CaretDown className="ribbon:block hidden size-4 opacity-60" />
                     </Button>
                 </DropdownMenuTrigger>
             </Tip>

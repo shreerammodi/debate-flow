@@ -18,6 +18,18 @@
             outline: 3px solid transparent;
         }
     }
+    /* The round header sheds controls at these widths. They are measured
+       against that header's own content rather than the page layout, so
+       they sit off the default sm/md/lg scale. Widest first, the header
+       gives up: the zoom slider below `ribbon-wide`; the speech switcher,
+       the zoom percentage, and the Export label below `ribbon`; the zoom
+       buttons below `ribbon-tight`. The round title, the save indicator,
+       and the link back to the flow list always survive. Each value is
+       the narrowest window at which that tier still leaves the title
+       around 120px, enough to read a truncated team matchup. */
+    --breakpoint-ribbon-tight: 660px;
+    --breakpoint-ribbon: 900px;
+    --breakpoint-ribbon-wide: 1000px;
 }
 
 @custom-variant dark (&:is(.dark *));
