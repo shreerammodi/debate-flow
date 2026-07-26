@@ -29,15 +29,20 @@ export interface CardMirrorStatus {
 export type BridgeCall<T> = { ok: true; value: T } | { ok: false; error: BridgeFailure };
 
 /**
- * The paragraph types CardMirror's insert route accepts. The type travels
- * with the text and CardMirror decides what to make of it; anything it does
- * not know degrades on its side, so ebb only ever sends one of these three.
+ * The types CardMirror's insert route accepts: its five outline heading
+ * levels (pocket, hat, block, tag, analytic) plus plain body text. The type
+ * travels with the text and CardMirror decides what to make of it; anything
+ * it does not know degrades on its side, so ebb only ever sends one of these.
  */
-export type CardMirrorTextType = "analytic" | "tag" | "body";
+export type CardMirrorTextType = "pocket" | "hat" | "block" | "tag" | "analytic" | "body";
+
+const TEXT_TYPES: readonly string[] = ["pocket", "hat", "block", "tag", "analytic", "body"];
 
 /** A text type from storage or a hand-edited config file. */
 export function resolveCardMirrorTextType(value: unknown): CardMirrorTextType {
-    return value === "tag" || value === "body" ? value : "analytic";
+    return typeof value === "string" && TEXT_TYPES.includes(value)
+        ? (value as CardMirrorTextType)
+        : "analytic";
 }
 
 const FAILURES: Record<string, BridgeFailure> = {
