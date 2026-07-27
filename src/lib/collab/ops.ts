@@ -52,6 +52,38 @@ function blankCell(col: number, rank: string, actor: string, stamp: Stamp): Coll
 }
 
 /**
+ * A rank between two live neighbours that no cell of this actor already
+ * holds.
+ *
+ * A tombstone keeps its key, and the rank a column derives is a pure function
+ * of its live neighbours, so a delete followed by an insert at the same place
+ * can compute a rank that is already spent. Writing that key would overwrite
+ * the tombstone, and the deleted cell would come back on the next merge.
+ */
+function freshRank(
+    sheet: CollabSheet,
+    pending: Record<string, CollabCell>,
+    col: number,
+    before: string | null,
+    after: string | null,
+    actor: string,
+): string {
+    const taken: string[] = [];
+    for (const cell of Object.values(sheet.cells)) if (cell.col === col) taken.push(cell.rank);
+    for (const cell of Object.values(pending)) if (cell.col === col) taken.push(cell.rank);
+
+    let rank = rankBetween(before, after);
+    while (sheet.cells[cellKey(col, rank, actor)] || pending[cellKey(col, rank, actor)]) {
+        // Step above the spent rank, staying below whatever occupies the next
+        // position, so the new cell keeps the row the caller asked for.
+        let upper = after;
+        for (const r of taken) if (r > rank && (upper === null || r < upper)) upper = r;
+        rank = rankBetween(rank, upper);
+    }
+    return rank;
+}
+
+/**
  * The cell a write lands on, plus the blanks a column needs to reach it. The
  * grid writes below the last stored row freely, so a column grows to meet it.
  */
@@ -67,7 +99,7 @@ function growTo(
     const cells: Record<string, CollabCell> = {};
     let last = live[live.length - 1] ?? null;
     for (let i = live.length; i <= row; i++) {
-        const rank = rankBetween(last?.rank ?? null, null);
+        const rank = freshRank(sheet, cells, col, last?.rank ?? null, null, ctx.actor);
         last = blankCell(col, rank, ctx.actor, ctx.clock.tick());
         cells[cellKey(col, rank, ctx.actor)] = last;
     }
@@ -81,7 +113,14 @@ function insertInColumn(
     ctx: OpContext,
 ): Record<string, CollabCell> {
     const live = liveCells(sheet, col);
-    const rank = rankBetween(live[row - 1]?.rank ?? null, live[row]?.rank ?? null);
+    const rank = freshRank(
+        sheet,
+        {},
+        col,
+        live[row - 1]?.rank ?? null,
+        live[row]?.rank ?? null,
+        ctx.actor,
+    );
     return {
         [cellKey(col, rank, ctx.actor)]: blankCell(col, rank, ctx.actor, ctx.clock.tick()),
     };
