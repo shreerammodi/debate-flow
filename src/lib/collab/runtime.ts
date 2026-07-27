@@ -54,22 +54,30 @@ let watching: Promise<void> | null = null;
  * the session, hear the session's own peers as diallers, and hang up on them.
  */
 let starting = false;
-/** Peers already offered as a contact, so one session asks about each once. */
-const offered = new Set<string>();
+/** The name each peer was last offered under, so one session asks once. */
+const offered = new Map<string, string>();
 
 /**
  * A peer nobody has saved is worth one offer, because the alternative is
  * trading keys by hand next time. The name defaults to the one they broadcast,
  * falling back to the short id, and is theirs to change in Settings; what
  * matters is the id behind it.
+ *
+ * Asked again when a peer that greeted this machine namelessly has since said
+ * what to call them. The offer carries the name it will save, so one made
+ * before the name arrived would save a short EndpointId as this partner's name
+ * for good. The toast is addressed per peer, so the later offer replaces the
+ * earlier one in place rather than stacking a second question beside it.
  */
 function offerToSave(peers: CollabPeer[]): void {
     const contacts = useFlowStore.getState().contacts;
     for (const peer of peers) {
-        if (contacts[peer.endpointId] || offered.has(peer.endpointId)) continue;
-        offered.add(peer.endpointId);
+        if (contacts[peer.endpointId]) continue;
         const name = contactName(contacts, peer.endpointId, peer.name);
+        if (offered.get(peer.endpointId) === name) continue;
+        offered.set(peer.endpointId, name);
         toast(`Save ${name} as a ${peer.role}?`, {
+            id: `collab-save-${peer.endpointId}`,
             duration: 20_000,
             action: {
                 label: "Save",

@@ -21,6 +21,7 @@ import { loadRecents } from "@/lib/persistence/recents";
 import { projectDoc } from "./doc";
 import { collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
+import { broadcastName } from "./machineName";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
 import { adoptJoinedDoc } from "./persist";
 import { incomingDoc } from "./rfdSync";
@@ -38,6 +39,12 @@ export interface JoinDeps {
     invite?: { endpointId: string; roundId: string };
     createLink: PeerLinkFactory;
     appVersion: string;
+    /**
+     * What to call this side. The host hears this before anything else and
+     * offers it as the contact name, so a join that greets namelessly is
+     * saved on the far side as a short EndpointId for good.
+     */
+    displayName?: string;
     settings?: () => CollabSettings;
     fs?: FlowFs;
 }
@@ -86,6 +93,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
 
     try {
         const endpointId = await link.endpointId();
+        const name = deps.displayName ?? (await broadcastName());
         const conn = await link.dial(host.endpointId, deps.ticket);
 
         const raw = await new Promise<CollabDoc>((resolve, reject) => {
@@ -105,6 +113,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
                     role,
                     appVersion: deps.appVersion,
                     ticket: ticket?.secret,
+                    name,
                 }),
             );
         });

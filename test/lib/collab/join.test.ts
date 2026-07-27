@@ -4,6 +4,7 @@ import { seedDoc } from "@/lib/collab/doc";
 import { joinRound } from "@/lib/collab/join";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
+import type { PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { recoverReplica } from "@/lib/collab/persist";
 import { forgetRoundPeers, knownRoundPeers } from "@/lib/collab/roundPeers";
@@ -55,7 +56,11 @@ async function hostWithTicket(): Promise<string> {
 beforeEach(async () => {
     net.reset();
     forgetRoundPeers();
-    useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
+    useFlowStore.setState({
+        collabEnabled: true,
+        collabRelayEnabled: true,
+        collabName: "Rin",
+    });
     shared = makeFlowRound({});
     shared.sheets.find((s) => s.kind !== "cx")!.data = [["perm", "link"]];
     fs = createFlowFs();
@@ -77,6 +82,44 @@ describe("joinRound", () => {
         const written = await fs.readFlow(result!.path);
         expect(written).not.toBeNull();
         expect(written!.text).toContain("perm");
+    });
+
+    // The host hears this before anything else, and offers it as the contact
+    // name. A nameless greeting is saved on the far side as a short
+    // EndpointId, and the round's own session re-dialling later is too late.
+    it("tells the host what to call this side", async () => {
+        const greetings: WireMessage[] = [];
+        const host = (await startCollabSession({
+            createLink: net.create("alex"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            ...side(shared),
+            contacts: () => ({}),
+        }))!;
+        const ticket = encodeTicket(host.share("partner"));
+
+        const watched: PeerLinkFactory = async (config) => {
+            const link = await net.create("sam")(config);
+            return {
+                ...link,
+                async dial(target, secret) {
+                    const conn = await link.dial(target, secret);
+                    const send = conn.send.bind(conn);
+                    return {
+                        ...conn,
+                        send(msg: WireMessage) {
+                            greetings.push(msg);
+                            send(msg);
+                        },
+                    };
+                },
+            };
+        };
+
+        await joinRound({ ticket, createLink: watched, appVersion: "0.11.0", fs });
+
+        const hello = greetings.find((m) => m.type === "hello");
+        expect(hello).toMatchObject({ type: "hello", name: "Rin" });
     });
 
     it("syncs into the file it already has rather than making a duplicate", async () => {

@@ -262,6 +262,28 @@ describe("a peer nobody has saved", () => {
         expect(corners.filter((c) => c.message.startsWith("Save "))).toEqual([]);
     });
 
+    // A join greets the host before the round's own session re-dials, and an
+    // older build greets with no name at all. The offer carries the name it
+    // will save, so the first one must not be the last word.
+    it("is offered again under the name a nameless greeting later supplies", async () => {
+        const host = await startForRound(round);
+        await guestJoins(host!);
+        expect(corners.at(-1)!.message).toBe("Save sam as a partner?");
+
+        await guestJoins(host!, "Rin");
+        const offers = corners.filter((c) => c.message.startsWith("Save "));
+        expect(offers.at(-1)!.message).toBe("Save Rin as a partner?");
+        offers.at(-1)!.action!.onClick();
+        expect(useFlowStore.getState().contacts.sam).toEqual({ name: "Rin", role: "partner" });
+    });
+
+    it("is not asked about twice while their name stays the same", async () => {
+        const host = await startForRound(round);
+        await guestJoins(host!, "Rin");
+        await guestJoins(host!, "Rin");
+        expect(corners.filter((c) => c.message.startsWith("Save "))).toHaveLength(1);
+    });
+
     it("is named in the chip by the contact table, not by their id", async () => {
         useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
         const host = await startForRound(round);
