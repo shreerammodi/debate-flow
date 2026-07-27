@@ -7,6 +7,8 @@
 
 import { create } from "zustand";
 
+import type { ShadowEntry } from "@/lib/collab/shadow";
+
 export type CollabStatus = "off" | "connecting" | "connected" | "reconnecting";
 
 export interface CollabPeerView {
@@ -20,18 +22,41 @@ export interface CollabPeerView {
 export interface CollabUiState {
     status: CollabStatus;
     peers: CollabPeerView[];
+    /** What shadow mode has observed this session, oldest first. */
+    shadowLog: readonly ShadowEntry[];
     setStatus(status: CollabStatus): void;
     setPeers(peers: CollabPeerView[]): void;
+    pushShadow(entry: ShadowEntry): void;
+    clearShadow(): void;
     reset(): void;
 }
 
 /** One array backs every empty peer list, so a reset changes no identity. */
 const NO_PEERS: CollabPeerView[] = [];
 
+const NO_SHADOW: readonly ShadowEntry[] = [];
+
+/**
+ * Nothing reads the log but a human, so a round long enough to overflow it
+ * loses its oldest observations rather than growing the log without bound.
+ */
+const SHADOW_CAP = 200;
+
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
+    shadowLog: NO_SHADOW,
     setStatus: (status) => set({ status }),
     setPeers: (peers) => set({ peers }),
+    pushShadow: (entry) =>
+        set((s) => ({
+            shadowLog:
+                s.shadowLog.length < SHADOW_CAP
+                    ? [...s.shadowLog, entry]
+                    : [...s.shadowLog.slice(s.shadowLog.length - SHADOW_CAP + 1), entry],
+        })),
+    clearShadow: () => set({ shadowLog: NO_SHADOW }),
+    // The log outlives the session it recorded: ending a round is exactly when
+    // someone sits down to read it.
     reset: () => set({ status: "off", peers: NO_PEERS }),
 }));

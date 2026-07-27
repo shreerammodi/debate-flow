@@ -57,6 +57,7 @@ function resetStore() {
         cardmirrorEnabled: true,
         collabEnabled: false,
         collabRelayEnabled: true,
+        shadowMode: false,
     });
 }
 
@@ -397,6 +398,28 @@ describe("SettingsPanel", () => {
             await user.click(toggle);
             expect(useFlowStore.getState().collabRelayEnabled).toBe(false);
             expect(toggle).not.toBeChecked();
+        });
+
+        it("hides the shadow mode row until shared editing is switched on", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+            expect(screen.queryByTestId("shadow-mode-toggle")).toBeNull();
+
+            await user.click(screen.getByTestId("collab-enabled-toggle"));
+            expect(screen.getByTestId("shadow-mode-toggle")).not.toBeChecked();
+        });
+
+        it("toggles shadow mode and reveals the recorded changes beside it", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ collabEnabled: true });
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+            expect(screen.queryByTestId("shadow-log")).toBeNull();
+
+            await user.click(screen.getByTestId("shadow-mode-toggle"));
+            expect(useFlowStore.getState().shadowMode).toBe(true);
+            expect(screen.getByTestId("shadow-log")).toBeTruthy();
         });
     });
 

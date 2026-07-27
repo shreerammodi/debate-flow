@@ -22,6 +22,7 @@ import { merge, type DroppedCell } from "./merge";
 import { createPeerLinkFor } from "./peerLink";
 import { getReplica, replicaRoundId, seedReplica } from "./replica";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
+import { createShadow } from "./shadow";
 import type { CollabDoc } from "./types";
 
 let session: CollabSession | null = null;
@@ -62,8 +63,15 @@ export async function startForRound(
     // rather than holding a second copy.
     if (replicaRoundId() !== round.id) seedReplica(round);
 
+    const store = useFlowStore.getState();
     session = await startCollabSession({
         createLink: createPeerLinkFor,
+        // Shadow mode is read once, at session start. Flipping it mid-round
+        // would leave the two sides disagreeing about what has been applied.
+        shadow: store.shadowMode
+            ? createShadow({ doc: () => getReplica() as CollabDoc, base: () => round })
+            : undefined,
+        onShadow: (entry) => useCollabStore.getState().pushShadow(entry),
         roundId: round.id,
         appVersion: await getCurrentVersion(),
         doc: () => getReplica() as CollabDoc,

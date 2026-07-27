@@ -78,6 +78,13 @@ describe("loadRound", () => {
         expect(useFlowStore.getState().tooltips).toBe(false);
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"tooltips":false');
     });
+
+    it("persists shadowMode through setShadowMode, defaulting off", () => {
+        expect(useFlowStore.getState().shadowMode).toBe(false);
+        useFlowStore.getState().setShadowMode(true);
+        expect(useFlowStore.getState().shadowMode).toBe(true);
+        expect(window.localStorage.getItem("ebb-display-settings")).toContain('"shadowMode":true');
+    });
 });
 
 describe("swapSpeakingOrder", () => {

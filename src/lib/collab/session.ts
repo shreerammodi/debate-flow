@@ -21,6 +21,7 @@ import type { DroppedCell } from "./merge";
 import type { PeerConn, PeerLink, PeerLinkFactory, WireMessage } from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Lock } from "./presence";
 import { retryForever } from "./reconnect";
+import type { Shadow, ShadowEntry } from "./shadow";
 import { attachSync, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -56,6 +57,13 @@ export interface CollabSessionDeps {
     appVersion: string;
     doc(): CollabDoc;
     apply(incoming: CollabDoc): DroppedCell[];
+    /**
+     * When present, a partner's change is recorded and shown rather than
+     * applied. The round in progress is never touched, which is what makes it
+     * safe to run a real one before trusting the merge.
+     */
+    shadow?: Shadow;
+    onShadow?(entry: ShadowEntry): void;
     /** Injectable so a caller can drive the switch without a store write. */
     settings?: () => CollabSettings;
     /** Peers this round already knows, re-dialled silently when it opens. */
@@ -146,7 +154,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         const sync = attachSync({
             conn,
             doc: deps.doc,
-            apply: deps.apply,
+            apply: (incoming) => {
+                if (!deps.shadow) return deps.apply(incoming);
+                deps.onShadow?.(deps.shadow.observe(peer.endpointId, incoming));
+                // Nothing was applied, so nothing was buried: the entry
+                // carries what the merge would have cost.
+                return [];
+            },
             readOnly,
             endpointId,
             schedule: deps.schedule,

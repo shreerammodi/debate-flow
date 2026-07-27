@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { deltaSince, emptyVector } from "@/lib/collab/delta";
 import { seedDoc } from "@/lib/collab/doc";
-import { merge } from "@/lib/collab/merge";
 import { applyOp, type CollabOp, type OpContext } from "@/lib/collab/ops";
 import { createShadow, type Shadow } from "@/lib/collab/shadow";
 import { createClock } from "@/lib/collab/stamp";
@@ -82,7 +82,7 @@ describe("createShadow", () => {
     });
 
     it("carries the merge's dropped cells onto the entry", () => {
-        const { shadow, sheetId, host, live, partner } = harness();
+        const { shadow, sheetId, host, partner } = harness();
         host(write(sheetId, 0, 0, "keep me"));
         const removed = partner({ kind: "removeRow", sheetId, row: 0 });
         const entry = shadow.observe("sam", removed);
@@ -90,7 +90,23 @@ describe("createShadow", () => {
             { text: "keep me", col: 0, by: "sam" },
             { text: "link", col: 1, by: "sam" },
         ]);
-        expect(live()).toEqual(merge(live(), live()).doc);
+        expect(entry.diffs).toEqual([
+            { sheetId, col: 0, row: 0, mine: "keep me", theirs: "cap bad" },
+            { sheetId, col: 1, row: 0, mine: "link", theirs: "turn" },
+            { sheetId, col: 0, row: 1, mine: "cap bad", theirs: "" },
+            { sheetId, col: 1, row: 1, mine: "turn", theirs: "" },
+        ]);
+    });
+
+    it("reports every cell on a sheet the partner would have removed", () => {
+        const { shadow, sheetId, partner } = harness();
+        const entry = shadow.observe("sam", partner({ kind: "removeSheet", sheetId }));
+        expect(entry.diffs).toEqual([
+            { sheetId, col: 0, row: 0, mine: "perm", theirs: "" },
+            { sheetId, col: 1, row: 0, mine: "link", theirs: "" },
+            { sheetId, col: 0, row: 1, mine: "cap bad", theirs: "" },
+            { sheetId, col: 1, row: 1, mine: "turn", theirs: "" },
+        ]);
     });
 
     it("never mutates the live document or the incoming one", () => {
@@ -108,11 +124,39 @@ describe("createShadow", () => {
         expect(incoming).toEqual(incomingBefore);
     });
 
-    it("seeds from the live document at the first observation, not at construction", () => {
+    it("reads nothing at construction, so a session can outlive an unloaded round", () => {
+        const absent = () => {
+            throw new Error("no round is open");
+        };
+        const shadow = createShadow({ doc: absent, base: absent });
+        expect(shadow.entries()).toEqual([]);
+    });
+
+    it("ignores this machine's writes made before the first observation", () => {
         const { shadow, sheetId, host, partner } = harness();
         host(write(sheetId, 0, 0, "host typed this"));
         const entry = shadow.observe("sam", partner(write(sheetId, 1, 0, "no link")));
         expect(entry.diffs).toEqual([{ sheetId, col: 1, row: 0, mine: "link", theirs: "no link" }]);
+    });
+
+    it("never reports this machine's own writes when a delta does not echo them", () => {
+        const { shadow, sheetId, host, live, partner } = harness();
+        shadow.observe("sam", live());
+        host(write(sheetId, 0, 1, "late idea"));
+        // What a partner actually pushes mid-round: its own cells and no more.
+        const delta = deltaSince(partner(write(sheetId, 1, 1, "turn back")), emptyVector());
+        expect(Object.keys(delta.sheets[sheetId].cells)).toHaveLength(1);
+        expect(shadow.observe("sam", delta).diffs).toEqual([
+            { sheetId, col: 1, row: 1, mine: "turn", theirs: "turn back" },
+        ]);
+    });
+
+    it("never blames the partner for a row this machine deleted itself", () => {
+        const { shadow, sheetId, host, live, partner } = harness();
+        shadow.observe("sam", live());
+        host({ kind: "removeRow", sheetId, row: 0 });
+        const delta = deltaSince(partner(write(sheetId, 1, 1, "turn back")), emptyVector());
+        expect(shadow.observe("sam", delta).dropped).toEqual([]);
     });
 
     it("accumulates entries oldest first across several observations", () => {

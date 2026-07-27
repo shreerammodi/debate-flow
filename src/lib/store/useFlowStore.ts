@@ -102,6 +102,11 @@ export interface FlowState {
     collabEnabled: boolean;
     /** Whether a session may fall back to a relay when a direct link fails. */
     collabRelayEnabled: boolean;
+    /**
+     * A partner's changes are recorded and shown rather than applied. Only
+     * meaningful while shared editing is on.
+     */
+    shadowMode: boolean;
     /** Peers shared with before, keyed by EndpointId. */
     contacts: Contacts;
     renamingSheetId: string | null;
@@ -161,6 +166,7 @@ export interface FlowActions {
     setCardmirrorTextType(type: CardMirrorTextType): void;
     setCollabEnabled(on: boolean): void;
     setCollabRelayEnabled(on: boolean): void;
+    setShadowMode(on: boolean): void;
     setContacts(contacts: Contacts): void;
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
@@ -208,6 +214,7 @@ export interface AppConfig {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
     affColor: string | null;
@@ -273,6 +280,7 @@ interface DisplaySettings {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
     affColor: string | null;
@@ -300,6 +308,7 @@ function loadDisplaySettings(): DisplaySettings {
         theme: "system",
         collabEnabled: false,
         collabRelayEnabled: true,
+        shadowMode: false,
         contacts: {},
         affColor: null,
         negColor: null,
@@ -326,6 +335,7 @@ function loadDisplaySettings(): DisplaySettings {
             collabEnabled: typeof p.collabEnabled === "boolean" ? p.collabEnabled : false,
             collabRelayEnabled:
                 typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
+            shadowMode: typeof p.shadowMode === "boolean" ? p.shadowMode : false,
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
             affColor: resolveColor(p.affColor),
@@ -361,6 +371,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         theme: s.theme,
         collabEnabled: s.collabEnabled,
         collabRelayEnabled: s.collabRelayEnabled,
+        shadowMode: s.shadowMode,
         contacts: s.contacts,
         flowsDir: s.flowsDir,
         affColor: s.affColor,
@@ -435,6 +446,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
     collabEnabled: initialDisplaySettings.collabEnabled,
     collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
+    shadowMode: initialDisplaySettings.shadowMode,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
 
@@ -752,6 +764,11 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCollabRelayEnabled(on) {
         saveDisplaySettings({ ...displaySettingsOf(get()), collabRelayEnabled: on });
         set({ collabRelayEnabled: on });
+    },
+
+    setShadowMode(on) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), shadowMode: on });
+        set({ shadowMode: on });
     },
 
     setTheme(mode) {
