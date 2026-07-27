@@ -28,6 +28,10 @@ export function announceInvite(notice: InviteNotice): void {
     if (!shouldAnnounceInvite(contacts, notice.endpointId)) return;
     useCollabStore.getState().pushInvite(notice);
     toast(inviteToastFor(contacts, notice.endpointId, notice.label), {
+        // Addressed by the round it offers, so a contact whose dial reaches
+        // this machine twice refreshes one message rather than stacking a
+        // second copy of the same invitation beside it.
+        id: `collab-invite-${notice.endpointId}-${notice.roundId}`,
         duration: INVITE_TOAST_MS,
         action: { label: "Join", onClick: () => void acceptInvite(notice) },
     });

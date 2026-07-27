@@ -36,10 +36,11 @@ vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
 }));
 
 import { seedDoc } from "@/lib/collab/doc";
+import type { InviteNotice } from "@/lib/collab/invite";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import { peerNotePath } from "@/lib/collab/rfdSync";
-import { endSession, startForRound, syncInviteWatch } from "@/lib/collab/runtime";
+import { endSession, inviteContact, startForRound, syncInviteWatch } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
@@ -312,5 +313,45 @@ describe("a peer nobody has saved", () => {
         const host = await startForRound(round);
         await guestJoins(host!, "Rin");
         expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Sam"]);
+    });
+});
+
+describe("sharing a round with a saved contact", () => {
+    /** Sam, mid-round on something else, with this machine saved. */
+    async function samMidRound(heard: InviteNotice[]): Promise<void> {
+        await startCollabSession({
+            createLink: net.create("sam"),
+            roundId: makeFlowRound({}).id,
+            appVersion: "0.11.0",
+            doc: () => seedDoc(round),
+            apply: () => [],
+            contacts: () => ({ me: { name: "Rin", role: "partner" } }),
+            onInvite: (notice) => heard.push(notice),
+        });
+    }
+
+    // Opening a session for the round dials the contact on the way up, and
+    // that dial is the invitation. Dialling a second time put two notices on
+    // the partner's screen for one share.
+    it("puts one notice on their screen, not two", async () => {
+        const heard: InviteNotice[] = [];
+        await samMidRound(heard);
+
+        await inviteContact(round, "sam");
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+
+        expect(heard).toHaveLength(1);
+        expect(heard[0].roundId).toBe(round.id);
+    });
+
+    it("still dials a contact onto a session that is already up", async () => {
+        const heard: InviteNotice[] = [];
+        await startForRound(round);
+        await samMidRound(heard);
+
+        await inviteContact(round, "sam");
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+
+        expect(heard).toHaveLength(1);
     });
 });

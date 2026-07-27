@@ -222,10 +222,10 @@ describe("replaceReplicaDoc", () => {
         const r = round();
         seedReplica(r, "alex");
         const sheetId = r.sheets.find((s) => s.kind !== "cx")!.id;
-        const ahead: OpContext = {
-            actor: "sam",
-            clock: createClock("sam", () => Date.now() + 60_000),
-        };
+        // Pinned, not read again at the end: the wall clock moving between the
+        // peer's write and the assertion would decide whether this passes.
+        const future = Date.now() + 60_000;
+        const ahead: OpContext = { actor: "sam", clock: createClock("sam", () => future) };
         replaceReplicaDoc(
             applyOp(getReplica()!, { kind: "cellText", sheetId, col: 0, row: 0, text: "" }, ahead),
         );
@@ -234,6 +234,6 @@ describe("replaceReplicaDoc", () => {
         const mine = Object.values(getReplica()!.sheets[sheetId].cells).find(
             (c) => c.text === "mine",
         )!;
-        expect(mine.textStamp.ms).toBeGreaterThanOrEqual(Date.now() + 60_000);
+        expect(mine.textStamp.ms).toBe(future);
     });
 });

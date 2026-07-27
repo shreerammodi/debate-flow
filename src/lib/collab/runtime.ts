@@ -266,9 +266,14 @@ export async function disconnectPeer(endpointId: string): Promise<void> {
  * authorizes, which is what a contact is for.
  */
 export async function inviteContact(round: FlowRound, endpointId: string): Promise<void> {
-    const held = session ?? (await startForRound(round, [endpointId]));
+    const live = session;
+    const held = live ?? (await startForRound(round, [endpointId]));
     if (!held) throw new Error("Turn on shared editing in Settings first");
     rememberRoundPeers(round.id, [endpointId]);
+    // Opening a session for this round dials the contact on the way up, and
+    // that dial is the invitation. Dialling again would put a second notice on
+    // their screen for one share.
+    if (!live) return;
     if (held.peers().some((p) => p.endpointId === endpointId)) return;
     // A session was already up, so the contact is dialled onto it.
     await held.invite(endpointId);

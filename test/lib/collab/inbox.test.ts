@@ -2,16 +2,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface Corner {
     message: string;
+    id?: string;
     action?: { label: string; onClick: () => void };
 }
 
 const corners: Corner[] = [];
 const errors: string[] = [];
 
+/** Sonner keeps one toast per id, so a repeat replaces rather than stacks. */
 vi.mock("sonner", () => ({
     toast: Object.assign(
-        (message: string, opts?: { action?: { label: string; onClick: () => void } }) => {
-            corners.push({ message, action: opts?.action });
+        (
+            message: string,
+            opts?: { id?: string; action?: { label: string; onClick: () => void } },
+        ) => {
+            const corner = { message, action: opts?.action };
+            const at = opts?.id ? corners.findIndex((c) => c.id === opts.id) : -1;
+            if (at >= 0) corners[at] = { ...corner, id: opts.id };
+            else corners.push({ ...corner, id: opts?.id });
         },
         {
             warning: () => {},
@@ -78,6 +86,26 @@ describe("announceInvite", () => {
         announceInvite(notice);
         expect(corners).toEqual([]);
         expect(useCollabStore.getState().invites).toEqual([]);
+    });
+
+    // One share can reach this machine as two dials, and a contact may offer
+    // the same round again after the first message has gone.
+    it("refreshes one message when the same round is offered twice", () => {
+        announceInvite(notice);
+        announceInvite(notice);
+        expect(corners).toHaveLength(1);
+        expect(corners[0].message).toBe("Alex shared Round 3 - Harvard");
+        expect(useCollabStore.getState().invites).toEqual([notice]);
+    });
+
+    it("keeps a second round from the same partner as its own message", () => {
+        announceInvite(notice);
+        announceInvite({ ...notice, roundId: "r2", label: "Round 4 - Bronx" });
+        expect(corners.map((c) => c.message)).toEqual([
+            "Alex shared Round 3 - Harvard",
+            "Alex shared Round 4 - Bronx",
+        ]);
+        useCollabStore.getState().dismissInvite(ALEX, "r2");
     });
 
     it("joins nothing on its own", () => {
