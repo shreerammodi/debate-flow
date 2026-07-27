@@ -1,10 +1,10 @@
 /**
  * The peers a debater has shared with before.
  *
- * A contact exists so nobody copies a 52-character key by hand: entries are
- * created by one click on a toast after a session that worked, and an
- * EndpointId is stable per install, so the same partner is reachable the next
- * time with no ticket at all.
+ * A contact exists so nobody retypes a key to reach a partner twice: entries
+ * are saved with one click after a session, or added by hand from an
+ * EndpointId a partner sent, and an EndpointId is stable per install, so the
+ * same partner is reachable the next time with no ticket at all.
  *
  * The table is keyed by EndpointId and lives in the config file, which is
  * hand-editable and synced between machines. So parsing is total: anything
@@ -23,6 +23,16 @@ export type Contacts = Record<string, Contact>;
 
 /** How much of an EndpointId is worth showing when there is no name. */
 const SHORT_ID = 8;
+
+/**
+ * What iroh will parse back into a key: 64 characters of hex, which is what
+ * an endpoint prints, or the 52-character base32 form it also accepts. Only
+ * shape is checked here; whether those bytes decompress to a real point is
+ * the transport's answer, not a form's.
+ */
+export function isEndpointId(value: string): boolean {
+    return /^[0-9a-f]{64}$/i.test(value) || /^[a-z2-7]{52}$/i.test(value);
+}
 
 function isRole(value: unknown): value is Role {
     return value === "partner" || value === "coach";

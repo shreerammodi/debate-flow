@@ -102,6 +102,22 @@ describe("the idle invite listener", () => {
         await endSession();
         expect(listens()).toBe(2);
     });
+
+    it("publishes the identity a partner is handed, before any round is shared", async () => {
+        // reset() keeps a learned identity on purpose, so this clears it.
+        useCollabStore.setState({ endpointId: null });
+        expect(useCollabStore.getState().endpointId).toBeNull();
+        await syncInviteWatch();
+        expect(useCollabStore.getState().endpointId).toBeTruthy();
+    });
+
+    it("keeps the identity after the endpoint is let go, because it outlives it", async () => {
+        await syncInviteWatch();
+        const id = useCollabStore.getState().endpointId;
+        useFlowStore.setState({ collabEnabled: false });
+        await syncInviteWatch();
+        expect(useCollabStore.getState().endpointId).toBe(id);
+    });
 });
 
 describe("a session opened for a round", () => {

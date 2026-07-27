@@ -1,0 +1,57 @@
+"use client";
+
+import { useRef } from "react";
+import { toast } from "sonner";
+
+import SettingRow from "@/components/settings/SettingRow";
+import { Button } from "@/components/ui/button";
+import { copyText, selectNode } from "@/lib/clipboard";
+import { useCollabStore } from "@/lib/store/useCollabStore";
+
+/**
+ * This machine's own EndpointId, so a partner can save it before either of you
+ * has a round to share. It is bound by the idle listener the master switch
+ * starts, so it appears a moment after the switch does and never changes
+ * again.
+ */
+export default function MyEndpointId() {
+    const endpointId = useCollabStore((s) => s.endpointId);
+    const text = useRef<HTMLParagraphElement>(null);
+
+    async function copy() {
+        if (!endpointId) return;
+        if (await copyText(endpointId)) {
+            toast.success("Your ID is copied.");
+            return;
+        }
+        selectNode(text.current);
+        toast.error("Could not reach the clipboard. Press Cmd+C to copy your ID.");
+    }
+
+    return (
+        <SettingRow
+            title="Your ID"
+            description="Send this to a partner and they can add you as a contact. It is the same on every round and cannot be used to reach your files."
+            control={
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!endpointId}
+                    onClick={copy}
+                    data-testid="my-id-copy"
+                >
+                    Copy
+                </Button>
+            }
+        >
+            <p
+                ref={text}
+                data-testid="my-id"
+                className="border-border bg-muted/40 text-muted-foreground rounded-md border p-2 font-mono text-[12px] break-all select-all"
+            >
+                {endpointId ?? "Binding an endpoint..."}
+            </p>
+        </SettingRow>
+    );
+}

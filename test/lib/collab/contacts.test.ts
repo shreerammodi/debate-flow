@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     addContact,
     contactName,
+    isEndpointId,
     isKnown,
     removeContact,
     resolveContacts,
@@ -93,5 +94,31 @@ describe("isKnown", () => {
     it("separates a saved peer from a stranger", () => {
         expect(isKnown(saved, ALEX)).toBe(true);
         expect(isKnown(saved, "stranger")).toBe(false);
+    });
+});
+
+describe("isEndpointId", () => {
+    it("takes the hex form an endpoint prints", () => {
+        expect(isEndpointId("a".repeat(64))).toBe(true);
+        expect(isEndpointId("A1B2".repeat(16))).toBe(true);
+    });
+
+    it("takes the base32 form iroh also parses", () => {
+        expect(isEndpointId("abcdefghijklmnopqrstuvwxyz234567".padEnd(52, "a"))).toBe(true);
+    });
+
+    it("rejects a length no key has", () => {
+        expect(isEndpointId("")).toBe(false);
+        expect(isEndpointId("a".repeat(63))).toBe(false);
+        expect(isEndpointId("a".repeat(51))).toBe(false);
+    });
+
+    it("rejects a pasted ticket, which is the likely mistake", () => {
+        expect(isEndpointId(`ebb1:${"a".repeat(64)}`)).toBe(false);
+    });
+
+    it("rejects characters no encoding uses", () => {
+        expect(isEndpointId(`${"a".repeat(63)} `)).toBe(false);
+        expect(isEndpointId("!".repeat(64))).toBe(false);
     });
 });

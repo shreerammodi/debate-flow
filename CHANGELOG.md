@@ -86,6 +86,13 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   press. Nobody you have not saved can put anything on your screen. Saved
   partners are listed under Settings > Collaboration, where you can rename
   them, change what they may do, or drop them.
+- **Partners can be saved before the first round.** Settings > Collaboration
+  shows Your ID, the one identity this install answers to, with a Copy beside
+  it; send it to a partner and they add you under Contacts by pasting it with
+  a name. Two people on the way to a tournament can pair up on the bus and
+  invite each other by name for the rest of the day. The ID is checked as you
+  type it, opens nothing but a round you invite them to, and is the same one
+  the app has always used, so nothing about an existing contact changes.
 - A round remembers the partners it was shared with, so opening the file again
   reconnects to them silently, with no new invite.
 - The session chip in the bottom-left corner reports the connection and lists

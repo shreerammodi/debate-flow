@@ -23,12 +23,19 @@ export interface CollabPeerView {
 export interface CollabUiState {
     status: CollabStatus;
     peers: CollabPeerView[];
+    /**
+     * This install's own EndpointId, once an endpoint has bound one. Stable
+     * for the life of the identity file, so it is learned and never cleared:
+     * a partner can be handed it whether or not anything is bound right now.
+     */
+    endpointId: string | null;
     /** Rounds saved contacts have offered and nobody has acted on yet. */
     invites: readonly InviteNotice[];
     /** What shadow mode has observed this session, oldest first. */
     shadowLog: readonly ShadowEntry[];
     setStatus(status: CollabStatus): void;
     setPeers(peers: CollabPeerView[]): void;
+    setEndpointId(endpointId: string): void;
     pushInvite(invite: InviteNotice): void;
     dismissInvite(endpointId: string, roundId: string): void;
     pushShadow(entry: ShadowEntry): void;
@@ -52,10 +59,12 @@ const SHADOW_CAP = 200;
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
+    endpointId: null,
     shadowLog: NO_SHADOW,
     invites: NO_INVITES,
     setStatus: (status) => set({ status }),
     setPeers: (peers) => set({ peers }),
+    setEndpointId: (endpointId) => set({ endpointId }),
     // A partner who dials twice about one round is one invitation, not two.
     pushInvite: (invite) =>
         set((s) =>

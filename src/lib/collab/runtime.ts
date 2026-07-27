@@ -47,14 +47,14 @@ let watching: Promise<void> | null = null;
 /** Peers already offered as a contact, so one session asks about each once. */
 const offered = new Set<string>();
 
-/** An EndpointId is 52 characters of base32; a chip shows the first eight. */
+/** An EndpointId is a long key; a chip shows the first eight characters. */
 function shortName(endpointId: string): string {
     return endpointId.slice(0, 8);
 }
 
 /**
  * A peer nobody has saved is worth one offer, because the alternative is
- * copying 52 characters by hand next time. The name defaults to the short id
+ * trading keys by hand next time. The name defaults to the short id
  * and is theirs to change in Settings; what matters is the id behind it.
  */
 function offerToSave(peers: CollabPeer[]): void {
@@ -174,6 +174,7 @@ export async function startForRound(
         return session;
     }
     rememberRoundPeers(round.id, knownPeers);
+    useCollabStore.getState().setEndpointId(session.endpointId);
     // Every cell written from here carries this machine's own identity, so a
     // cell it inserts can never collide with one a peer inserts at the same
     // position.
@@ -244,22 +245,27 @@ export async function syncInviteWatch(): Promise<void> {
         .catch(() => {})
         .then(async () => {
             const wanted = collabSettings().enabled && !session;
-            if (wanted === (listener !== null)) return;
-            if (!wanted) {
-                await releaseInviteWatch();
-                return;
+            if (wanted !== (listener !== null)) {
+                if (!wanted) {
+                    await releaseInviteWatch();
+                } else {
+                    try {
+                        listener = await startInviteListener({
+                            createLink: createPeerLinkFor,
+                            contacts: () => useFlowStore.getState().contacts,
+                            onInvite: (notice: InviteNotice) => announceInvite(notice),
+                        });
+                    } catch {
+                        // An endpoint that will not bind costs an invitation, and
+                        // nothing else. Ending a session, or opening the app, still
+                        // succeeds.
+                        listener = null;
+                    }
+                }
             }
-            try {
-                listener = await startInviteListener({
-                    createLink: createPeerLinkFor,
-                    contacts: () => useFlowStore.getState().contacts,
-                    onInvite: (notice: InviteNotice) => announceInvite(notice),
-                });
-            } catch {
-                // An endpoint that will not bind costs an invitation, and nothing
-                // else. Ending a session, or opening the app, still succeeds.
-                listener = null;
-            }
+            // The identity outlives any one binding, so it is published whenever
+            // one is in hand rather than only at the moment it binds.
+            if (listener) useCollabStore.getState().setEndpointId(listener.endpointId);
         });
     watching = next;
     await next;

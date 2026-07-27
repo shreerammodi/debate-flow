@@ -95,3 +95,72 @@ describe("ContactList", () => {
         expect(useFlowStore.getState().contacts[ALEX].name).toBe(ALEX.slice(0, 8));
     });
 });
+
+describe("adding a partner by hand", () => {
+    const ID = "b".repeat(64);
+
+    it("saves a partner nobody has shared with yet", async () => {
+        render(<ContactList />);
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Rin");
+        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
+        await userEvent.click(screen.getByTestId("add-contact-save"));
+
+        expect(useFlowStore.getState().contacts[ID]).toEqual({ name: "Rin", role: "partner" });
+    });
+
+    it("empties the form so a second partner does not inherit the first", async () => {
+        render(<ContactList />);
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Rin");
+        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
+        await userEvent.click(screen.getByTestId("add-contact-save"));
+
+        expect(screen.getByTestId("add-contact-name")).toHaveValue("");
+        expect(screen.getByTestId("add-contact-id")).toHaveValue("");
+    });
+
+    it("refuses a name with no id, and an id with no name", async () => {
+        render(<ContactList />);
+        expect(screen.getByTestId("add-contact-save")).toBeDisabled();
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Rin");
+        expect(screen.getByTestId("add-contact-save")).toBeDisabled();
+
+        await userEvent.clear(screen.getByTestId("add-contact-name"));
+        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
+        expect(screen.getByTestId("add-contact-save")).toBeDisabled();
+    });
+
+    it("says so when what was pasted is not an id at all", async () => {
+        render(<ContactList />);
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Rin");
+        await userEvent.type(screen.getByTestId("add-contact-id"), "ebb1:whatever");
+        expect(screen.getByTestId("add-contact-error")).toBeTruthy();
+        expect(screen.getByTestId("add-contact-save")).toBeDisabled();
+    });
+
+    it("refuses to add a second entry over a partner already saved", async () => {
+        useFlowStore.setState({ contacts: { [ID]: { name: "Rin", role: "partner" } } });
+        render(<ContactList />);
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Rin again");
+        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
+        expect(screen.getByTestId("add-contact-known")).toHaveTextContent("Rin");
+        expect(screen.getByTestId("add-contact-save")).toBeDisabled();
+    });
+
+    it("saves a coach as view only", async () => {
+        render(<ContactList />);
+
+        await userEvent.type(screen.getByTestId("add-contact-name"), "Coach");
+        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
+        screen.getByTestId("add-contact-role").focus();
+        await userEvent.keyboard("{Enter}");
+        await userEvent.click(await screen.findByTestId("add-contact-role-coach"));
+        await userEvent.click(screen.getByTestId("add-contact-save"));
+
+        expect(useFlowStore.getState().contacts[ID].role).toBe("coach");
+    });
+});

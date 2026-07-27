@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import SettingRow from "@/components/settings/SettingRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +12,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { addContact, type Contacts, removeContact } from "@/lib/collab/contacts";
+import { addContact, type Contacts, isEndpointId, removeContact } from "@/lib/collab/contacts";
 import type { Role } from "@/lib/collab/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -20,13 +22,16 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
     { value: "coach", label: "view only" },
 ];
 
-/** An EndpointId is 52 characters of base32; a row shows the first eight. */
+/** An EndpointId is a long key; a row shows the first eight characters. */
 const SHORT_ID = 8;
 
 /**
- * The saved peers, edited in place. Entries arrive from one click on a toast
- * after a session, so the list renames, re-roles, and drops them; there is no
- * way to type an EndpointId in by hand, which is the point of a contact.
+ * The saved peers, edited in place, and the form that adds one.
+ *
+ * Two partners on the way to a tournament have no round to share yet, so a
+ * contact is not only something a finished session leaves behind: each of them
+ * sends the other the ID above and types it in here. The pair is then dialable
+ * with no ticket for every round after.
  */
 export default function ContactList() {
     const contacts = useFlowStore((s) => s.contacts);
@@ -43,7 +48,7 @@ export default function ContactList() {
         >
             {entries.length === 0 ? (
                 <p className="text-muted-foreground text-[12px]" data-testid="contact-list-empty">
-                    No partners saved yet. Save one after a shared flow session.
+                    No partners saved yet. Add one below, or save one after a shared flow session.
                 </p>
             ) : (
                 <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
@@ -137,6 +142,110 @@ export default function ContactList() {
                     })}
                 </ul>
             )}
+            <AddContact contacts={contacts} onAdd={setContacts} />
         </SettingRow>
+    );
+}
+
+/**
+ * Adds a partner from the ID they sent. The shape is checked here so a typo is
+ * caught at the form rather than at a dial that fails with nothing to point
+ * at; whether the key is real is still the transport's answer.
+ */
+function AddContact({
+    contacts,
+    onAdd,
+}: {
+    contacts: Contacts;
+    onAdd: (contacts: Contacts) => void;
+}) {
+    const [endpointId, setEndpointId] = useState("");
+    const [name, setName] = useState("");
+    const [role, setRole] = useState<Role>("partner");
+
+    const id = endpointId.trim();
+    const known = id in contacts;
+    const shaped = isEndpointId(id);
+    const ready = shaped && !known && name.trim() !== "";
+
+    function add() {
+        if (!ready) return;
+        onAdd(addContact(contacts, id, { name: name.trim(), role }));
+        setEndpointId("");
+        setName("");
+        setRole("partner");
+    }
+
+    return (
+        <div className="mt-3 flex flex-col gap-1.5" data-testid="add-contact">
+            <div className="flex items-center gap-2">
+                <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") add();
+                    }}
+                    placeholder="Name"
+                    aria-label="Partner name"
+                    data-testid="add-contact-name"
+                    className="h-8 w-32 shrink-0"
+                />
+                <Input
+                    value={endpointId}
+                    onChange={(e) => setEndpointId(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") add();
+                    }}
+                    placeholder="Their ID"
+                    aria-label="Partner ID"
+                    data-testid="add-contact-id"
+                    className="h-8 min-w-0 flex-1 font-mono text-[12px]"
+                />
+                <Select
+                    value={role}
+                    items={ROLE_OPTIONS}
+                    onValueChange={(value) => setRole(value as Role)}
+                >
+                    <SelectTrigger
+                        size="sm"
+                        aria-label="Role for the partner being added"
+                        data-testid="add-contact-role"
+                        className="w-28 shrink-0"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {ROLE_OPTIONS.map((r) => (
+                            <SelectItem
+                                key={r.value}
+                                value={r.value}
+                                data-testid={`add-contact-role-${r.value}`}
+                            >
+                                {r.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Button
+                    type="button"
+                    size="xs"
+                    disabled={!ready}
+                    onClick={add}
+                    data-testid="add-contact-save"
+                >
+                    Add
+                </Button>
+            </div>
+            {id !== "" && !shaped && (
+                <p className="text-destructive text-[11px]" data-testid="add-contact-error">
+                    That is not an ID. Ask them for the one under Your ID in their settings.
+                </p>
+            )}
+            {known && (
+                <p className="text-muted-foreground text-[11px]" data-testid="add-contact-known">
+                    {contacts[id]?.name} is already saved under that ID.
+                </p>
+            )}
+        </div>
     );
 }

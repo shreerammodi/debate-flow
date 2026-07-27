@@ -25,7 +25,7 @@ const TICKET = "ebb1:eyJlbmRwb2ludElkIjoiYWxleCJ9";
 beforeEach(() => {
     toastSuccess.mockClear();
     toastError.mockClear();
-    useTicketDialog.setState({ showing: null, resolve: null });
+    useTicketDialog.setState({ open: false, mode: "show", ticket: "", resolve: null });
 });
 
 describe("TicketDialog", () => {
@@ -68,6 +68,21 @@ describe("TicketDialog", () => {
         expect(toastError.mock.calls[0]?.[0]).toMatch(/Cmd\+C/);
         expect(screen.getByTestId("ticket-dialog")).toBeTruthy();
         expect(window.getSelection()?.toString()).toBe(TICKET);
+        vi.unstubAllGlobals();
+    });
+
+    it("keeps the ticket on screen while a closed share animates out", async () => {
+        const writeText = vi.fn(async () => {});
+        vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+        render(<TicketDialog />);
+        act(() => showTicket(TICKET));
+
+        await userEvent.click(screen.getByTestId("ticket-copy"));
+        // The dialog outlives `open` by the length of its exit animation, so a
+        // mode that flipped here would show the join field on the way out.
+        expect(useTicketDialog.getState().open).toBe(false);
+        expect(useTicketDialog.getState().mode).toBe("show");
+        expect(useTicketDialog.getState().ticket).toBe(TICKET);
         vi.unstubAllGlobals();
     });
 

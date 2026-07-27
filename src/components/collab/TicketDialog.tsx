@@ -11,6 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { copyText, selectNode } from "@/lib/clipboard";
 import { useTicketDialog } from "@/lib/store/useTicketDialog";
 
 /**
@@ -20,10 +21,15 @@ import { useTicketDialog } from "@/lib/store/useTicketDialog";
  * nothing left to do with a dialog holding a ticket already on the clipboard.
  * The ticket is selectable text rather than a field, so a webview that refuses
  * the write still leaves a Cmd+C, which is what the failure path selects for.
+ *
+ * Which half is on screen comes from the store's latched mode, not from what
+ * is pending: a closing share must keep showing the ticket for the length of
+ * its exit rather than swap to the join field on the way out.
  */
 export default function TicketDialog() {
-    const showing = useTicketDialog((s) => s.showing);
-    const asking = useTicketDialog((s) => s.resolve) !== null;
+    const open = useTicketDialog((s) => s.open);
+    const mode = useTicketDialog((s) => s.mode);
+    const ticket = useTicketDialog((s) => s.ticket);
     const submit = useTicketDialog((s) => s.submit);
     const close = useTicketDialog((s) => s.close);
 
@@ -33,18 +39,18 @@ export default function TicketDialog() {
 
     return (
         <Dialog
-            open={showing !== null || asking}
-            onOpenChange={(open) => {
-                if (!open) close();
+            open={open}
+            onOpenChange={(next) => {
+                if (!next) close();
             }}
         >
             {/* The field lives in the content, which unmounts with the dialog,
                 so each opening starts empty without an effect to reset it. */}
             <DialogContent className="max-w-md" data-testid="ticket-dialog">
-                {showing !== null ? (
-                    <Handover ticket={showing} onDone={close} />
-                ) : (
+                {mode === "ask" ? (
                     <Ask onSubmit={submit} />
+                ) : (
+                    <Handover ticket={ticket} onDone={close} />
                 )}
             </DialogContent>
         </Dialog>
@@ -54,26 +60,14 @@ export default function TicketDialog() {
 function Handover({ ticket, onDone }: { ticket: string; onDone: () => void }) {
     const text = useRef<HTMLParagraphElement>(null);
 
-    /** Puts the ticket under the caret, for the Cmd+C a refused write leaves. */
-    function selectTicket() {
-        const node = text.current;
-        if (!node) return;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-    }
-
     async function copy() {
-        try {
-            await navigator.clipboard.writeText(ticket);
+        if (await copyText(ticket)) {
             toast.success("Invite copied. It works once.");
             onDone();
-        } catch {
-            selectTicket();
-            toast.error("Could not reach the clipboard. Press Cmd+C to copy the invite.");
+            return;
         }
+        selectNode(text.current);
+        toast.error("Could not reach the clipboard. Press Cmd+C to copy the invite.");
     }
 
     return (
