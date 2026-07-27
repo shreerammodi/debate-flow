@@ -121,6 +121,10 @@ export default function SettingsPanel() {
     const setCardmirrorTextType = useFlowStore((s) => s.setCardmirrorTextType);
     const cardmirrorEnabled = useFlowStore((s) => s.cardmirrorEnabled);
     const setCardmirrorEnabled = useFlowStore((s) => s.setCardmirrorEnabled);
+    const collabEnabled = useFlowStore((s) => s.collabEnabled);
+    const setCollabEnabled = useFlowStore((s) => s.setCollabEnabled);
+    const collabRelayEnabled = useFlowStore((s) => s.collabRelayEnabled);
+    const setCollabRelayEnabled = useFlowStore((s) => s.setCollabRelayEnabled);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -569,6 +573,45 @@ export default function SettingsPanel() {
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
+                                                }
+                                            />
+                                        )}
+                                    </section>
+                                )}
+                                {isDesktop() && (
+                                    <section
+                                        className="mt-4 flex flex-col"
+                                        data-testid="collab-section"
+                                    >
+                                        <div className="mb-1 flex items-center gap-2">
+                                            <h3 className="text-muted-foreground text-[11px] font-bold tracking-widest uppercase">
+                                                Collaboration
+                                            </h3>
+                                            <span className="bg-border/60 h-px flex-1" />
+                                        </div>
+                                        <SettingRow
+                                            title="Shared editing"
+                                            description="Off by default. On, it opens the routes a session needs; a session is still always started by hand."
+                                            control={
+                                                <Switch
+                                                    checked={collabEnabled}
+                                                    onCheckedChange={setCollabEnabled}
+                                                    data-testid="collab-enabled-toggle"
+                                                    aria-label="Shared editing"
+                                                />
+                                            }
+                                        />
+                                        {collabEnabled && (
+                                            <SettingRow
+                                                title="Allow relay"
+                                                description="Off restricts a session to direct connections."
+                                                control={
+                                                    <Switch
+                                                        checked={collabRelayEnabled}
+                                                        onCheckedChange={setCollabRelayEnabled}
+                                                        data-testid="collab-relay-toggle"
+                                                        aria-label="Allow relay"
+                                                    />
                                                 }
                                             />
                                         )}

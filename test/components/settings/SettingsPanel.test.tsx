@@ -37,6 +37,8 @@ vi.mock("@/lib/keymap/useDesktopMenu", () => ({
 import SettingsPanel from "@/components/settings/SettingsPanel";
 import { restoreMenuAccelerators, suspendMenuAccelerators } from "@/lib/keymap/useDesktopMenu";
 
+import { installFakeFlowFs } from "../../support/fakeFlowFs";
+
 function renderSettingsPanel() {
     return render(
         <TooltipProvider>
@@ -53,6 +55,8 @@ function resetStore() {
         keymapOverrides: {},
         settingsOpen: true,
         cardmirrorEnabled: true,
+        collabEnabled: false,
+        collabRelayEnabled: true,
     });
 }
 
@@ -80,6 +84,9 @@ describe("SettingsPanel", () => {
         window.localStorage.clear();
         resetStore();
         vi.clearAllMocks();
+        // isDesktop() is forced on above, so the Editor pane's flows-folder
+        // control resolves a real path; the fake port keeps it off Tauri IPC.
+        installFakeFlowFs();
     });
 
     it("renders nothing when settings are closed", () => {
@@ -348,6 +355,48 @@ describe("SettingsPanel", () => {
             act(() => useFlowStore.getState().setCardmirrorEnabled(false));
             expect(screen.queryByTestId("cmd-cell.jumpToSource")).toBeNull();
             expect(screen.queryByTestId("cmd-cell.sendToDoc")).toBeNull();
+        });
+    });
+
+    describe("Collaboration section", () => {
+        it("hides the relay row until shared editing is switched on", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+
+            const toggle = screen.getByTestId("collab-enabled-toggle");
+            expect(toggle).not.toBeChecked();
+            expect(screen.queryByTestId("collab-relay-toggle")).toBeNull();
+
+            await user.click(toggle);
+            expect(useFlowStore.getState().collabEnabled).toBe(true);
+            expect(toggle).toBeChecked();
+            expect(screen.getByTestId("collab-relay-toggle")).toBeTruthy();
+        });
+
+        it("hides the relay row again when shared editing goes back off", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ collabEnabled: true });
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+            expect(screen.getByTestId("collab-relay-toggle")).toBeTruthy();
+
+            await user.click(screen.getByTestId("collab-enabled-toggle"));
+            expect(useFlowStore.getState().collabEnabled).toBe(false);
+            expect(screen.queryByTestId("collab-relay-toggle")).toBeNull();
+        });
+
+        it("toggles the relay setting", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ collabEnabled: true });
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+
+            const toggle = screen.getByTestId("collab-relay-toggle");
+            expect(toggle).toBeChecked();
+            await user.click(toggle);
+            expect(useFlowStore.getState().collabRelayEnabled).toBe(false);
+            expect(toggle).not.toBeChecked();
         });
     });
 

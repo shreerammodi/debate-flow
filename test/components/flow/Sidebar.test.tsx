@@ -12,6 +12,7 @@ import Sidebar from "@/components/flow/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound } from "@/lib/model/flow";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 vi.mock("@/lib/grid/hotInstance", () => ({ focusActiveHot: vi.fn() }));
@@ -40,6 +41,7 @@ function lastToastAction(): { label: string; onClick: () => void } {
 }
 
 function resetStore() {
+    useCollabStore.getState().reset();
     useFlowStore.setState({
         round: null,
         activeSheetId: null,
@@ -272,5 +274,43 @@ describe("Sidebar", () => {
             .getAllByTestId(/^sheet-(?!marker)/)
             .map((r) => r.getAttribute("data-testid"));
         expect(ids.indexOf(`sheet-${caseId}`)).toBeLessThan(ids.indexOf(`sheet-${daId}`));
+    });
+
+    describe("session chip", () => {
+        it("shows no chip while no session is live", () => {
+            setupRound();
+            renderSidebar();
+            expect(screen.queryByTestId("collab-chip")).toBeNull();
+        });
+
+        it("puts a live session in the footer, below the sheet list", () => {
+            const { caseId } = setupRound();
+            useCollabStore.setState({ status: "connected", peers: [] });
+            renderSidebar();
+
+            const chip = screen.getByTestId("collab-chip");
+            expect(screen.getByTestId("sidebar")).toContainElement(chip);
+
+            // Below every sheet row, so it covers no sheet name.
+            const row = screen.getByTestId(`sheet-${caseId}`);
+            expect(
+                row.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+        });
+
+        it("floats the chip past the rail while the sidebar is collapsed", () => {
+            setupRound();
+            useFlowStore.setState({ sidebarCollapsed: true });
+            useCollabStore.setState({ status: "connected", peers: [] });
+            renderSidebar();
+
+            const chip = screen.getByTestId("collab-chip");
+            expect(screen.getByTestId("sidebar")).not.toContainElement(chip);
+
+            // Pinned over the grid's left edge, not carried by the rail's flow.
+            const slot = chip.closest(".fixed");
+            expect(slot).not.toBeNull();
+            expect(slot).not.toHaveClass("relative");
+        });
     });
 });

@@ -5,6 +5,7 @@ import { LazyMotion, Reorder } from "motion/react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 
+import SessionChip from "@/components/collab/SessionChip";
 import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
@@ -59,22 +60,27 @@ export default function Sidebar() {
 
     if (sidebarCollapsed) {
         return (
-            <nav
-                className="no-print border-border bg-card flex h-full w-9 shrink-0 flex-col items-center border-r pt-2"
-                aria-label="Sheets"
-                data-testid="sidebar"
-            >
-                <Tip label="Expand sidebar" command="sidebar.toggle" side="right">
-                    <button
-                        type="button"
-                        aria-label="Expand sidebar"
-                        onClick={() => setSidebarCollapsed(false)}
-                        className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1 transition-colors"
-                    >
-                        <CaretRight size={16} />
-                    </button>
-                </Tip>
-            </nav>
+            <>
+                <nav
+                    className="no-print border-border bg-card flex h-full w-9 shrink-0 flex-col items-center border-r pt-2"
+                    aria-label="Sheets"
+                    data-testid="sidebar"
+                >
+                    <Tip label="Expand sidebar" command="sidebar.toggle" side="right">
+                        <button
+                            type="button"
+                            aria-label="Expand sidebar"
+                            onClick={() => setSidebarCollapsed(false)}
+                            className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1 transition-colors"
+                        >
+                            <CaretRight size={16} />
+                        </button>
+                    </Tip>
+                </nav>
+                {/* No footer to sit in, so the chip floats over the grid's left
+                    edge, clear of the collapsed rail. */}
+                <SessionChip className="no-print fixed bottom-3 left-11 z-30" />
+            </>
         );
     }
 
@@ -198,6 +204,9 @@ export default function Sidebar() {
                     </LazyMotion>
                 )}
             </div>
+            {/* Footer, below the scrolling list, so a live session never covers
+                a sheet name. */}
+            <SessionChip className="border-border/60 shrink-0 border-t p-2" />
         </nav>
     );
 }
