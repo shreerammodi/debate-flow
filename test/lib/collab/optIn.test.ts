@@ -12,6 +12,10 @@ const round = makeFlowRound({});
 /**
  * A fully formed session request. Everything a real one carries is present, so
  * the only reason nothing happens below is the switch itself.
+ *
+ * The scheduler is a no-op canceller: a dial to a peer that is not listening
+ * arms a retry on the session's own clock, and a positive control should
+ * record the dial without leaving a timer behind.
  */
 function deps(dial: string[] = ["sam", "kim"]) {
     return {
@@ -21,11 +25,54 @@ function deps(dial: string[] = ["sam", "kim"]) {
         doc: () => seedDoc(round),
         apply: () => [],
         dial,
+        schedule: () => () => {},
     };
 }
 
 beforeEach(() => {
     net.reset();
+});
+
+/**
+ * The positive control for the suite below. An empty recorder only means "the
+ * gate held" if the same request fills it when the gate is open, so these
+ * assertions are what give the off tests their meaning.
+ */
+describe("with shared editing switched on", () => {
+    beforeEach(() => {
+        useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
+    });
+
+    it("binds one endpoint and listens on it", async () => {
+        await startCollabSession(deps([]));
+        const bound = net.calls.filter((c) => c.op === "create");
+        expect(bound).toHaveLength(1);
+        expect(bound[0]!.endpointId).toBe("alex");
+        expect(net.calls.filter((c) => c.op === "listen").map((c) => c.endpointId)).toEqual([
+            "alex",
+        ]);
+    });
+
+    it("binds with an explicit discovery and relay config", async () => {
+        await startCollabSession(deps([]));
+        expect(net.calls.find((c) => c.op === "create")!.config).toEqual({
+            discovery: "mdns",
+            relay: true,
+        });
+    });
+
+    it("dials every peer the round already knows", async () => {
+        await startCollabSession(deps());
+        expect(net.calls.filter((c) => c.op === "dial").map((c) => c.endpointId)).toEqual([
+            "sam",
+            "kim",
+        ]);
+    });
+
+    it("hands back a session on the endpoint it bound", async () => {
+        const session = await startCollabSession(deps([]));
+        expect(session?.endpointId).toBe("alex");
+    });
 });
 
 describe("with shared editing switched off", () => {
@@ -35,20 +82,25 @@ describe("with shared editing switched off", () => {
 
     it("binds no endpoint", async () => {
         await startCollabSession(deps());
-        expect(net.calls.filter((c) => c.op === "listen")).toEqual([]);
+        expect(net.calls.map((c) => c.op)).not.toContain("listen");
     });
 
-    it("dials no peer", async () => {
+    it("dials no peer, though two are named", async () => {
         await startCollabSession(deps());
-        expect(net.calls.filter((c) => c.op === "dial")).toEqual([]);
+        expect(net.calls.map((c) => c.op)).not.toContain("dial");
     });
 
     it("publishes no discovery record", async () => {
         await startCollabSession(deps());
-        expect(net.calls.filter((c) => c.op === "create")).toEqual([]);
+        expect(net.calls.map((c) => c.op)).not.toContain("create");
     });
 
-    it("contacts no relay", async () => {
+    /**
+     * The recorder has no relay concept of its own, so what is proven here is
+     * narrower than the name: no transport is ever constructed, and a relay is
+     * only reachable through one that is.
+     */
+    it("constructs no transport at all, so no relay is contacted", async () => {
         await startCollabSession(deps());
         expect(net.calls).toEqual([]);
     });
@@ -58,6 +110,13 @@ describe("with shared editing switched off", () => {
     });
 });
 
+/**
+ * The other four routes onto the network gate on the same `collabSettings()`
+ * call, and each is held to the off case beside its own behavior: `join.ts` in
+ * `join.test.ts`, `inviteListener.ts` in `inviteListener.test.ts`,
+ * `startForRound` in `runtimeInvites.test.ts`, and `persistReplica` in
+ * `persist.test.ts`.
+ */
 describe("discovery", () => {
     it("never publishes a DNS record, switch on included", async () => {
         useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });

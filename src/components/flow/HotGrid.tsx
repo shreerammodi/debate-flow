@@ -10,23 +10,18 @@ import "handsontable/styles/handsontable.min.css";
 import "handsontable/styles/ht-theme-main.min.css";
 
 import { contactName } from "@/lib/collab/contacts";
-import {
-    isReplicatedSource,
-    resyncActiveSheet,
-    rowOpFromHook,
-    textOpsFromChanges,
-} from "@/lib/collab/gridOps";
+import { isReplicatedSource, rowOpFromHook, textOpsFromChanges } from "@/lib/collab/gridOps";
 import { gridPatchFor, type GridPatch } from "@/lib/collab/gridPatch";
 import { planRemoteApply } from "@/lib/collab/remoteApply";
 import { recordOp } from "@/lib/collab/replica";
-import { replaceSpanOps } from "@/lib/collab/spanOps";
+import { openSpanOps, replaceSpanOps } from "@/lib/collab/spanOps";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
 import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "@/lib/grid/codec";
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
-import { getLocks, onLocksChanged } from "@/lib/grid/lockBridge";
+import { claimCell, getLocks, onLocksChanged } from "@/lib/grid/lockBridge";
 import { LOCK_CLASS, lockClassFor, lockLabel } from "@/lib/grid/lockDecor";
 import {
     attachMetaUndo,
@@ -598,6 +593,20 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         [snapshot],
     );
 
+    // A cell this side is typing in is claimed so a partner sees it before
+    // they start on the same one, and released the moment the editor closes.
+    // The claim is advisory and expires on its own, so the only thing that
+    // matters here is that a release always follows a claim: a lock left
+    // behind by a pane that unmounted is worse than no locking at all.
+    const afterBeginEditing = useCallback((row: number, col: number) => {
+        const sid = currentSheetIdRef.current;
+        if (sid) claimCell({ sheetId: sid, col, row });
+    }, []);
+
+    const afterDestroyEditor = useCallback(() => claimCell(null), []);
+
+    useEffect(() => () => claimCell(null), []);
+
     // Insert-paste: the shift_down populate moves text but not decorations, so
     // the displaced classes are re-laid once the grid has grown. The hook's own
     // `coords` argument describes the COPY range, not the paste target, so the
@@ -624,6 +633,16 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             };
             pasteShift.current = shift;
             pasteClasses.current = snapshotClasses(hot, pasteCols(hot, shift));
+            // Said before Handsontable moves anything, so the text writes that
+            // follow land on rows the replica has already opened. Said as ops,
+            // because the alternative is re-deriving the sheet afterwards,
+            // which re-keys every cell out from under a partner holding it.
+            const sid = currentSheetIdRef.current;
+            if (sid) {
+                for (const col of pasteCols(hot, shift)) {
+                    for (const op of openSpanOps(sid, col, shift.row, shift.height)) recordOp(op);
+                }
+            }
         },
         [insertPaste],
     );
@@ -642,10 +661,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         });
         hot.render();
         // afterChange snapshotted the shifted text while the meta was still
-        // the old layout, so the store needs the settled state, and the
-        // replica needs it too.
+        // the old layout, so the store needs the settled state. The replica
+        // does not: the opens beforePaste recorded moved each cell with its
+        // own decoration, which is what a cell identity is for.
         snapshot();
-        resyncActiveSheet();
     }, [snapshot]);
 
     // Returning false is Handsontable's documented way to cancel an undo push.
@@ -861,6 +880,8 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     afterCreateRow={afterCreateRow}
                     afterRemoveRow={afterRemoveRow}
                     afterSelectionEnd={afterSelectionEnd}
+                    afterBeginEditing={afterBeginEditing}
+                    afterDestroyEditor={afterDestroyEditor}
                     beforeKeyDown={beforeKeyDown}
                     licenseKey="non-commercial-and-evaluation"
                 />

@@ -31,6 +31,7 @@ export function knownRoundPeers(roundId: string): string[] {
     return heldRoundId === roundId ? [...held] : [];
 }
 
+/** Drops the set, for a round that is being closed. Nothing is open to remember. */
 export function forgetRoundPeers(): void {
     heldRoundId = null;
     held = [];

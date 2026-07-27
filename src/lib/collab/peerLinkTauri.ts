@@ -7,7 +7,13 @@
  * line of JSON back into a wire message.
  */
 
-import type { PeerConn, PeerLink, PeerLinkConfig, WireMessage } from "./peerLink";
+import {
+    parseWireMessage,
+    type PeerConn,
+    type PeerLink,
+    type PeerLinkConfig,
+    type WireMessage,
+} from "./peerLink";
 
 /** The slice of Tauri this needs, injected so the suite can drive it. */
 export interface TauriBridge {
@@ -39,13 +45,18 @@ function asMessage(payload: unknown): { connId: string; msg: WireMessage } | nul
     if (payload === null || typeof payload !== "object") return null;
     const p = payload as { connId?: unknown; payload?: unknown };
     if (typeof p.connId !== "string" || typeof p.payload !== "string") return null;
+    let raw: unknown;
     try {
-        return { connId: p.connId, msg: JSON.parse(p.payload) as WireMessage };
+        raw = JSON.parse(p.payload);
     } catch {
-        // A line that is not a wire message is a peer speaking a language this
-        // build does not know. Dropping it beats tearing the link down.
         return null;
     }
+    // A line that does not conform to its variant is a peer speaking a
+    // language this build does not know, or one probing for a field the
+    // protocol dereferences without asking. Dropping it beats tearing the link
+    // down, and beats letting it reach the handshake.
+    const msg = parseWireMessage(raw);
+    return msg ? { connId: p.connId, msg } : null;
 }
 
 async function defaultBridge(): Promise<TauriBridge> {
@@ -84,6 +95,8 @@ export async function createPeerLink(
     const held = new Map<string, Held>();
     let onPeer: ((conn: PeerConn) => void) | null = null;
     const unlisten: (() => void)[] = [];
+    /** This link's one hold on the shell's endpoint, spent exactly once. */
+    let stopped = false;
 
     /**
      * Forgets a connection the shell no longer holds, and tells whoever was
@@ -189,9 +202,16 @@ export async function createPeerLink(
         },
 
         async stop() {
+            // Once, whatever the caller does. The shell refcounts the endpoint
+            // so two links can share one bind, and a second stop from this
+            // link would spend a hold it does not have and pull the endpoint
+            // out from under the other one.
+            if (stopped) return;
+            stopped = true;
             for (const un of unlisten) un();
             unlisten.length = 0;
             onPeer = null;
+            for (const entry of held.values()) entry.open = false;
             held.clear();
             await shell.invoke("collab_stop", {});
         },

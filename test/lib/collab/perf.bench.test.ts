@@ -168,7 +168,30 @@ describe("collaboration under a full round", () => {
 
     it("projects the round the store is handed", () => {
         const ms = timeMedian(20, () => projectDoc(doc, round));
-        expect(record("projectDoc, every remote apply", ms, 60)).toBeLessThan(60);
+        expect(record("projectDoc, cold", ms, 60)).toBeLessThan(60);
+    });
+
+    // What actually runs per remote change. A delta names only the sheets it
+    // has something new for, so a merge builds one new sheet object and the
+    // other seven are handed straight back.
+    it("projects only the sheet a partner touched", () => {
+        const sam = ctxFor("sam", 7_000_000);
+        const base = projectDoc(doc, round);
+        const delta = deltaSince(
+            applyOp(doc, { kind: "cellText", sheetId, col: 0, row: 1, text: "theirs" }, sam),
+            vectorOf(doc),
+        );
+        expect(Object.keys(delta.sheets)).toHaveLength(1);
+        const after = merge(doc, delta).doc;
+
+        const whole = timeMedian(20, () => projectDoc(after, base));
+        const reused = timeMedian(20, () => projectDoc(after, base, doc));
+        report.push(
+            `projectDoc, 1 of ${SHEETS} sheets changed`.padEnd(52) +
+                `${reused.toFixed(3).padStart(9)} ms   (whole round ${whole.toFixed(3)})`,
+        );
+        // Seven sheets of eight are handed back, so most of the work is gone.
+        expect(reused).toBeLessThan(whole * 0.6);
     });
 
     it("diffs one sheet into the writes a pane needs", () => {

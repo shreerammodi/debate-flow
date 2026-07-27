@@ -23,6 +23,12 @@ import { PROTOCOL_MAJOR, type WireMessage } from "./peerLink";
  */
 export const INVITED = "invited";
 
+/**
+ * What a round label is worth showing. A contact chooses this string and the
+ * corner renders it, so the corner decides how much of one it will take.
+ */
+const MAX_LABEL = 120;
+
 export interface InviteNotice {
     /** The dialler, who is holding the round. */
     endpointId: string;
@@ -53,7 +59,7 @@ export function inviteFrom(
     return {
         endpointId: remoteId,
         roundId: msg.roundId,
-        label: typeof msg.label === "string" ? msg.label : "",
+        label: typeof msg.label === "string" ? msg.label.slice(0, MAX_LABEL) : "",
     };
 }
 

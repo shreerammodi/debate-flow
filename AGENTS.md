@@ -34,13 +34,21 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
     - **Permitted, behind an explicit opt-in**: sending a flow to a peer the user
       invited. Shared editing is the only such feature, specced in
       `docs/superpowers/specs/2026-07-26-shared-editing-design.md`. It sits behind
-      a master switch that is off by default, like `cardmirrorEnabled`, and off
-      leaves every route dead.
+      a master switch, `collabEnabled`, that is off by default, and off leaves
+      every route dead.
     - **The opt-in is an invariant, so it is test-proven, not asserted.** With the
       switch off, the app binds no endpoint, dials no peer, publishes no
-      discovery record, and contacts no relay. A test asserts each of those four
-      against a fake transport. DNS-based peer discovery stays disabled in every
-      state, so an idle ebb publishes nothing about itself.
+      discovery record, and contacts no relay. `test/lib/collab/optIn.test.ts`
+      runs one session request against a recording transport with the switch on
+      and again with it off: on, the recorder shows a bound endpoint carrying an
+      explicit discovery and relay config plus a dial per known peer; off, it is
+      empty, so the positive control is what makes the empty recorder mean the
+      gate held. A relay is only reachable through a transport, and off there is
+      none. The other routes onto the network gate on the same
+      `collabSettings()` and are held to the off case beside their own behavior
+      in `join.test.ts`, `inviteListener.test.ts`, `runtimeInvites.test.ts`, and
+      `persist.test.ts`. DNS-based peer discovery stays disabled in every state,
+      so an idle ebb publishes nothing about itself.
     - A peer link carries one round and nothing else: no folder listing, no path
       access, no arbitrary read. Hold it to the standard
       `docs/security-review.md` sets for the loopback bridge.
@@ -48,7 +56,7 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
   never directly through `invoke` or a Tauri plugin. That is what lets the
   session, recents, and migration be tested against `flowFsMemory` instead of a
   mocked IPC layer. `tauri-plugin-fs` is deliberately not installed: flow I/O
-  uses the five narrow commands in `src-tauri/src/flowfile.rs` so the webview
+  uses the seven narrow commands in `src-tauri/src/flowfile.rs` so the webview
   never holds a general filesystem capability.
 - Keyboard-first UX is a core product value - preserve and extend keybindings
   rather than replacing them with mouse-only flows.

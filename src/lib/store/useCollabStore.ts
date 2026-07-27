@@ -43,6 +43,17 @@ const NO_PEERS: CollabPeerView[] = [];
 
 const NO_INVITES: readonly InviteNotice[] = [];
 
+/**
+ * How many invitations are held at once.
+ *
+ * A roundId arrives off the wire and a saved contact can mint as many as they
+ * like, so the list is bounded rather than trusted. Twenty is past anything a
+ * tournament produces and still fits a column a debater reads down; the oldest
+ * is the one dropped, because the newest offer is the one whose sender is
+ * still holding the round up.
+ */
+const MAX_INVITES = 20;
+
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
@@ -53,16 +64,23 @@ export const useCollabStore = create<CollabUiState>((set) => ({
     setEndpointId: (endpointId) => set({ endpointId }),
     // A partner who dials twice about one round is one invitation, not two.
     pushInvite: (invite) =>
-        set((s) =>
-            s.invites.some(
-                (i) => i.endpointId === invite.endpointId && i.roundId === invite.roundId,
-            )
-                ? s
-                : { invites: [...s.invites, invite] },
-        ),
+        set((s) => {
+            if (
+                s.invites.some(
+                    (i) => i.endpointId === invite.endpointId && i.roundId === invite.roundId,
+                )
+            ) {
+                return s;
+            }
+            const next = [...s.invites, invite];
+            return { invites: next.slice(Math.max(0, next.length - MAX_INVITES)) };
+        }),
     dismissInvite: (endpointId, roundId) =>
         set((s) => ({
             invites: s.invites.filter((i) => i.endpointId !== endpointId || i.roundId !== roundId),
         })),
-    reset: () => set({ status: "off", peers: NO_PEERS }),
+    // An offer is only actionable while shared editing is running: with no
+    // session, joining answers "turn on shared editing" and the sender has
+    // long since moved on. Nothing survives a teardown that cannot be acted on.
+    reset: () => set({ status: "off", peers: NO_PEERS, invites: NO_INVITES }),
 }));

@@ -8,7 +8,8 @@
  * than hanging until the host's deadline.
  */
 
-import { resyncActiveSheet } from "@/lib/collab/gridOps";
+import { recordOp } from "@/lib/collab/replica";
+import { openSpanOps } from "@/lib/collab/spanOps";
 import type { CellChange } from "@/lib/grid/cellShift";
 import { shiftSpan } from "@/lib/grid/cellShift";
 import { metaToClassName } from "@/lib/grid/codec";
@@ -69,9 +70,17 @@ function applyFlow(req: FlowRequest): BridgeReply {
     hot.selectCell(Math.min(row + cells.length, hot.countRows() - 1), col);
     hot.render();
     notifyGridMutated();
-    // The send rearranges a column, which the op union cannot describe, so the
-    // sheet's replica is re-derived from the snapshot that just landed.
-    resyncActiveSheet();
+    // Said as ops rather than re-deriving the sheet. A send opens a run in one
+    // column and writes it; re-deriving would re-key every cell in the sheet
+    // from its row position, and a partner holding the old keys would merge
+    // the two sets rather than recognise them.
+    if (state.insertPaste) {
+        for (const op of openSpanOps(sheet.id, col, row, cells.length)) recordOp(op);
+    }
+    cells.forEach((cell, i) => {
+        recordOp({ kind: "cellText", sheetId: sheet.id, col, row: row + i, text: cell.text });
+        recordOp({ kind: "cellMeta", sheetId: sheet.id, col, row: row + i, meta: cell.meta });
+    });
     return {
         status: 200,
         // The empty separator cells are not items, so they do not count.

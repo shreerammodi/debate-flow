@@ -10,13 +10,13 @@
  * authenticated, never the one the hello claims to come from.
  */
 
+import { INVITED } from "./invite";
 import { PROTOCOL_MAJOR, type WireMessage } from "./peerLink";
 import type { Role } from "./types";
 
 export interface HostPolicy {
     /** The only round this host will talk about. */
     roundId: string;
-    appVersion: string;
     /**
      * The unspent ticket, and what it grants. The role is the host's to give:
      * a coach's ticket admits a coach however the guest introduces itself.
@@ -28,10 +28,33 @@ export interface HostPolicy {
     roles: Record<string, Role>;
 }
 
+/**
+ * Every refusal that crosses the wire, and no free text.
+ *
+ * The far side chooses this string, and a dialler that repeated it would be
+ * putting a hostile host's words on a debater's screen. A closed set is what
+ * lets the dialler tell a version skew from a plain no while saying it in its
+ * own words.
+ */
+export type RefusalCode = typeof INVITED | typeof REFUSED | typeof VERSION_SKEW;
+
+export const REFUSED = "refused";
+export const VERSION_SKEW = "version";
+
 export type Admission =
     | { ok: true; role: Role; spendSecret: boolean }
     /** `silent` suppresses every surface, down to a chip flicker. */
-    | { ok: false; reason: string; silent: boolean };
+    | { ok: false; reason: RefusalCode; silent: boolean };
+
+/**
+ * A refusal in this side's own words. Only the invite sentinel travels
+ * intact, because the invite flow answers it rather than showing it.
+ */
+export function refusalMessage(reason: string): string {
+    if (reason === INVITED) return INVITED;
+    if (reason === VERSION_SKEW) return "That peer is on a different version of ebb";
+    return "That peer refused the connection";
+}
 
 export function helloFrom(input: {
     endpointId: string;
@@ -72,7 +95,7 @@ function secretMatches(a: string, b: string): boolean {
     return diff === 0;
 }
 
-const SILENT = { ok: false as const, reason: "refused", silent: true };
+const SILENT: Admission = { ok: false, reason: REFUSED, silent: true };
 
 /**
  * `remoteId` is the endpoint the transport authenticated: iroh proved the far
@@ -85,27 +108,28 @@ const SILENT = { ok: false as const, reason: "refused", silent: true };
 export function admit(msg: WireMessage, policy: HostPolicy, remoteId: string): Admission {
     if (msg.type !== "hello") return SILENT;
     if (msg.role !== "partner" && msg.role !== "coach") return SILENT;
-
-    // A version skew is the one refusal a debater is told about, because the
-    // fix is theirs to make and the corner can name both sides.
-    if (msg.protocol !== PROTOCOL_MAJOR) {
-        return {
-            ok: false,
-            reason: `they are on ebb ${msg.app}, you are on ebb ${policy.appVersion}`,
-            silent: false,
-        };
-    }
     if (msg.roundId !== policy.roundId) return SILENT;
     if (msg.endpointId !== remoteId) return SILENT;
 
+    let granted: Admission;
     if (policy.knownPeers.includes(remoteId)) {
         // A peer this round already knew but never graded is a partner: they
         // were admitted to it before, and the round remembers only that.
-        return { ok: true, role: policy.roles[remoteId] ?? "partner", spendSecret: false };
-    }
-    if (policy.pending && msg.ticket && secretMatches(msg.ticket, policy.pending.secret)) {
+        granted = { ok: true, role: policy.roles[remoteId] ?? "partner", spendSecret: false };
+    } else if (policy.pending && msg.ticket && secretMatches(msg.ticket, policy.pending.secret)) {
         // The role the host granted, never the one the guest asked for.
-        return { ok: true, role: policy.pending.role, spendSecret: true };
+        granted = { ok: true, role: policy.pending.role, spendSecret: true };
+    } else {
+        return SILENT;
     }
-    return SILENT;
+
+    // A version skew is the one refusal a debater is told about, because the
+    // fix is theirs to make. It comes last: this build's version is something
+    // a caller earns by proving it belongs on this round, not something a
+    // stranger collects by dialling and saying any number at all. The secret
+    // stays unspent, so the same ticket still works once they upgrade.
+    if (msg.protocol !== PROTOCOL_MAJOR) {
+        return { ok: false, reason: VERSION_SKEW, silent: false };
+    }
+    return granted;
 }

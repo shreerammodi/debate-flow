@@ -57,7 +57,9 @@ import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net: MemoryNet = createMemoryNet();
-transport.link = net.create("me");
+/** What iroh hands back. A ticket names the host, so the host holds a real one. */
+const ME = "e".repeat(64);
+transport.link = net.create(ME);
 
 let round: FlowRound;
 
@@ -148,7 +150,7 @@ describe("the idle invite listener", () => {
         net.reset();
 
         transport.link = async (config) => {
-            const link = await net.create("me")(config);
+            const link = await net.create(ME)(config);
             return { ...link, stop: () => Promise.reject(new Error("no shell")) };
         };
         useFlowStore.setState({ collabEnabled: true });
@@ -158,7 +160,7 @@ describe("the idle invite listener", () => {
 
         // The handle is gone, so turning the switch back on binds a new one
         // rather than believing it still holds the old.
-        transport.link = net.create("me");
+        transport.link = net.create(ME);
         useFlowStore.setState({ collabEnabled: true });
         await syncInviteWatch();
         expect(listens()).toBe(2);
@@ -188,25 +190,25 @@ describe("a session opened for a round", () => {
         transport.link = () => Promise.reject(new Error("no shell"));
         await expect(startForRound(round)).rejects.toThrow("no shell");
         expect(useCollabStore.getState().status).toBe("off");
-        transport.link = net.create("me");
+        transport.link = net.create(ME);
     });
 
     it("ends a session whose link will not stop, because End session cannot fail", async () => {
         transport.link = async (config) => {
-            const link = await net.create("me")(config);
+            const link = await net.create(ME)(config);
             return { ...link, stop: () => Promise.reject(new Error("no shell")) };
         };
         await startForRound(round);
         await expect(endSession()).resolves.toBeUndefined();
         expect(useCollabStore.getState().status).toBe("off");
-        transport.link = net.create("me");
+        transport.link = net.create(ME);
     });
 
     // An earlier session left this machine's own note in the file under this
     // machine's own id, where the RFD drawer read it back as a partner's.
     it("sheds this machine's own note from the round it opens", async () => {
-        const mine = peerNotePath("me");
-        round.scouting.decision = { rfd: "123123", peerNotes: { me: "blah blah blah" } };
+        const mine = peerNotePath(ME);
+        round.scouting.decision = { rfd: "123123", peerNotes: { [ME]: "blah blah blah" } };
         useFlowStore.getState().loadRound(round);
         expect(getReplica()!.round[mine]).toBeDefined();
 
@@ -214,14 +216,14 @@ describe("a session opened for a round", () => {
 
         expect(getReplica()!.round[mine]).toBeUndefined();
         const decision = useFlowStore.getState().round!.scouting.decision;
-        expect(decision?.peerNotes?.me).toBeUndefined();
+        expect(decision?.peerNotes?.[ME]).toBeUndefined();
         expect(decision?.rfd).toBe("123123");
     });
 
     it("keeps a real partner's note when it sheds its own", async () => {
         round.scouting.decision = {
             rfd: "mine",
-            peerNotes: { me: "echo of mine", sam: "voting neg" },
+            peerNotes: { [ME]: "echo of mine", sam: "voting neg" },
         };
         useFlowStore.getState().loadRound(round);
 
@@ -245,7 +247,7 @@ describe("a peer nobody has saved", () => {
             apply: () => [],
             displayName,
             ticket,
-            dial: ["me"],
+            dial: [ME],
         });
         for (let i = 0; i < 10; i++) await Promise.resolve();
     }
@@ -334,7 +336,7 @@ describe("sharing a round with a saved contact", () => {
             appVersion: "0.11.0",
             doc: () => seedDoc(round),
             apply: () => [],
-            contacts: () => ({ me: { name: "Rin", role: "partner" } }),
+            contacts: () => ({ [ME]: { name: "Rin", role: "partner" } }),
             onInvite: (notice) => heard.push(notice),
         });
     }

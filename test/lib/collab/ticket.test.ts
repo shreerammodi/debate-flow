@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { encodeTicket, mintTicket, parseTicket, TICKET_PREFIX } from "@/lib/collab/ticket";
 
-const input = { endpointId: "abc123", roundId: "round_x_1", role: "partner" as const, relay: true };
+/** What iroh hands back, which is the only thing a ticket may name. */
+const HOST = "3f".repeat(32);
+
+const input = { endpointId: HOST, roundId: "round_x_1", role: "partner" as const, relay: true };
 
 /** Encodes a hand-built payload the way encodeTicket does, to test refusals. */
 function wrap(payload: unknown): string {
@@ -76,5 +79,26 @@ describe("encodeTicket and parseTicket", () => {
     it("keeps a coach ticket read-only", () => {
         const t = mintTicket({ ...input, role: "coach" });
         expect(parseTicket(encodeTicket(t))!.role).toBe("coach");
+    });
+});
+
+describe("the endpoint a ticket names", () => {
+    // The next thing that happens to a parsed ticket is a dial, so a ticket
+    // that names something iroh could not have issued names an attacker's
+    // choice of target rather than a host.
+    it("refuses anything that is not an EndpointId", () => {
+        for (const endpointId of ["abc123", "", "  ", "x".repeat(64), "3f".repeat(31)]) {
+            expect(parseTicket(wrap({ ...mintTicket(input), endpointId }))).toBeNull();
+        }
+    });
+
+    it("takes the z-base-32 form as readily as the hex one", () => {
+        const endpointId = "a2".repeat(26);
+        expect(parseTicket(wrap({ ...mintTicket(input), endpointId }))).not.toBeNull();
+    });
+
+    it("refuses a round id long enough to be a payload", () => {
+        const roundId = "r".repeat(129);
+        expect(parseTicket(wrap({ ...mintTicket(input), roundId }))).toBeNull();
     });
 });

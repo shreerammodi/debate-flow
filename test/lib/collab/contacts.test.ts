@@ -10,7 +10,9 @@ import {
     type Contacts,
 } from "@/lib/collab/contacts";
 
-const ALEX = "k51qzi5uqu5dlalexalexalexalexalexalexalexalexalexal";
+/** What an endpoint actually prints: 64 hex characters. */
+const ALEX = "a1e0".repeat(16);
+const RIN = "b2f0".repeat(16);
 
 const saved: Contacts = { [ALEX]: { name: "Alex", role: "partner" } };
 
@@ -42,12 +44,32 @@ describe("resolveContacts", () => {
     });
 
     it("keeps the good entries beside a bad one", () => {
-        const mixed = { [ALEX]: { name: "Alex", role: "partner" }, bad: { name: "" } };
+        const mixed = { [ALEX]: { name: "Alex", role: "partner" }, [RIN]: { name: "" } };
         expect(Object.keys(resolveContacts(mixed))).toEqual([ALEX]);
     });
 
     it("drops an entry whose key is not a plausible endpoint id", () => {
         expect(resolveContacts({ "": { name: "Alex", role: "partner" } })).toEqual({});
+        expect(resolveContacts({ alex: { name: "Alex", role: "partner" } })).toEqual({});
+        expect(resolveContacts({ [`${ALEX}!`]: { name: "Alex", role: "partner" } })).toEqual({});
+    });
+
+    // A config.toml is hand-editable, and a key in it decides who counts as a
+    // saved partner. TOML and JSON both yield "__proto__" as an own key, which
+    // a plain object assigns through the setter rather than storing.
+    it("assigns nothing through a prototype key", () => {
+        const raw: unknown = JSON.parse(
+            `{"__proto__":{"name":"Mallory","role":"partner"},` +
+                `"constructor":{"name":"Mallory","role":"partner"},` +
+                `"${ALEX}":{"name":"Alex","role":"partner"}}`,
+        );
+        const table = resolveContacts(raw);
+        expect(Object.keys(table)).toEqual([ALEX]);
+        expect(Object.getPrototypeOf(table)).toBeNull();
+    });
+
+    it("builds a table with nothing on its chain to find", () => {
+        expect(Object.getPrototypeOf(resolveContacts(saved))).toBeNull();
     });
 });
 

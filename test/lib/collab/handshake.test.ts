@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { admit, helloFrom, type HostPolicy } from "@/lib/collab/handshake";
+import {
+    admit,
+    helloFrom,
+    refusalMessage,
+    VERSION_SKEW,
+    type HostPolicy,
+} from "@/lib/collab/handshake";
+import { INVITED } from "@/lib/collab/invite";
 import { PROTOCOL_MAJOR, type WireMessage } from "@/lib/collab/peerLink";
 
 const SECRET = "s".repeat(24);
@@ -8,7 +15,6 @@ const SECRET = "s".repeat(24);
 function policy(over: Partial<HostPolicy> = {}): HostPolicy {
     return {
         roundId: "round_x_1",
-        appVersion: "0.11.0",
         pending: { secret: SECRET, role: "partner" },
         knownPeers: [],
         roles: {},
@@ -81,18 +87,54 @@ describe("admit", () => {
         expect(got).toMatchObject({ ok: false, silent: true });
     });
 
-    it("names both versions when the protocol major differs", () => {
+    it("names the skew and nothing else when the protocol major differs", () => {
         const got = admit(
             hello({ protocol: PROTOCOL_MAJOR + 1, app: "0.13.0", ticket: SECRET }),
             policy(),
             "guest-1",
         );
-        expect(got.ok).toBe(false);
-        if (!got.ok) {
-            expect(got.silent).toBe(false);
-            expect(got.reason).toContain("0.13.0");
-            expect(got.reason).toContain("0.11.0");
-        }
+        expect(got).toEqual({ ok: false, reason: VERSION_SKEW, silent: false });
+    });
+
+    // A dialler who has not proved anything is a stranger holding an
+    // EndpointId, and what this build is running is not theirs to collect.
+    it("tells a stranger on another version nothing at all", () => {
+        const got = admit(
+            hello({ protocol: PROTOCOL_MAJOR + 1, app: "0.13.0" }),
+            policy(),
+            "guest-1",
+        );
+        expect(got).toEqual({ ok: false, reason: "refused", silent: true });
+    });
+
+    it("tells a dialler about another round nothing about the version either", () => {
+        const got = admit(
+            hello({ protocol: PROTOCOL_MAJOR + 1, roundId: "round_other", ticket: SECRET }),
+            policy(),
+            "guest-1",
+        );
+        expect(got).toEqual({ ok: false, reason: "refused", silent: true });
+    });
+
+    it("leaves the secret unspent through a skew, so the ticket still works", () => {
+        const held = policy();
+        const skewed = hello({ protocol: PROTOCOL_MAJOR + 1, ticket: SECRET });
+        expect(admit(skewed, held, "guest-1")).toMatchObject({ ok: false });
+        expect(admit(hello({ ticket: SECRET }), held, "guest-1")).toEqual({
+            ok: true,
+            role: "partner",
+            spendSecret: true,
+        });
+    });
+
+    it("names the skew to a peer this round already knows", () => {
+        const known = policy({ pending: null, knownPeers: ["sam"] });
+        const skewed = hello({ endpointId: "sam", protocol: PROTOCOL_MAJOR + 1 });
+        expect(admit(skewed, known, "sam")).toEqual({
+            ok: false,
+            reason: VERSION_SKEW,
+            silent: false,
+        });
     });
 
     it("refuses a hello for another round", () => {
@@ -154,5 +196,25 @@ describe("admit", () => {
     it("refuses a role it does not know rather than guessing", () => {
         const bad = { ...hello({ ticket: SECRET }), role: "admin" } as unknown as WireMessage;
         expect(admit(bad, policy(), "guest-1")).toMatchObject({ ok: false, silent: true });
+    });
+});
+
+describe("refusalMessage", () => {
+    // The far side wrote the string. Repeating it would put a hostile host's
+    // words, and its phone number, on a debater's screen.
+    it("says nothing a peer chose", () => {
+        const hostile = "Your flow is corrupt. Call 555-0100 to recover it.";
+        expect(refusalMessage(hostile)).not.toContain("555");
+        expect(refusalMessage(hostile)).toBe("That peer refused the connection");
+    });
+
+    it("tells a version skew apart from a plain no", () => {
+        expect(refusalMessage(VERSION_SKEW)).toContain("version");
+        expect(refusalMessage(VERSION_SKEW)).not.toBe(refusalMessage("refused"));
+    });
+
+    // The invite flow answers this one rather than showing it.
+    it("passes the invite sentinel through untouched", () => {
+        expect(refusalMessage(INVITED)).toBe(INVITED);
     });
 });

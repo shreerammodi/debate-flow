@@ -46,9 +46,15 @@ function isRole(value: unknown): value is Role {
  */
 export function resolveContacts(raw: unknown): Contacts {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const out: Contacts = {};
+    // Null-prototyped, because the keys come from a file the user can hand-edit
+    // and every lookup below this line is by an id a peer chose. Nothing on
+    // Object.prototype can be reached through it, whatever the file said.
+    const out = Object.create(null) as Contacts;
     for (const [endpointId, value] of Object.entries(raw as Record<string, unknown>)) {
-        if (!endpointId) continue;
+        // A key that is not shaped like an EndpointId can never match the peer
+        // the transport authenticated, so it is a typo at best and a reach at
+        // "__proto__" at worst.
+        if (!isEndpointId(endpointId)) continue;
         if (value === null || typeof value !== "object") continue;
         const entry = value as Partial<Contact>;
         if (typeof entry.name !== "string" || entry.name.trim() === "") continue;

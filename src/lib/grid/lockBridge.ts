@@ -1,5 +1,6 @@
 /**
- * Where the advisory locks a session holds reach the live grid.
+ * Where the advisory locks a session holds meet the live grid, in both
+ * directions.
  *
  * Locks are grid state, so they live beside the other grid registries rather
  * than in `useCollabStore`. Each peer refreshes its lock on a 250ms heartbeat,
@@ -11,6 +12,11 @@
  * well as stores. Expiry is deliberately not its business: `lockClassFor`
  * takes a `now` and asks presence, so a stale lock stops painting on the next
  * render with no timer here.
+ *
+ * The outbound half is the same shape as `remoteBridge`, and for the same
+ * reason: the grid may not import the session, and the session may not import
+ * a component. The grid says which cell it has an editor open on; whatever
+ * session is live decides who hears about it.
  */
 
 import type { Lock } from "@/lib/collab/presence";
@@ -41,4 +47,24 @@ export function onLocksChanged(cb: () => void): () => void {
     return () => {
         listeners.delete(cb);
     };
+}
+
+/** The cell a pane has an editor open on, or null when none has. */
+export type HeldCell = { sheetId: string; col: number; row: number } | null;
+
+let claimHandler: ((cell: HeldCell) => void) | null = null;
+
+/** The runtime registers for the life of a session. */
+export function setClaimHandler(next: ((cell: HeldCell) => void) | null): void {
+    claimHandler = next;
+}
+
+/**
+ * Says this machine is editing a cell, or has stopped.
+ *
+ * A no-op with no session, which is the ordinary case: a debater flowing alone
+ * announces nothing to anybody.
+ */
+export function claimCell(cell: HeldCell): void {
+    claimHandler?.(cell);
 }

@@ -17,12 +17,18 @@ import { setLocks } from "@/lib/grid/lockBridge";
 
 import type { Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
-import { admit, helloFrom, type HostPolicy } from "./handshake";
+import { admit, helloFrom, refusalMessage, REFUSED, type HostPolicy } from "./handshake";
 import { INVITED, inviteFrom, type InviteNotice } from "./invite";
 import type { DroppedCell } from "./merge";
-import type { PeerConn, PeerLink, PeerLinkFactory, WireMessage } from "./peerLink";
+import {
+    isCellRef,
+    type CellRef,
+    type PeerConn,
+    type PeerLink,
+    type PeerLinkFactory,
+} from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Lock } from "./presence";
-import { retryForever } from "./reconnect";
+import { retryForever, type Retry } from "./reconnect";
 import { attachSync, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -46,6 +52,17 @@ export interface CollabSession {
     share(role: Role): Ticket;
     /** Dials a peer this round already trusts, with no ticket. */
     invite(endpointId: string): Promise<void>;
+    /**
+     * Drops one peer and keeps the rest. Deliberate, so it lasts the session:
+     * that peer is not redialled, and it is not let back in if it dials.
+     */
+    disconnect(endpointId: string): void;
+    /**
+     * Whether a peer is being dialled again right now. True from the drop
+     * until that peer answers, which is the one state the chip has an amber
+     * dot for.
+     */
+    reconnecting(): boolean;
     /** Tells every peer about a local edit. */
     notifyLocalChange(): void;
     /**
@@ -53,7 +70,7 @@ export interface CollabSession {
      * null. Sent immediately rather than on a tick, and refreshed on a
      * heartbeat so a frozen process stops holding it.
      */
-    setPresence(cell: { sheetId: string; col: number; row: number } | null): void;
+    setPresence(cell: CellRef | null): void;
     stop(): Promise<void>;
 }
 
@@ -90,6 +107,8 @@ interface Live {
     conn: PeerConn;
     sync: PeerSync;
     peer: CollabPeer;
+    /** Which side dialled, which is what decides a duplicate. */
+    outbound: boolean;
 }
 
 /**
@@ -115,7 +134,6 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
     const policy: HostPolicy = {
         roundId: deps.roundId,
-        appVersion: deps.appVersion,
         pending: null,
         knownPeers: [...(deps.dial ?? [])],
         roles: {},
@@ -123,6 +141,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     const live = new Map<string, Live>();
     /** Peers this side reached out to, and so is the one to reach out again. */
     const dialled = new Set<string>();
+    /** Peers the debater cut loose, which stay cut for the session. */
+    const gone = new Set<string>();
+    /**
+     * The dial loop running for each peer this side is trying to reach again.
+     * Held so the session can say it is reconnecting, and so stopping the
+     * session cancels a backoff that would otherwise fire minutes later.
+     */
+    const retries = new Map<string, Retry>();
     /** Cells peers have an editor open on. Advisory, and always expiring. */
     let locks: Lock[] = [];
     let stopped = false;
@@ -132,7 +158,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     }
 
     /** The cell this side holds, refreshed until the editor closes. */
-    let held: { sheetId: string; col: number; row: number } | null = null;
+    let held: CellRef | null = null;
     let cancelHeartbeat: (() => void) | null = null;
     const schedule =
         deps.schedule ??
@@ -162,11 +188,46 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         publishLocks();
     }
 
-    function track(conn: PeerConn, peer: CollabPeer, readOnly: boolean): PeerSync {
+    function track(
+        conn: PeerConn,
+        peer: CollabPeer,
+        readOnly: boolean,
+        outbound: boolean,
+    ): PeerSync | null {
+        // Nothing is climbing a backoff for a peer that is here.
+        retries.get(peer.endpointId)?.stop();
+        retries.delete(peer.endpointId);
+        const existing = live.get(peer.endpointId);
+        if (existing) {
+            // Resume is symmetric, so an inbound accept and an outbound dial
+            // for one peer can both land, and the second into the map would
+            // leave the first open with nothing holding it. Both ends keep the
+            // connection the lower EndpointId dialled, which is a choice they
+            // reach identically with no round trip to agree on it.
+            //
+            // Two that came the same way are not that race: a peer only dials
+            // again over a link it has already given up on, so the newer one
+            // is the live one.
+            const opposed = existing.outbound !== outbound;
+            const keepsOutbound = endpointId < peer.endpointId;
+            if (opposed && outbound !== keepsOutbound) {
+                conn.close();
+                return null;
+            }
+            // Out of the map before the close, so the close handler reads a
+            // connection nobody holds rather than the peer leaving.
+            live.delete(peer.endpointId);
+            existing.sync.stop();
+            existing.conn.close();
+        }
         // A peer's open editor claims a cell so this side sees it before
         // typing into it; the claim goes the moment the link does.
         conn.onMessage((msg) => {
             if (msg.type !== "presence") return;
+            // The cell goes straight into the lock table, so a claim that is
+            // not one is not a claim: a row below zero or a sheet named by
+            // nothing would sit there unmatched until the peer left.
+            if (msg.cell !== null && !isCellRef(msg.cell)) return;
             onPresence(
                 peer.endpointId,
                 msg.cell ? { endpointId: peer.endpointId, ...msg.cell, heldAt: Date.now() } : null,
@@ -192,7 +253,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             endpointId,
             schedule: deps.schedule,
         });
-        live.set(peer.endpointId, { conn, sync, peer });
+        live.set(peer.endpointId, { conn, sync, peer, outbound });
         conn.onClose(() => {
             const held = live.get(peer.endpointId);
             if (held?.conn !== conn) return;
@@ -229,6 +290,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (greeted) return;
             greeted = true;
 
+            // A peer the debater disconnected does not get back in by
+            // dialling. Answered here rather than at the accept, because a
+            // dialler is still wiring up its handlers until its hello is out.
+            if (gone.has(conn.id)) {
+                conn.close();
+                return;
+            }
+
             // The connection's own id, not the one the hello claims: iroh
             // proved the far side holds that key, and everything downstream is
             // filed under it.
@@ -244,9 +313,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 if (notice && deps.onInvite) {
                     deps.onInvite(notice);
                     conn.send({ type: "helloAck", ok: false, reason: INVITED });
-                } else {
+                } else if (!verdict.silent) {
                     conn.send({ type: "helloAck", ok: false, reason: verdict.reason });
                 }
+                // A silent refusal puts nothing at all on the wire. A stranger
+                // who dialled learns that something closed, which is what an
+                // unbound endpoint would have told them anyway.
                 conn.close();
                 return;
             }
@@ -264,20 +336,21 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     name: typeof msg.name === "string" ? msg.name : undefined,
                 },
                 verdict.role === "coach",
+                false,
             );
             // A guest may hold no file at all, so the host opens with the
             // whole document rather than a delta against a seed it cannot
             // assume.
-            sync.sendState();
+            sync?.sendState();
         });
     });
 
     // --- Guest side --------------------------------------------------------
 
     async function dialPeer(target: string, ticket?: string): Promise<void> {
-        if (stopped) return;
+        if (stopped || gone.has(target)) return;
         dialled.add(target);
-        const conn = await link.dial(target, ticket);
+        const conn = await link.dial(target);
         const secret = ticket ? (parseTicket(ticket)?.secret ?? undefined) : undefined;
 
         return new Promise<void>((resolve, reject) => {
@@ -287,7 +360,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 answered = true;
                 if (!msg.ok) {
                     conn.close();
-                    reject(new Error(msg.reason));
+                    // The far side wrote that string. What a refusal says on
+                    // this screen is this side's to decide, so the wire reason
+                    // picks the message rather than becoming it.
+                    reject(new Error(refusalMessage(msg.reason)));
                     return;
                 }
                 track(
@@ -299,11 +375,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                         name: typeof msg.name === "string" ? msg.name : undefined,
                     },
                     false,
+                    true,
                 );
                 resolve();
             });
             conn.onClose(() => {
-                if (!answered) reject(new Error("closed"));
+                // A silent refusal puts nothing on the wire, so from here it
+                // is a close with no answer, and it says what a refusal says.
+                if (!answered) reject(new Error(refusalMessage(REFUSED)));
             });
 
             // Sent last. A transport can answer synchronously, so the listener
@@ -331,7 +410,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * real machine, which is the only place a link actually drops.
      */
     function redial(target: string): void {
-        retryForever({ dial: () => dialPeer(target), schedule });
+        // One ladder per peer: a second drop while a retry is armed would
+        // otherwise leave two of them climbing the same backoff.
+        retries.get(target)?.stop();
+        retries.set(target, retryForever({ dial: () => dialPeer(target), schedule }));
     }
 
     for (const target of deps.dial ?? []) {
@@ -372,6 +454,8 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // A contact is admitted by EndpointId, so it joins the known list
             // before the dial rather than presenting a secret.
             if (!policy.knownPeers.includes(target)) policy.knownPeers.push(target);
+            // Inviting is deliberate, so it undoes a deliberate disconnect.
+            gone.delete(target);
             try {
                 await dialPeer(target);
             } catch (err) {
@@ -381,8 +465,33 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             }
         },
 
+        disconnect(target) {
+            // Deliberate, so it outlasts the link. The redial in onClose is
+            // for a link that dropped on its own; a peer the debater cut loose
+            // stays gone for the session, whichever side dials next.
+            gone.add(target);
+            retries.get(target)?.stop();
+            retries.delete(target);
+            const entry = live.get(target);
+            if (!entry) return;
+            // Out of the map before the close, so the close handler leaves the
+            // redial alone: this is the peer going for good, not a link
+            // dropping.
+            live.delete(target);
+            entry.sync.stop();
+            entry.conn.send({ type: "bye" });
+            entry.conn.close();
+            locks = releasePeer(locks, target);
+            publishLocks();
+            announce();
+        },
+
         notifyLocalChange() {
             for (const l of live.values()) l.sync.notifyLocalChange();
+        },
+
+        reconnecting() {
+            return retries.size > 0;
         },
 
         setPresence(cell) {
@@ -396,6 +505,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
         async stop() {
             stopped = true;
+            // A backoff can be half a minute wide, so a session that ended is
+            // not a reason for one more dial.
+            for (const retry of retries.values()) retry.stop();
+            retries.clear();
             for (const l of [...live.values()]) {
                 l.sync.stop();
                 l.conn.send({ type: "bye" });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { liveCells, projectDoc, seedDoc, sheetWidth } from "@/lib/collab/doc";
-import { ORIGIN_STAMP } from "@/lib/collab/stamp";
+import { applyOp, type OpContext } from "@/lib/collab/ops";
+import { createClock, ORIGIN_STAMP } from "@/lib/collab/stamp";
 import { cellKey } from "@/lib/collab/types";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
@@ -95,5 +96,56 @@ describe("projectDoc", () => {
         for (const id of ids) doc.sheets[id].fields.order = { value: 0, stamp: ORIGIN_STAMP };
         const expected = ids.slice().sort();
         expect(projectDoc(doc, round).sheets.map((s) => s.id)).toEqual(expected);
+    });
+});
+
+/**
+ * A merge builds a new object only for the sheets it touched, so the sheets it
+ * did not are handed back as they were. One cell arriving from a partner
+ * otherwise re-derives every sheet in the round, thirty times a second while
+ * they type.
+ */
+describe("projecting a round a partner just changed", () => {
+    it("hands back the very same object for a sheet the merge left alone", () => {
+        const round = roundWithData();
+        const settled = seedDoc(round);
+        const base = projectDoc(settled, round);
+
+        const sam: OpContext = { actor: "sam", clock: createClock("sam", () => 5_000) };
+        const touchedId = round.sheets[1].id;
+        const after = applyOp(
+            settled,
+            { kind: "cellText", sheetId: touchedId, col: 0, row: 0, text: "theirs" },
+            sam,
+        );
+
+        const next = projectDoc(after, base, settled);
+        for (const sheet of next.sheets) {
+            const was = base.sheets.find((s) => s.id === sheet.id)!;
+            if (sheet.id === touchedId) expect(sheet).not.toBe(was);
+            else expect(sheet, `${sheet.id} was re-derived for nothing`).toBe(was);
+        }
+    });
+
+    it("describes the same round either way", () => {
+        const round = roundWithData();
+        const settled = seedDoc(round);
+        const base = projectDoc(settled, round);
+        const sam: OpContext = { actor: "sam", clock: createClock("sam", () => 5_000) };
+        const after = applyOp(
+            settled,
+            { kind: "cellText", sheetId: round.sheets[1].id, col: 1, row: 1, text: "theirs" },
+            sam,
+        );
+        expect(projectDoc(after, base, settled)).toEqual(projectDoc(after, base));
+    });
+
+    it("re-derives everything when the caller has nothing settled to offer", () => {
+        const round = roundWithData();
+        const doc = seedDoc(round);
+        const base = projectDoc(doc, round);
+        for (const sheet of projectDoc(doc, base).sheets) {
+            expect(sheet).not.toBe(base.sheets.find((s) => s.id === sheet.id));
+        }
     });
 });

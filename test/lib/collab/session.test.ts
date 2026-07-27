@@ -1,16 +1,28 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { seedDoc } from "@/lib/collab/doc";
+import { VERSION_SKEW } from "@/lib/collab/handshake";
 import { merge } from "@/lib/collab/merge";
-import type { PeerConn, PeerLinkFactory } from "@/lib/collab/peerLink";
+import {
+    PROTOCOL_MAJOR,
+    type PeerConn,
+    type PeerLinkFactory,
+    type WireMessage,
+} from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
-import { startCollabSession, type CollabPeer } from "@/lib/collab/session";
+import { startCollabSession, type CollabPeer, type CollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
+import { getLocks } from "@/lib/grid/lockBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net = createMemoryNet();
+
+/** What iroh hands back. A ticket names the host, so the host holds a real one. */
+const ALEX = "a".repeat(64);
+const SAM = "b".repeat(64);
+const STRANGER = "c".repeat(64);
 
 let shared: FlowRound;
 
@@ -49,42 +61,42 @@ beforeEach(() => {
 
 describe("startCollabSession", () => {
     it("listens on the local endpoint", async () => {
-        const session = await open("alex");
-        expect(session!.endpointId).toBe("alex");
+        const session = await open(ALEX);
+        expect(session!.endpointId).toBe(ALEX);
         expect(session!.roundId).toBe(shared.id);
         expect(net.calls.map((c) => c.op)).toContain("listen");
     });
 
     it("keeps running when a known peer cannot be reached", async () => {
-        const session = await open("alex", { dial: ["gone"] });
+        const session = await open(ALEX, { dial: ["gone"] });
         expect(session).not.toBeNull();
         expect(session!.peers()).toEqual([]);
     });
 
     it("re-dials a known peer with no ticket, which is what resume does", async () => {
         // The host already knows sam, the way a sidecar's peer list says it does.
-        const host = await open("alex", { dial: ["sam"] });
-        const guest = await open("sam", { dial: ["alex"] });
+        const host = await open(ALEX, { dial: ["sam"] });
+        const guest = await open("sam", { dial: [ALEX] });
         await settle();
-        expect(guest!.peers().map((p) => p.endpointId)).toEqual(["alex"]);
+        expect(guest!.peers().map((p) => p.endpointId)).toEqual([ALEX]);
         expect(host!.peers().map((p) => p.endpointId)).toEqual(["sam"]);
     });
 
     it("reports the peer list as it changes", async () => {
         const seen: CollabPeer[][] = [];
-        const host = await open("alex", {
+        const host = await open(ALEX, {
             dial: ["sam"],
             onPeersChanged: (peers: CollabPeer[]) => seen.push(peers),
         });
-        await open("sam", { dial: ["alex"] });
+        await open("sam", { dial: [ALEX] });
         await settle();
         expect(seen.at(-1)!.map((p) => p.endpointId)).toEqual(["sam"]);
         expect(host!.peers()).toHaveLength(1);
     });
 
     it("drops a peer from both lists when the link closes", async () => {
-        const host = await open("alex", { dial: ["sam"] });
-        const guest = await open("sam", { dial: ["alex"] });
+        const host = await open(ALEX, { dial: ["sam"] });
+        const guest = await open("sam", { dial: [ALEX] });
         await settle();
         await guest!.stop();
         await settle();
@@ -93,16 +105,16 @@ describe("startCollabSession", () => {
     });
 
     it("stops the link it started", async () => {
-        const session = await open("alex");
+        const session = await open(ALEX);
         await session!.stop();
         expect(net.calls.map((c) => c.op)).toContain("stop");
     });
 
     it("mints a ticket that names this host and this round", async () => {
-        const session = await open("alex");
+        const session = await open(ALEX);
         const ticket = session!.share("partner");
         expect(ticket).toMatchObject({
-            endpointId: "alex",
+            endpointId: ALEX,
             roundId: shared.id,
             role: "partner",
             relay: true,
@@ -111,13 +123,13 @@ describe("startCollabSession", () => {
     });
 
     it("mints a fresh ticket each time, replacing the unspent one", async () => {
-        const session = await open("alex");
+        const session = await open(ALEX);
         expect(session!.share("partner").secret).not.toBe(session!.share("partner").secret);
     });
 
     it("carries the relay stance the settings hold into the ticket", async () => {
         useFlowStore.setState({ collabRelayEnabled: false });
-        const session = await open("alex");
+        const session = await open(ALEX);
         expect(session!.share("partner").relay).toBe(false);
     });
 });
@@ -150,8 +162,8 @@ describe("a link that drops mid-round", () => {
             const link = await net.create(endpointId)(config);
             return {
                 ...link,
-                async dial(target: string, ticket?: string) {
-                    const conn = await link.dial(target, ticket);
+                async dial(target: string) {
+                    const conn = await link.dial(target);
                     dialled.push(conn);
                     return conn;
                 },
@@ -166,11 +178,11 @@ describe("a link that drops mid-round", () => {
     it("dials the peer again, without anyone being asked", async () => {
         const clock = manualClock();
         const conns: PeerConn[] = [];
-        const host = (await open("alex"))!;
+        const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
             ticket: encodeTicket(host.share("partner")),
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
@@ -196,11 +208,11 @@ describe("a link that drops mid-round", () => {
     it("stops trying once the session is over", async () => {
         const clock = manualClock();
         const conns: PeerConn[] = [];
-        const host = (await open("alex"))!;
+        const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
             ticket: encodeTicket(host.share("partner")),
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
@@ -214,6 +226,322 @@ describe("a link that drops mid-round", () => {
         expect(conns).toHaveLength(dialsAtStop);
         expect(guest.peers()).toHaveLength(0);
 
+        await host.stop();
+    });
+
+    it("says it is reconnecting from the drop until the peer answers again", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open(ALEX))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(guest.reconnecting()).toBe(false);
+
+        conns[0].close();
+        await settle();
+        expect(guest.reconnecting()).toBe(true);
+
+        for (let i = 0; i < 6 && guest.peers().length === 0; i++) {
+            clock.advance(60_000);
+            await settle();
+        }
+        expect(guest.peers()).toHaveLength(1);
+        expect(guest.reconnecting()).toBe(false);
+
+        await host.stop();
+        await guest.stop();
+    });
+
+    // A backoff is up to half a minute wide, so a session that ended while one
+    // was armed would dial a peer long after the round was closed.
+    it("cancels a backoff that outlived the session", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open(ALEX))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        conns[0].close();
+        await settle();
+        expect(guest.reconnecting()).toBe(true);
+
+        await guest.stop();
+        expect(guest.reconnecting()).toBe(false);
+        const dialsAtStop = conns.length;
+        clock.advance(60_000);
+        await settle();
+        expect(conns).toHaveLength(dialsAtStop);
+
+        await host.stop();
+    });
+
+    it("keeps a disconnected peer gone, however long the backoff runs", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open(ALEX))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(guest.peers()).toHaveLength(1);
+
+        guest.disconnect(ALEX);
+        await settle();
+        expect(guest.peers()).toEqual([]);
+        // The link really went, so the host is not left holding a peer that
+        // walked away.
+        expect(host.peers()).toEqual([]);
+        expect(guest.reconnecting()).toBe(false);
+
+        const dialsAtDisconnect = conns.length;
+        for (let i = 0; i < 6; i++) {
+            clock.advance(60_000);
+            await settle();
+        }
+        expect(conns).toHaveLength(dialsAtDisconnect);
+        expect(guest.peers()).toEqual([]);
+
+        await host.stop();
+        await guest.stop();
+    });
+
+    // The link dropped, the ladder is climbing, and the debater decides they
+    // are done with that peer. Nothing about that is worth another dial.
+    it("stops a backoff already climbing when the debater disconnects", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open(ALEX))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        conns[0].close();
+        await settle();
+        expect(guest.reconnecting()).toBe(true);
+
+        guest.disconnect(ALEX);
+        expect(guest.reconnecting()).toBe(false);
+
+        const dialsAtDisconnect = conns.length;
+        for (let i = 0; i < 6; i++) {
+            clock.advance(60_000);
+            await settle();
+        }
+        expect(conns).toHaveLength(dialsAtDisconnect);
+        expect(guest.peers()).toEqual([]);
+
+        await host.stop();
+        await guest.stop();
+    });
+
+    it("does not let a disconnected peer dial its way back in", async () => {
+        const clock = manualClock();
+        const host = (await open(ALEX))!;
+        const guest = (await open("sam", {
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(host.peers()).toHaveLength(1);
+
+        host.disconnect("sam");
+        await settle();
+        expect(host.peers()).toEqual([]);
+
+        // A known peer needs no ticket, which is exactly what makes the
+        // disconnect worth enforcing on the way in.
+        const again = (await open("sam", { dial: [ALEX], schedule: clock.schedule }))!;
+        await settle();
+        expect(host.peers()).toEqual([]);
+        expect(again.peers()).toEqual([]);
+
+        await host.stop();
+        await guest.stop();
+        await again.stop();
+    });
+
+    // Resume is symmetric, so both sides reach out. Two connections landing in
+    // one slot left whichever lost the map entry open, unreachable, unclosed,
+    // and still counted as a peer by the far side.
+    it("keeps one connection when both sides reach each other at once", async () => {
+        const hostConns: PeerConn[] = [];
+        const guestConns: PeerConn[] = [];
+        const host = (await open(ALEX, { createLink: watched(ALEX, hostConns) }))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", guestConns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+        }))!;
+        await settle();
+        expect(host.peers()).toHaveLength(1);
+        expect(guestConns).toHaveLength(1);
+
+        let cut = 0;
+        guestConns[0].onClose(() => cut++);
+
+        // The host reaches for a guest it is already holding, which is what a
+        // contact invited onto a round they have just joined looks like.
+        await host.invite("sam");
+        await settle();
+        expect(hostConns).toHaveLength(1);
+
+        expect(host.peers().map((p) => p.endpointId)).toEqual(["sam"]);
+        expect(guest.peers().map((p) => p.endpointId)).toEqual([ALEX]);
+        // Both ends dropped the same one, so the guest's own dial is closed
+        // and the peer is still there on the connection that survived.
+        expect(cut).toBe(1);
+
+        // And it is the same connection on both sides: the guest leaving is
+        // something the host hears about.
+        await guest.stop();
+        await settle();
+        expect(host.peers()).toEqual([]);
+        await host.stop();
+    });
+});
+
+describe("what a dialler is told", () => {
+    function hello(over: Partial<Extract<WireMessage, { type: "hello" }>> = {}): WireMessage {
+        return {
+            type: "hello",
+            protocol: PROTOCOL_MAJOR,
+            app: "0.11.0",
+            endpointId: STRANGER,
+            roundId: shared.id,
+            role: "partner",
+            capabilities: [],
+            ...over,
+        };
+    }
+
+    /** Dials the host by hand, so a test sees exactly what comes back. */
+    async function knock(from: string, msg: WireMessage) {
+        const link = await net.create(from)({ discovery: "mdns", relay: true });
+        const conn = await link.dial(ALEX);
+        const answers: WireMessage[] = [];
+        let closed = false;
+        conn.onMessage((m) => answers.push(m));
+        conn.onClose(() => {
+            closed = true;
+        });
+        conn.send(msg);
+        await settle();
+        return { conn, answers, closed };
+    }
+
+    // An EndpointId is permanent and every peer who ever shared with this
+    // install holds one, so a stranger who dials learns that something closed
+    // and nothing else at all.
+    it("puts nothing on the wire for a refusal it is not meant to see", async () => {
+        await open(ALEX);
+        const { answers, closed } = await knock(STRANGER, hello());
+        expect(answers).toEqual([]);
+        expect(closed).toBe(true);
+    });
+
+    it("tells a stranger on another version nothing about this one", async () => {
+        await open(ALEX);
+        const { answers } = await knock(STRANGER, hello({ protocol: PROTOCOL_MAJOR + 1 }));
+        expect(answers).toEqual([]);
+    });
+
+    it("names a skew to a caller holding the ticket, without naming a version", async () => {
+        const host = (await open(ALEX))!;
+        const ticket = host.share("partner");
+        const { answers } = await knock(
+            SAM,
+            hello({ endpointId: SAM, protocol: PROTOCOL_MAJOR + 1, ticket: ticket.secret }),
+        );
+        expect(answers).toEqual([{ type: "helloAck", ok: false, reason: VERSION_SKEW }]);
+        expect(JSON.stringify(answers)).not.toContain("0.11.0");
+    });
+
+    // The refusing side wrote that string, and it lands on this side's screen.
+    it("never repeats the words a refusing host chose", async () => {
+        const link = await net.create(ALEX)({ discovery: "mdns", relay: true });
+        await link.listen((conn) => {
+            conn.onMessage(() => {
+                conn.send({
+                    type: "helloAck",
+                    ok: false,
+                    reason: "ebb says: your flow is corrupt, call 555-0100 to recover it",
+                });
+                conn.close();
+            });
+        });
+
+        const guest = (await open(SAM))!;
+        const err = await guest.invite(ALEX).then(
+            () => null,
+            (e: unknown) => e as Error,
+        );
+        expect(err!.message).toBe("That peer refused the connection");
+        expect(err!.message).not.toContain("555");
+    });
+});
+
+describe("a peer's claim on a cell", () => {
+    /** A guest admitted by ticket, whose connection the test speaks over. */
+    async function admitted(host: CollabSession): Promise<PeerConn> {
+        const secret = host.share("partner").secret;
+        const link = await net.create(SAM)({ discovery: "mdns", relay: true });
+        const conn = await link.dial(ALEX);
+        conn.send({
+            type: "hello",
+            protocol: PROTOCOL_MAJOR,
+            app: "0.11.0",
+            endpointId: SAM,
+            roundId: shared.id,
+            role: "partner",
+            capabilities: [],
+            ticket: secret,
+        });
+        await settle();
+        return conn;
+    }
+
+    // The cell goes straight into the lock table, where a row nobody can hold
+    // would sit unmatched for the rest of the round.
+    it("ignores a cell that is not one", async () => {
+        const host = (await open(ALEX))!;
+        const conn = await admitted(host);
+        expect(host.peers()).toHaveLength(1);
+        expect(getLocks()).toEqual([]);
+
+        for (const cell of [
+            { sheetId: "sheet_1", col: -1, row: 0 },
+            { sheetId: "sheet_1", col: 0, row: 1.5 },
+            { sheetId: 7, col: 0, row: 0 },
+            { sheetId: "sheet_1", col: "0", row: 0 },
+            { sheetId: "sheet_1", row: 0 },
+            "sheet_1",
+        ]) {
+            conn.send({ type: "presence", cell } as WireMessage);
+            await settle();
+            expect(getLocks()).toEqual([]);
+        }
+
+        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        await settle();
+        expect(getLocks()).toEqual([
+            { endpointId: SAM, sheetId: "sheet_1", col: 1, row: 2, heldAt: expect.any(Number) },
+        ]);
         await host.stop();
     });
 });

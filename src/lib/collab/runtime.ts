@@ -12,6 +12,7 @@
 
 import { toast } from "sonner";
 
+import { setClaimHandler } from "@/lib/grid/lockBridge";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { basename } from "@/lib/persistence/flowPaths";
@@ -96,7 +97,11 @@ function publish(peers: CollabPeer[]): void {
         connectionType: p.connectionType,
     }));
     useCollabStore.getState().setPeers(view);
-    useCollabStore.getState().setStatus(view.length > 0 ? "connected" : "connecting");
+    // An empty list is two different situations, and the chip has a word for
+    // each. A dial in flight is a partner this side lost and is going back
+    // for; nothing in flight is a session waiting to be joined.
+    const waiting = session?.reconnecting() ? "reconnecting" : "connecting";
+    useCollabStore.getState().setStatus(view.length > 0 ? "connected" : waiting);
     if (session)
         rememberRoundPeers(
             session.roundId,
@@ -125,7 +130,9 @@ export function applyRemoteDoc(round: FlowRound, incoming: CollabDoc): DroppedCe
     // The round on screen, not the one the session opened with: createdAt and
     // updatedAt belong to this file and no partner ever sends them.
     const base = store.round?.id === result.doc.roundId ? store.round : round;
-    store.applyRemoteRound(projectDoc(result.doc, base));
+    // `before` is what `base` was projected from, so every sheet the merge
+    // left alone is handed straight back rather than derived again.
+    store.applyRemoteRound(projectDoc(result.doc, base, before));
     applyRemote(before, result.doc);
     // A delete leaves no mark on the grid, so this is the only place the user
     // learns their text is gone.
@@ -212,6 +219,9 @@ export async function startForRound(
     // Push, not poll: every op the grid and the store record is offered to the
     // peers the moment it lands, coalesced a frame later by the sync.
     setLocalChangeListener(notifyLocalChange);
+    // An open editor claims its cell, so a partner is warned off before they
+    // type rather than after the merge has picked a winner.
+    setClaimHandler((cell) => session?.setPresence(cell));
     return session;
 }
 
@@ -248,6 +258,7 @@ export async function endSession(): Promise<void> {
     const held = session;
     session = null;
     setLocalChangeListener(null);
+    setClaimHandler(null);
     offered.clear();
     try {
         await held?.stop();
@@ -261,12 +272,19 @@ export async function endSession(): Promise<void> {
     await syncInviteWatch();
 }
 
+/**
+ * Hangs up on one peer. The rest of the session stays up: one partner leaving
+ * is not the round ending.
+ *
+ * The connection is what closes. Filtering the published list alone would put
+ * the peer back in the chip on the next thing that changed it, and leave them
+ * reading and writing the round in the meantime.
+ */
 export async function disconnectPeer(endpointId: string): Promise<void> {
-    // One peer leaving is not the session ending, so the rest stay up.
     const held = session;
     if (!held) return;
-    const peers = held.peers().filter((p) => p.endpointId !== endpointId);
-    publish(peers);
+    held.disconnect(endpointId);
+    publish(held.peers());
 }
 
 /**

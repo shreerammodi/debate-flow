@@ -13,6 +13,9 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net = createMemoryNet();
 
+/** What iroh hands back. A ticket names the host, so the host holds a real one. */
+const HOST = "c".repeat(64);
+
 function manualClock() {
     let pending: { fn: () => void; at: number }[] = [];
     let now = 0;
@@ -81,9 +84,9 @@ beforeEach(() => {
 
 describe("three peers in a star", () => {
     it("passes one guest's typing to the other without waiting for repair", async () => {
-        const hostSide = side("host", 1_000);
+        const hostSide = side(HOST, 1_000);
         const host = (await startCollabSession({
-            createLink: net.create("host"),
+            createLink: net.create(HOST),
             roundId: round.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,
@@ -101,7 +104,7 @@ describe("three peers in a star", () => {
                 doc: s.doc,
                 apply: s.apply,
                 ticket: encodeTicket(host.share("partner")),
-                dial: ["host"],
+                dial: [HOST],
                 schedule: clock.schedule,
             }))!;
             guests.push({ sess, side: s });
@@ -124,9 +127,9 @@ describe("three peers in a star", () => {
     });
 
     it("gets there eventually on the repair tick alone", async () => {
-        const hostSide = side("host", 1_000);
+        const hostSide = side(HOST, 1_000);
         const host = (await startCollabSession({
-            createLink: net.create("host"),
+            createLink: net.create(HOST),
             roundId: round.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,
@@ -143,7 +146,7 @@ describe("three peers in a star", () => {
                 doc: s.doc,
                 apply: s.apply,
                 ticket: encodeTicket(host.share("partner")),
-                dial: ["host"],
+                dial: [HOST],
                 schedule: clock.schedule,
             }))!;
             guests.push({ sess, side: s });

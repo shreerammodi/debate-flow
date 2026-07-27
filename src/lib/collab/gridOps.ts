@@ -8,12 +8,9 @@
  * its own call site.
  */
 
-import { getActiveSheetId } from "@/lib/grid/hotInstance";
 import { STRUCTURED_WRITE, type GridChange } from "@/lib/grid/staleSource";
-import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import type { CollabOp } from "./ops";
-import { resyncSheet } from "./replica";
 
 /**
  * Writes that change text and move no cell, so a per-cell replay is exact.
@@ -65,7 +62,18 @@ export function textOpsFromChanges(sheetId: string, changes: readonly GridChange
  * the bottom of the sheet. It looks exactly like a row insert and fires before
  * the keystroke's own change, so replaying it would splice a blank rank into
  * every column of the sheet for no user action at all.
+ *
+ * A paste is skipped for the opposite reason: an insert-mode paste opens rows
+ * in the columns it lands in and nowhere else, and says so itself before
+ * Handsontable touches the grid. Taking the row growth as well would open the
+ * same rows twice, once across every column of the sheet.
  */
+const SELF_DESCRIBING: Record<string, true> = {
+    auto: true,
+    populateFromArray: true,
+    "CopyPaste.paste": true,
+};
+
 export function rowOpFromHook(
     kind: "insert" | "remove",
     sheetId: string,
@@ -73,7 +81,7 @@ export function rowOpFromHook(
     amount: number,
     source: unknown,
 ): CollabOp[] {
-    if (source === "auto") return [];
+    if (typeof source === "string" && SELF_DESCRIBING[source]) return [];
     const ops: CollabOp[] = [];
     for (let i = 0; i < amount; i++) {
         // Each removal closes the gap, so the index does not advance.
@@ -84,19 +92,4 @@ export function rowOpFromHook(
         );
     }
     return ops;
-}
-
-/**
- * Re-derives the active sheet's replica from the store's current copy.
- *
- * The coarse writes use this: an insert-mode paste, a committed block move,
- * and a CardMirror send all rearrange a column in ways the op union cannot
- * describe. Call it after the grid has snapshotted, so the store already
- * holds the result.
- */
-export function resyncActiveSheet(): void {
-    const sheetId = getActiveSheetId();
-    if (!sheetId) return;
-    const sheet = useFlowStore.getState().round?.sheets.find((s) => s.id === sheetId);
-    if (sheet) resyncSheet(sheet);
 }

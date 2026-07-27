@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { knownRoundPeers, rememberRoundPeers } from "@/lib/collab/roundPeers";
 import { gridWidth, padGrid, trimGrid } from "@/lib/grid/codec";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
@@ -77,6 +78,18 @@ describe("loadRound", () => {
         useFlowStore.getState().setTooltips(false);
         expect(useFlowStore.getState().tooltips).toBe(false);
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"tooltips":false');
+    });
+});
+
+describe("closeRound", () => {
+    it("forgets who the round was shared with, which is nobody's business once it is shut", () => {
+        const round = loadFresh();
+        rememberRoundPeers(round.id, ["a1e0".repeat(16)]);
+        expect(knownRoundPeers(round.id)).toHaveLength(1);
+
+        useFlowStore.getState().closeRound();
+
+        expect(knownRoundPeers(round.id)).toEqual([]);
     });
 });
 

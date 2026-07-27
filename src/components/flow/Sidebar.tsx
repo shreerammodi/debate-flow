@@ -5,6 +5,7 @@ import { LazyMotion, Reorder } from "motion/react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 
+import InviteChip from "@/components/collab/InviteChip";
 import SessionChip from "@/components/collab/SessionChip";
 import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
@@ -78,13 +79,15 @@ export default function Sidebar() {
                         </button>
                     </Tip>
                 </nav>
-                {/* No footer to sit in, so the chip floats over the grid's left
+                {/* No footer to sit in, so the chips float over the grid's left
                     edge, clear of the collapsed rail. */}
-                <SessionChip
-                    className="no-print fixed bottom-3 left-11 z-30"
-                    onDisconnectPeer={(id) => void disconnectPeer(id)}
-                    onEndSession={() => void endSession()}
-                />
+                <div className="no-print fixed bottom-3 left-11 z-30 flex flex-col items-start gap-1">
+                    <InviteChip />
+                    <SessionChip
+                        onDisconnectPeer={(id) => void disconnectPeer(id)}
+                        onEndSession={() => void endSession()}
+                    />
+                </div>
             </>
         );
     }
@@ -210,7 +213,9 @@ export default function Sidebar() {
                 )}
             </div>
             {/* Footer, below the scrolling list, so a live session never covers
-                a sheet name. */}
+                a sheet name. Each chip carries its own rule and draws nothing
+                when it has nothing, so an idle round shows no footer at all. */}
+            <InviteChip className="border-border/60 shrink-0 border-t p-2" />
             <SessionChip
                 className="border-border/60 shrink-0 border-t p-2"
                 onDisconnectPeer={(id) => void disconnectPeer(id)}

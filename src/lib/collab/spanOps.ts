@@ -38,3 +38,21 @@ export function replaceSpanOps(
     });
     return ops;
 }
+
+/**
+ * Ops that open `count` blank rows at `at` in one column, pushing whatever was
+ * there down and carrying each cell's decoration with it.
+ *
+ * Every insert names the same index, because each one pushes the previous
+ * down, so the run opens from the top.
+ *
+ * This is what an insert-mode paste and a CardMirror send are: both used to
+ * re-derive the sheet afterwards instead, which re-keys every cell from its
+ * row position and leaves a peer holding keys that no longer name anything.
+ */
+export function openSpanOps(sheetId: string, col: number, at: number, count: number): CollabOp[] {
+    return Array.from(
+        { length: Math.max(count, 0) },
+        (): CollabOp => ({ kind: "insertCell", sheetId, col, row: at }),
+    );
+}

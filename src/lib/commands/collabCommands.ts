@@ -80,14 +80,26 @@ export async function runJoin(deps: CollabCommandDeps): Promise<void> {
     }
 }
 
-/** Drops every peer. The flow stays open and stays editable. */
+/**
+ * Drops every peer. The flow stays open and stays editable.
+ *
+ * Wrapped like its siblings, and for the same reason twice over: it is fired
+ * as `void runEnd(...)`, so a rejection here surfaces as an unhandled promise
+ * and never reaches the user, and End session is a button a debater presses
+ * mid-round. The session is torn down before the transport is asked to stop,
+ * so a failure past that point has already left this side ended.
+ */
 export async function runEnd(deps: CollabCommandDeps): Promise<void> {
     if (!currentSession()) {
         deps.fail("No session is running");
         return;
     }
-    await endSession();
-    deps.notify("Session ended. The flow is still yours.");
+    try {
+        await endSession();
+        deps.notify("Session ended. The flow is still yours.");
+    } catch (err) {
+        deps.fail(err instanceof Error ? err.message : "Could not end the session cleanly");
+    }
 }
 
 /** Dials a saved contact. No ticket: their EndpointId already authorizes. */

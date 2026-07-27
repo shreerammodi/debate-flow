@@ -143,7 +143,7 @@ describe("collaboration settings", () => {
 });
 
 describe("contacts", () => {
-    const ALEX = "k51qzi5uqu5dlalex";
+    const ALEX = "a1e0".repeat(16);
     const withAlex = {
         ...sample,
         contacts: { [ALEX]: { name: "Alex", role: "partner" as const } },

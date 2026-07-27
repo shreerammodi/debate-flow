@@ -134,13 +134,25 @@ export function projectSheet(sheet: CollabSheet): FlowSheet {
  * The round a replica describes. `base` supplies the two fields the replica
  * deliberately does not carry, so a partner's clock never rewrites this file's
  * creation time.
+ *
+ * `settled` is the document `base` was last projected from, when the caller
+ * has one. A merge builds a new object only for the sheets it touched, so a
+ * sheet whose replica is the very same object describes the very same sheet,
+ * and the copy already in `base` stands rather than being derived again.
+ * Without that, one cell arriving from a partner re-derives every sheet in the
+ * round, up to thirty times a second while they type.
  */
-export function projectDoc(doc: CollabDoc, base: FlowRound): FlowRound {
+export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc): FlowRound {
     const shape: Record<string, unknown> = {};
     for (const [path, reg] of Object.entries(doc.round)) setPath(shape, path, reg.value);
+    const already = new Map(base.sheets.map((s) => [s.id, s]));
     const sheets = Object.values(doc.sheets)
         .filter((s) => s.deleted === null)
-        .map(projectSheet)
+        .map((sheet) => {
+            const untouched =
+                settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined;
+            return untouched ?? projectSheet(sheet);
+        })
         .sort(compareSheets);
     return {
         ...(shape as Omit<FlowRound, "id" | "createdAt" | "updatedAt" | "scouting" | "sheets">),

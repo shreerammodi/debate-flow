@@ -204,3 +204,137 @@ describe("createPeerLink", () => {
         expect(() => conn.close()).not.toThrow();
     });
 });
+
+/**
+ * A peer chooses every byte it sends, and everything above the transport
+ * reads these fields without asking: the secret comparison indexes the
+ * ticket, the vector walks the document. A line that does not conform to its
+ * variant is dropped here, because the alternative is a throw inside the
+ * shell's event listener, on a connection the host has already greeted and
+ * will therefore never admit, close, or forget.
+ */
+describe("a message that is not the shape it claims", () => {
+    async function heardFrom(payload: unknown): Promise<WireMessage[]> {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.dial("sam");
+        const heard: WireMessage[] = [];
+        conn.onMessage((m) => heard.push(m));
+        expect(() =>
+            fake.emit("collab:message", { connId: "c1", payload: JSON.stringify(payload) }),
+        ).not.toThrow();
+        return heard;
+    }
+
+    const hello = {
+        type: "hello",
+        protocol: 1,
+        app: "0.11.0",
+        endpointId: "sam",
+        roundId: "round_x_1",
+        role: "partner",
+        capabilities: [],
+    };
+
+    it("takes a hello that is one", async () => {
+        expect(await heardFrom(hello)).toEqual([hello]);
+    });
+
+    it("drops a hello with a field of the wrong kind", async () => {
+        for (const bad of [
+            { ...hello, protocol: "1" },
+            { ...hello, app: 11 },
+            { ...hello, endpointId: null },
+            { ...hello, roundId: { toString: "no" } },
+            { ...hello, role: "admin" },
+            { ...hello, capabilities: "none" },
+            { ...hello, capabilities: [1, 2] },
+            // charCodeAt on this is what threw before anything looked at it.
+            { ...hello, ticket: ["a", "b"] },
+            { ...hello, label: 7 },
+            { ...hello, name: {} },
+            { ...hello, app: "x".repeat(257) },
+        ]) {
+            expect(await heardFrom(bad)).toEqual([]);
+        }
+    });
+
+    it("drops an ack that says neither yes nor no", async () => {
+        for (const bad of [
+            { type: "helloAck" },
+            { type: "helloAck", ok: "yes" },
+            { type: "helloAck", ok: false },
+            { type: "helloAck", ok: false, reason: 404 },
+            { type: "helloAck", ok: true, name: 7 },
+        ]) {
+            expect(await heardFrom(bad)).toEqual([]);
+        }
+        expect(await heardFrom({ type: "helloAck", ok: true })).toHaveLength(1);
+    });
+
+    it("drops a state or delta without a document the vector can walk", async () => {
+        const doc = { roundId: "round_x_1", round: {}, sheets: {} };
+        for (const type of ["state", "delta"]) {
+            expect(await heardFrom({ type })).toEqual([]);
+            expect(await heardFrom({ type, doc: null })).toEqual([]);
+            expect(await heardFrom({ type, doc: "everything" })).toEqual([]);
+            expect(await heardFrom({ type, doc: { ...doc, round: undefined } })).toEqual([]);
+            expect(await heardFrom({ type, doc: { ...doc, sheets: [] } })).toEqual([]);
+            expect(await heardFrom({ type, doc: { ...doc, roundId: 3 } })).toEqual([]);
+            expect(await heardFrom({ type, doc })).toHaveLength(1);
+        }
+    });
+
+    it("drops a vector whose entries are not stamps", async () => {
+        expect(await heardFrom({ type: "vector" })).toEqual([]);
+        expect(await heardFrom({ type: "vector", seen: [] })).toEqual([]);
+        expect(await heardFrom({ type: "vector", seen: { sam: 4 } })).toEqual([]);
+        expect(await heardFrom({ type: "vector", seen: { sam: { ms: 1 } } })).toEqual([]);
+        const stamp = { ms: 1, counter: 0, actor: "sam" };
+        expect(await heardFrom({ type: "vector", seen: { sam: stamp } })).toHaveLength(1);
+    });
+
+    it("drops a presence claiming a cell that is not one", async () => {
+        const cell = { sheetId: "sheet_1", col: 0, row: 2 };
+        for (const bad of [
+            { type: "presence" },
+            { type: "presence", cell: { ...cell, sheetId: 7 } },
+            { type: "presence", cell: { ...cell, col: -1 } },
+            { type: "presence", cell: { ...cell, row: 1.5 } },
+            { type: "presence", cell: { sheetId: "sheet_1" } },
+        ]) {
+            expect(await heardFrom(bad)).toEqual([]);
+        }
+        expect(await heardFrom({ type: "presence", cell })).toHaveLength(1);
+        expect(await heardFrom({ type: "presence", cell: null })).toHaveLength(1);
+    });
+
+    it("drops a message of no variant at all", async () => {
+        expect(await heardFrom({ type: "goodbye" })).toEqual([]);
+        expect(await heardFrom(["bye"])).toEqual([]);
+        expect(await heardFrom("bye")).toEqual([]);
+        expect(await heardFrom(null)).toEqual([]);
+        expect(await heardFrom({ type: "bye" })).toEqual([{ type: "bye" }]);
+    });
+});
+
+// The shell refcounts one endpoint across the links that share it, so a
+// second stop from the same link spends a hold it does not have and pulls the
+// endpoint out from under whoever else is holding it.
+describe("a link stopping twice", () => {
+    it("releases the shell's endpoint exactly once", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        await link.stop();
+        await link.stop();
+        await link.stop();
+        expect(fake.calls.filter((c) => c.cmd === "collab_stop")).toHaveLength(1);
+    });
+
+    it("sends nothing on a connection after the link is gone", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.dial("sam");
+        await link.stop();
+        const before = fake.calls.filter((c) => c.cmd === "collab_send").length;
+        conn.send({ type: "bye" });
+        expect(fake.calls.filter((c) => c.cmd === "collab_send")).toHaveLength(before);
+    });
+});

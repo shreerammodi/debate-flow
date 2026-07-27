@@ -20,6 +20,8 @@ vi.mock("@/lib/collab/runtime", () => ({
     disconnectPeer: vi.fn(async () => {}),
     endSession: vi.fn(async () => {}),
 }));
+vi.mock("@/lib/collab/inbox", () => ({ acceptInvite: vi.fn(async () => {}) }));
+import { acceptInvite } from "@/lib/collab/inbox";
 import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 
 const ALEX: CollabPeerView = {
@@ -344,5 +346,58 @@ describe("Sidebar", () => {
                 expect(endSession).toHaveBeenCalled();
             },
         );
+    });
+
+    describe("invite chip", () => {
+        const ALEX = "a1e0".repeat(16);
+        const HARVARD = { endpointId: ALEX, roundId: "round_1", label: "Round 3 - Harvard" };
+
+        function invited() {
+            useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+            useCollabStore.getState().pushInvite(HARVARD);
+        }
+
+        it("shows no chip while nobody has offered a round", () => {
+            setupRound();
+            renderSidebar();
+            expect(screen.queryByTestId("collab-invite-chip")).toBeNull();
+        });
+
+        // Thirty seconds of toast is the only other way to see this from
+        // inside a round.
+        it("surfaces a waiting invitation without leaving the flow", async () => {
+            setupRound();
+            invited();
+            renderSidebar();
+
+            await userEvent.click(screen.getByTestId("collab-invite-chip"));
+            expect(screen.getByTestId("collab-invite-row")).toHaveTextContent(
+                "Alex shared Round 3 - Harvard",
+            );
+        });
+
+        it.each([false, true])("reaches the invitation with collapsed=%s", async (collapsed) => {
+            setupRound();
+            useFlowStore.setState({ sidebarCollapsed: collapsed });
+            invited();
+            renderSidebar();
+
+            await userEvent.click(screen.getByTestId("collab-invite-chip"));
+            await userEvent.click(screen.getByTestId("collab-invite-join"));
+            expect(acceptInvite).toHaveBeenCalledWith(HARVARD);
+        });
+
+        it("sits above the session chip, so the newer thing is nearer the sheets", () => {
+            setupRound();
+            invited();
+            useCollabStore.setState({ status: "connected", peers: [] });
+            renderSidebar();
+
+            const invite = screen.getByTestId("collab-invite-chip");
+            const session = screen.getByTestId("collab-chip");
+            expect(
+                invite.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+        });
     });
 });

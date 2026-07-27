@@ -66,7 +66,7 @@ beforeEach(() => {
     joins.calls.length = 0;
     joins.fail = null;
     joins.result = { roundId: "r1", hostEndpointId: ALEX, path: "/flows/r3.ebb", created: true };
-    useCollabStore.getState().dismissInvite(ALEX, "r1");
+    useCollabStore.getState().reset();
     useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
 });
 
@@ -106,13 +106,37 @@ describe("announceInvite", () => {
             "Alex shared Round 3 - Harvard",
             "Alex shared Round 4 - Bronx",
         ]);
-        useCollabStore.getState().dismissInvite(ALEX, "r2");
     });
 
     it("joins nothing on its own", () => {
         announceInvite(notice);
         expect(joins.calls).toEqual([]);
         expect(routed).toEqual([]);
+    });
+
+    // roundId and label arrive off the wire in a hello a contact composes.
+    it("refuses a roundId no round could have, rather than keying the list on it", () => {
+        announceInvite({ ...notice, roundId: "r".repeat(129) });
+        expect(corners).toEqual([]);
+        expect(useCollabStore.getState().invites).toEqual([]);
+    });
+
+    it("takes a roundId of a plausible length", () => {
+        const roundId = "r".repeat(128);
+        announceInvite({ ...notice, roundId });
+        expect(useCollabStore.getState().invites.map((i) => i.roundId)).toEqual([roundId]);
+    });
+
+    it("refuses a notice naming no round at all", () => {
+        announceInvite({ ...notice, roundId: "" });
+        expect(corners).toEqual([]);
+        expect(useCollabStore.getState().invites).toEqual([]);
+    });
+
+    it("cuts an oversized label down to what a corner can say", () => {
+        announceInvite({ ...notice, label: "L".repeat(5_000) });
+        expect(corners[0].message).toBe(`Alex shared ${"L".repeat(80)}`);
+        expect(useCollabStore.getState().invites[0].label).toHaveLength(80);
     });
 });
 

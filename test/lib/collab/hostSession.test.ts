@@ -14,6 +14,9 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net = createMemoryNet();
 
+/** What iroh hands back. A ticket names the host, so the host holds a real one. */
+const ALEX = "a".repeat(64);
+
 /** The scheduler both sessions run on, so the test owns time. */
 function manualClock() {
     let pending: { fn: () => void; at: number }[] = [];
@@ -64,7 +67,7 @@ function round(): FlowRound {
 /** One peer's own replica plus the session that syncs it. */
 function replicaFor(base: FlowRound, actor: string) {
     let doc = seedDoc(base);
-    let t = actor === "alex" ? 1_000 : 5_000;
+    let t = actor === ALEX ? 1_000 : 5_000;
     const ctx: OpContext = { actor, clock: createClock(actor, () => t++) };
     return {
         doc: () => doc,
@@ -97,9 +100,9 @@ async function hostAndGuest(): Promise<{
     guestSide: ReturnType<typeof replicaFor>;
     ticket: string;
 }> {
-    const hostSide = replicaFor(shared, "alex");
+    const hostSide = replicaFor(shared, ALEX);
     const host = (await startCollabSession({
-        createLink: net.create("alex"),
+        createLink: net.create(ALEX),
         roundId: shared.id,
         appVersion: "0.11.0",
         doc: hostSide.doc,
@@ -116,7 +119,7 @@ async function hostAndGuest(): Promise<{
         doc: guestSide.doc,
         apply: guestSide.apply,
         ticket,
-        dial: ["alex"],
+        dial: [ALEX],
         schedule: clock.schedule,
     }))!;
     await settle();
@@ -127,7 +130,7 @@ describe("a hosted session", () => {
     it("admits a guest that presents the ticket", async () => {
         const { host, guest } = await hostAndGuest();
         expect(host.peers().map((p) => p.endpointId)).toEqual(["sam"]);
-        expect(guest.peers().map((p) => p.endpointId)).toEqual(["alex"]);
+        expect(guest.peers().map((p) => p.endpointId)).toEqual([ALEX]);
         expect(host.peers()[0].role).toBe("partner");
     });
 
@@ -137,9 +140,9 @@ describe("a hosted session", () => {
     });
 
     it("refuses an unknown peer with no ticket, and shows nothing", async () => {
-        const hostSide = replicaFor(shared, "alex");
+        const hostSide = replicaFor(shared, ALEX);
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,
@@ -154,7 +157,7 @@ describe("a hosted session", () => {
             appVersion: "0.11.0",
             doc: strangerSide.doc,
             apply: strangerSide.apply,
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         });
         await settle();
@@ -171,7 +174,7 @@ describe("a hosted session", () => {
             doc: strangerSide.doc,
             apply: strangerSide.apply,
             ticket,
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         });
         await settle();
@@ -191,7 +194,7 @@ describe("a hosted session", () => {
             appVersion: "0.11.0",
             doc: againSide.doc,
             apply: againSide.apply,
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
@@ -202,9 +205,9 @@ describe("a hosted session", () => {
 
 describe("the name each side broadcasts", () => {
     async function named(hostName?: string, guestName?: string) {
-        const hostSide = replicaFor(shared, "alex");
+        const hostSide = replicaFor(shared, ALEX);
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,
@@ -223,7 +226,7 @@ describe("the name each side broadcasts", () => {
             apply: guestSide.apply,
             displayName: guestName,
             ticket,
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
@@ -280,9 +283,9 @@ describe("editing across a session", () => {
     });
 
     it("drops a coach's writes, because the host enforces the role", async () => {
-        const hostSide = replicaFor(shared, "alex");
+        const hostSide = replicaFor(shared, ALEX);
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,
@@ -300,7 +303,7 @@ describe("editing across a session", () => {
             apply: coachSide.apply,
             ticket,
             role: "coach",
-            dial: ["alex"],
+            dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
@@ -318,9 +321,9 @@ describe("editing across a session", () => {
 describe("the opt-in gate still holds", () => {
     it("hands back nothing with shared editing off", async () => {
         useFlowStore.setState({ collabEnabled: false });
-        const side = replicaFor(shared, "alex");
+        const side = replicaFor(shared, ALEX);
         const session = await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             doc: side.doc,

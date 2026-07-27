@@ -23,13 +23,16 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net = createMemoryNet();
 
+/** What iroh hands back. A ticket names the host, so the host holds a real one. */
+const ALEX = "a".repeat(64);
+
 let shared: FlowRound;
 let fs: FlowFs;
 
 function side(base: FlowRound) {
     let doc = seedDoc(base);
     let t = 1_000;
-    const ctx: OpContext = { actor: "alex", clock: createClock("alex", () => t++) };
+    const ctx: OpContext = { actor: ALEX, clock: createClock(ALEX, () => t++) };
     return {
         doc: () => doc,
         apply: (incoming: CollabDoc) => {
@@ -45,7 +48,7 @@ function side(base: FlowRound) {
 
 async function hostWithTicket(): Promise<string> {
     const host = (await startCollabSession({
-        createLink: net.create("alex"),
+        createLink: net.create(ALEX),
         roundId: shared.id,
         appVersion: "0.11.0",
         ...side(shared),
@@ -77,7 +80,7 @@ describe("joinRound", () => {
         });
         expect(result!.created).toBe(true);
         expect(result!.roundId).toBe(shared.id);
-        expect(result!.hostEndpointId).toBe("alex");
+        expect(result!.hostEndpointId).toBe(ALEX);
 
         const written = await fs.readFlow(result!.path);
         expect(written).not.toBeNull();
@@ -90,7 +93,7 @@ describe("joinRound", () => {
     it("tells the host what to call this side", async () => {
         const greetings: WireMessage[] = [];
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             ...side(shared),
@@ -102,8 +105,8 @@ describe("joinRound", () => {
             const link = await net.create("sam")(config);
             return {
                 ...link,
-                async dial(target, secret) {
-                    const conn = await link.dial(target, secret);
+                async dial(target: string) {
+                    const conn = await link.dial(target);
                     const send = conn.send.bind(conn);
                     return {
                         ...conn,
@@ -169,7 +172,7 @@ describe("joinRound", () => {
         useFlowStore.setState({ collabEnabled: false });
         const result = await joinRound({
             ticket: encodeTicket({
-                endpointId: "alex",
+                endpointId: ALEX,
                 roundId: "r",
                 role: "partner",
                 secret: "s".repeat(24),
@@ -194,7 +197,7 @@ describe("joining a contact's invitation", () => {
     /** Alex, having invited Sam: the dial put Sam in the known list. */
     async function hostWhoInvited(): Promise<void> {
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             ...side(shared),
@@ -208,26 +211,26 @@ describe("joining a contact's invitation", () => {
     it("takes the round with no ticket at all", async () => {
         await hostWhoInvited();
         const result = await joinRound({
-            invite: { endpointId: "alex", roundId: shared.id },
+            invite: { endpointId: ALEX, roundId: shared.id },
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,
         });
         expect(result!.created).toBe(true);
-        expect(result!.hostEndpointId).toBe("alex");
+        expect(result!.hostEndpointId).toBe(ALEX);
         expect((await fs.readFlow(result!.path))!.text).toContain("perm");
     });
 
     it("is refused by a host who never invited this peer", async () => {
         await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             ...side(shared),
         });
         await expect(
             joinRound({
-                invite: { endpointId: "alex", roundId: shared.id },
+                invite: { endpointId: ALEX, roundId: shared.id },
                 createLink: net.create("sam"),
                 appVersion: "0.11.0",
                 fs,
@@ -238,7 +241,7 @@ describe("joining a contact's invitation", () => {
     it("reaches no network at all while shared editing is off", async () => {
         useFlowStore.setState({ collabEnabled: false });
         const result = await joinRound({
-            invite: { endpointId: "alex", roundId: shared.id },
+            invite: { endpointId: ALEX, roundId: shared.id },
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,
@@ -264,7 +267,7 @@ describe("what a joined round remembers", () => {
             appVersion: "0.11.0",
             fs,
         });
-        expect(knownRoundPeers(result!.roundId)).toEqual(["alex"]);
+        expect(knownRoundPeers(result!.roundId)).toEqual([ALEX]);
     });
 
     it("keeps the host's peers across the open", async () => {
@@ -276,7 +279,7 @@ describe("what a joined round remembers", () => {
             fs,
         });
         const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
-        expect(await recoverReplica(round, serializeFlow(round))).toEqual(["alex"]);
+        expect(await recoverReplica(round, serializeFlow(round))).toEqual([ALEX]);
     });
 
     it("adopts the host's document, so their rows do not arrive twice", async () => {
@@ -286,7 +289,7 @@ describe("what a joined round remembers", () => {
         const sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
         const hostSide = side(shared);
         const host = (await startCollabSession({
-            createLink: net.create("alex"),
+            createLink: net.create(ALEX),
             roundId: shared.id,
             appVersion: "0.11.0",
             doc: hostSide.doc,

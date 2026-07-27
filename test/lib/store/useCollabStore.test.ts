@@ -46,11 +46,13 @@ describe("useCollabStore", () => {
     it("reset clears a populated session back to the defaults", () => {
         useCollabStore.getState().setStatus("connected");
         useCollabStore.getState().setPeers([ALEX, COACH]);
+        useCollabStore.getState().pushInvite({ endpointId: "alex", roundId: "r1", label: "" });
 
         useCollabStore.getState().reset();
 
         expect(useCollabStore.getState().status).toBe("off");
         expect(useCollabStore.getState().peers).toEqual([]);
+        expect(useCollabStore.getState().invites).toEqual([]);
     });
 
     it("notifies no flow-store subscriber, so presence never re-renders the grid", () => {
@@ -67,11 +69,6 @@ describe("useCollabStore", () => {
 
 describe("useCollabStore invitations", () => {
     const invite = { endpointId: "alex", roundId: "r1", label: "Round 3" };
-
-    beforeEach(() => {
-        useCollabStore.getState().dismissInvite("alex", "r1");
-        useCollabStore.getState().dismissInvite("alex", "r2");
-    });
 
     it("starts with none", () => {
         expect(useCollabStore.getState().invites).toEqual([]);
@@ -96,9 +93,20 @@ describe("useCollabStore invitations", () => {
         expect(useCollabStore.getState().invites.map((i) => i.roundId)).toEqual(["r2"]);
     });
 
-    it("outlives the session that carried it, which may end before anyone looks", () => {
+    it("holds nothing across a teardown, because a dead session can join none of it", () => {
         useCollabStore.getState().pushInvite(invite);
         useCollabStore.getState().reset();
-        expect(useCollabStore.getState().invites).toEqual([invite]);
+        expect(useCollabStore.getState().invites).toEqual([]);
+    });
+
+    it("bounds the list, so a partner minting round ids cannot grow it forever", () => {
+        for (let i = 0; i < 500; i++) {
+            useCollabStore.getState().pushInvite({ ...invite, roundId: `r${i}` });
+        }
+        const held = useCollabStore.getState().invites;
+        expect(held.length).toBeLessThanOrEqual(20);
+        // The newest survive: their sender is the one still holding a round up.
+        expect(held[held.length - 1].roundId).toBe("r499");
+        expect(held.some((i) => i.roundId === "r0")).toBe(false);
     });
 });

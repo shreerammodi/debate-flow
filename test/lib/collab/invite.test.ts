@@ -93,4 +93,11 @@ describe("inviteFrom", () => {
     it("is silent for anything that is not a hello", () => {
         expect(inviteFrom({ type: "bye" }, contacts, "r1", ALEX)).toBeNull();
     });
+
+    // The label is a contact's string and the corner renders it, so the corner
+    // decides how much of one it will take.
+    it("takes only as much of a label as a corner can say", () => {
+        const notice = inviteFrom(hello(ALEX, "r2", "R".repeat(500)), contacts, "r1", ALEX);
+        expect(notice!.label).toBe("R".repeat(120));
+    });
 });

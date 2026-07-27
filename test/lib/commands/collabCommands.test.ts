@@ -1,5 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as CollabRuntime from "@/lib/collab/runtime";
+
+/** Lets one test stand a session up and make its teardown fail. */
+const runtime: { live: boolean; endFails: Error | null } = { live: false, endFails: null };
+
+vi.mock("@/lib/collab/runtime", async (importOriginal) => {
+    const real = await importOriginal<typeof CollabRuntime>();
+    return {
+        ...real,
+        currentSession: () => (runtime.live ? ({} as never) : real.currentSession()),
+        endSession: async () => {
+            if (runtime.endFails) throw runtime.endFails;
+            await real.endSession();
+        },
+    };
+});
+
 import { endSession } from "@/lib/collab/runtime";
 import { parseTicket } from "@/lib/collab/ticket";
 import {
@@ -38,6 +55,8 @@ function deps(over: Partial<CollabCommandDeps> = {}): CollabCommandDeps & {
 }
 
 beforeEach(async () => {
+    runtime.live = false;
+    runtime.endFails = null;
     await endSession();
     useFlowStore.setState({ collabEnabled: false, round: null });
     // isDesktop() is false under jsdom unless the harness says otherwise.
@@ -105,6 +124,25 @@ describe("end", () => {
         const d = deps();
         await runEnd(d);
         expect(d.failures[0]).toMatch(/No session/);
+    });
+
+    // Fired as `void runEnd(...)`, so a rejection would go nowhere but an
+    // unhandled promise, and End session is pressed mid-round.
+    it("reports a teardown that failed, rather than rejecting", async () => {
+        runtime.live = true;
+        runtime.endFails = new Error("The endpoint refused to stop");
+        const d = deps();
+        await expect(runEnd(d)).resolves.toBeUndefined();
+        expect(d.failures).toEqual(["The endpoint refused to stop"]);
+        expect(d.notices).toEqual([]);
+    });
+
+    it("says the session is over when the teardown lands", async () => {
+        runtime.live = true;
+        const d = deps();
+        await runEnd(d);
+        expect(d.failures).toEqual([]);
+        expect(d.notices[0]).toMatch(/Session ended/);
     });
 });
 

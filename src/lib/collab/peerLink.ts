@@ -16,6 +16,13 @@ import type { CollabDoc, Role } from "./types";
 /** Bumped only for a change an older build cannot read. */
 export const PROTOCOL_MAJOR = 1;
 
+/** The grid slot an editor is open on. */
+export interface CellRef {
+    sheetId: string;
+    col: number;
+    row: number;
+}
+
 export type WireMessage =
     | {
           type: "hello";
@@ -43,8 +50,132 @@ export type WireMessage =
     | { type: "delta"; doc: CollabDoc }
     /** Per-actor highest stamp seen, so the far side can replay what was lost. */
     | { type: "vector"; seen: Record<string, Stamp> }
-    | { type: "presence"; cell: { sheetId: string; col: number; row: number } | null }
+    | { type: "presence"; cell: CellRef | null }
     | { type: "bye" };
+
+/**
+ * A field long enough for any round name or display name a debater types, and
+ * short enough that a peer cannot use one as somewhere to put a payload.
+ */
+const MAX_FIELD = 256;
+
+type Hello = Extract<WireMessage, { type: "hello" }>;
+type HelloAck = Extract<WireMessage, { type: "helloAck" }>;
+type DocMessage = Extract<WireMessage, { type: "state" | "delta" }>;
+type VectorMessage = Extract<WireMessage, { type: "vector" }>;
+type PresenceMessage = Extract<WireMessage, { type: "presence" }>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isField(value: unknown): value is string {
+    return typeof value === "string" && value.length <= MAX_FIELD;
+}
+
+function isOptionalField(value: unknown): boolean {
+    return value === undefined || isField(value);
+}
+
+/** A non-negative integer, which is what a protocol major and an index both are. */
+function isCount(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isRole(value: unknown): value is Role {
+    return value === "partner" || value === "coach";
+}
+
+function isStamp(value: unknown): value is Stamp {
+    return (
+        isRecord(value) &&
+        typeof value.ms === "number" &&
+        typeof value.counter === "number" &&
+        typeof value.actor === "string"
+    );
+}
+
+/** A cell a peer claims, and nothing that only looks like one. */
+export function isCellRef(value: unknown): value is CellRef {
+    return isRecord(value) && isField(value.sheetId) && isCount(value.col) && isCount(value.row);
+}
+
+function isHello(m: Record<string, unknown>): m is Hello {
+    return (
+        m.type === "hello" &&
+        isCount(m.protocol) &&
+        isField(m.app) &&
+        isField(m.endpointId) &&
+        isField(m.roundId) &&
+        isRole(m.role) &&
+        Array.isArray(m.capabilities) &&
+        m.capabilities.every(isField) &&
+        isOptionalField(m.ticket) &&
+        isOptionalField(m.label) &&
+        isOptionalField(m.name)
+    );
+}
+
+function isHelloAck(m: Record<string, unknown>): m is HelloAck {
+    if (m.type !== "helloAck") return false;
+    if (m.ok === true) return isOptionalField(m.name);
+    return m.ok === false && isField(m.reason);
+}
+
+/**
+ * A document's outline rather than its contents. The merge is written to
+ * survive a register it does not recognize, but the vector walks `round` and
+ * `sheets` the moment the message lands and throws when either is absent.
+ */
+function isDocMessage(m: Record<string, unknown>): m is DocMessage {
+    if (m.type !== "state" && m.type !== "delta") return false;
+    const doc = m.doc;
+    return (
+        isRecord(doc) &&
+        typeof doc.roundId === "string" &&
+        isRecord(doc.round) &&
+        isRecord(doc.sheets)
+    );
+}
+
+function isVector(m: Record<string, unknown>): m is VectorMessage {
+    return m.type === "vector" && isRecord(m.seen) && Object.values(m.seen).every(isStamp);
+}
+
+function isPresence(m: Record<string, unknown>): m is PresenceMessage {
+    return m.type === "presence" && (m.cell === null || isCellRef(m.cell));
+}
+
+/**
+ * The message a peer sent, or null for anything that does not conform to its
+ * variant.
+ *
+ * Everything above the transport dereferences these fields without asking: a
+ * `state` carrying no document throws where the vector is taken, and a `hello`
+ * whose ticket is an array throws inside the secret comparison. A peer chooses
+ * every byte of what it sends, so the shape is established at the edge and a
+ * message that is not one is dropped rather than acted on.
+ */
+export function parseWireMessage(raw: unknown): WireMessage | null {
+    if (!isRecord(raw)) return null;
+    switch (raw.type) {
+        case "hello":
+            return isHello(raw) ? raw : null;
+        case "helloAck":
+            return isHelloAck(raw) ? raw : null;
+        case "state":
+        case "delta":
+            return isDocMessage(raw) ? raw : null;
+        case "vector":
+            return isVector(raw) ? raw : null;
+        case "presence":
+            return isPresence(raw) ? raw : null;
+        case "bye":
+            return { type: "bye" };
+        default:
+            return null;
+    }
+}
 
 export interface PeerLinkConfig {
     /**
@@ -70,7 +201,12 @@ export interface PeerConn {
 export interface PeerLink {
     endpointId(): Promise<string>;
     listen(onPeer: (peer: PeerConn) => void): Promise<void>;
-    dial(endpointId: string, ticket?: string): Promise<PeerConn>;
+    /**
+     * No secret rides along. The transport authenticates the key and nothing
+     * else; a ticket is spent in the hello, above this line, and a parameter
+     * here would tell a reader the dial itself was authorized.
+     */
+    dial(endpointId: string): Promise<PeerConn>;
     stop(): Promise<void>;
 }
 

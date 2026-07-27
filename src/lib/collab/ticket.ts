@@ -12,6 +12,7 @@
  * answered by eye, and a later format can be told apart by its prefix.
  */
 
+import { isEndpointId } from "./contacts";
 import type { Role } from "./types";
 
 export const TICKET_PREFIX = "ebb1:";
@@ -19,6 +20,8 @@ export const TICKET_PREFIX = "ebb1:";
 /** Long enough that guessing is not a strategy: 62^24 is about 143 bits. */
 const SECRET_LENGTH = 24;
 const SECRET_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+/** Any round id this build mints is far shorter; a longer one is a payload. */
+const MAX_ROUND_ID = 128;
 
 export interface Ticket {
     endpointId: string;
@@ -75,8 +78,12 @@ export function parseTicket(text: string): Ticket | null {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
 
     const t = raw as Partial<Ticket>;
-    if (typeof t.endpointId !== "string" || t.endpointId === "") return null;
+    // The endpoint is a dial target the moment this returns, and a ticket is
+    // pasted from wherever the debater found it. Anything iroh could not have
+    // issued is a string somebody wrote, not a peer.
+    if (typeof t.endpointId !== "string" || !isEndpointId(t.endpointId)) return null;
     if (typeof t.roundId !== "string" || t.roundId === "") return null;
+    if (t.roundId.length > MAX_ROUND_ID) return null;
     if (!isRole(t.role)) return null;
     if (typeof t.secret !== "string" || t.secret.length !== SECRET_LENGTH) return null;
 

@@ -94,7 +94,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     try {
         const endpointId = await link.endpointId();
         const name = deps.displayName ?? (await broadcastName());
-        const conn = await link.dial(host.endpointId, deps.ticket);
+        const conn = await link.dial(host.endpointId);
 
         const raw = await new Promise<CollabDoc>((resolve, reject) => {
             conn.onMessage((msg: WireMessage) => {
