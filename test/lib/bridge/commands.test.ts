@@ -275,3 +275,44 @@ describe("CardMirror's consent gate", () => {
         expect(invoked).toHaveBeenCalledTimes(2);
     });
 });
+
+describe("a cell a partner sourced", () => {
+    it("degrades to the open-first path instead of handing over a dead token", async () => {
+        const { seedDoc } = await import("@/lib/collab/doc");
+        const { applyOp } = await import("@/lib/collab/ops");
+        const { createClock } = await import("@/lib/collab/stamp");
+        const { seedReplica } = await import("@/lib/collab/replica");
+        const { setActiveHot } = await import("@/lib/grid/hotInstance");
+        const { makeFlowRound } = await import("@/lib/model/flow");
+
+        const round = makeFlowRound({});
+        const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        flow.data = [["from a partner"]];
+        const doc = applyOp(
+            seedDoc(round),
+            {
+                kind: "cellMeta",
+                sheetId: flow.id,
+                col: 0,
+                row: 0,
+                meta: {
+                    source: { app: "cardmirror", token: "theirs", key: "k", title: "Aff Core" },
+                },
+            },
+            { actor: "them", clock: createClock("them", () => 9_000) },
+        );
+        seedReplica(round, "me", doc);
+
+        const hot = {
+            getSelectedLast: () => [0, 0, 0, 0],
+            getCellMeta: () => ({
+                source: { app: "cardmirror", token: "theirs", key: "k", title: "Aff Core" },
+            }),
+        };
+        setActiveHot(hot as never, vi.fn(), flow.id);
+
+        await runJumpToSource();
+        // The bridge is never asked: that token means nothing on this machine.
+        expect(invoke).not.toHaveBeenCalledWith("cardmirror_jump", expect.anything());
+    });
+});

@@ -14,7 +14,9 @@
 
 import { toast } from "sonner";
 
-import { getActiveHot } from "@/lib/grid/hotInstance";
+import { isForeignSource, sourceOwner } from "@/lib/collab/foreignSource";
+import { getReplica, replicaActor } from "@/lib/collab/replica";
+import { getActiveHot, getActiveSheetId } from "@/lib/grid/hotInstance";
 import type { CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -73,6 +75,17 @@ function selectedSource(): CellSource | null {
     return (hot.getCellMeta(selection[0], selection[1]).source as CellSource | undefined) ?? null;
 }
 
+/** Whether the focused cell's provenance was written on another machine. */
+function selectedSourceIsForeign(): boolean {
+    const hot = getActiveHot();
+    const selection = hot?.getSelectedLast();
+    const sheetId = getActiveSheetId();
+    const doc = getReplica();
+    if (!hot || !selection || !sheetId || !doc) return false;
+    const owner = sourceOwner(doc.sheets[sheetId], selection[1], selection[0]);
+    return isForeignSource(owner, replicaActor());
+}
+
 /**
  * Every non-empty selected cell, row-major within each selected range, one
  * per line. CardMirror's insert builds one block per line, so a single
@@ -126,10 +139,21 @@ function outcomeMessage(
  * cell, so the right-click menu can act on the cell it was opened over rather
  * than on whatever the keyboard last selected.
  */
-export async function jumpToSource(source: CellSource | null): Promise<void> {
+export async function jumpToSource(source: CellSource | null, foreign = false): Promise<void> {
     if (!cardmirrorLive()) return;
     if (!source) {
         toast("This cell did not come from CardMirror.");
+        return;
+    }
+    // A partner's token means nothing to the CardMirror on this machine, so
+    // this degrades to the same path a stale local source takes rather than
+    // handing over a token that can only fail obscurely.
+    if (foreign) {
+        toast(
+            source.title
+                ? `Open "${source.title}" in CardMirror first.`
+                : "That cell came from a partner's CardMirror.",
+        );
         return;
     }
     const message = outcomeMessage(
@@ -141,7 +165,7 @@ export async function jumpToSource(source: CellSource | null): Promise<void> {
 }
 
 export function runJumpToSource(): Promise<void> {
-    return jumpToSource(selectedSource());
+    return jumpToSource(selectedSource(), selectedSourceIsForeign());
 }
 
 export async function runSendToDoc(): Promise<void> {

@@ -46,6 +46,11 @@ export function getReplica(): CollabDoc | null {
     return live?.doc ?? null;
 }
 
+/** This machine's actor in the live replica, or "" when nothing is open. */
+export function replicaActor(): string {
+    return live?.actor ?? "";
+}
+
 export function replicaRoundId(): string | null {
     return live?.doc.roundId ?? null;
 }
