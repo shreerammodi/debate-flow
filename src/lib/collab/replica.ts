@@ -59,12 +59,13 @@ export function recordOp(op: CollabOp): void {
 /**
  * Re-derives one sheet from the store's copy.
  *
- * ponytail: a block move, an insert-paste, and a CardMirror send re-seed the
- * sheet rather than describing themselves as ops, because the op union has no
- * move-shaped member and inventing one now would be speculative. Exact while no
- * peer exists. Phase 3 must replace this before a live session may move a
- * block: re-seeding re-derives ranks from row position, which a peer holding
- * the old ranks would not agree with.
+ * A block move no longer comes through here: it emits ops a peer can apply.
+ *
+ * ponytail: an insert-paste and a CardMirror send still re-seed, because both
+ * rearrange a column from outside the op path and neither happens while a
+ * partner is typing into the same sheet. Re-seeding re-keys every cell from
+ * its row position, so a peer holding the old keys disagrees; express these
+ * two as ops before either can run mid-session.
  */
 export function resyncSheet(sheet: FlowSheet): void {
     if (!live) return;

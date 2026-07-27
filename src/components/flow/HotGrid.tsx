@@ -17,6 +17,7 @@ import {
 } from "@/lib/collab/gridOps";
 import { planRemoteApply } from "@/lib/collab/remoteApply";
 import { recordOp } from "@/lib/collab/replica";
+import { replaceSpanOps } from "@/lib/collab/spanOps";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
 import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "@/lib/grid/codec";
@@ -612,12 +613,24 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     revertMove();
                     hot.render();
                 } else if (e.key === "Enter") {
+                    // The span the move rearranged, captured before the
+                    // session closes and takes the block descriptor with it.
+                    const block = movingBlock();
                     hot.batch(() => commitMove());
                     hot.render();
                     snapshot();
-                    // A move rearranges a column, which the op union cannot
-                    // describe, so the sheet is re-derived from the snapshot.
-                    resyncActiveSheet();
+                    const sid = currentSheetIdRef.current;
+                    if (block && sid) {
+                        // Expressed as ops rather than a re-derive: a re-derive
+                        // re-keys every cell from its row, which a peer holding
+                        // the old keys would not agree with.
+                        for (const col of block.cols) {
+                            const texts = hot
+                                .getDataAtCol(col)
+                                .map((v) => (typeof v === "string" ? v : null));
+                            for (const op of replaceSpanOps(sid, col, 0, texts)) recordOp(op);
+                        }
+                    }
                 } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                     const dr = e.key === "ArrowDown" ? 1 : -1;
                     const block = movingBlock()!;
