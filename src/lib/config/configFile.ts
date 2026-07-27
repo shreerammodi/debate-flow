@@ -12,6 +12,7 @@
  */
 
 import { resolveCardMirrorTextType } from "@/lib/bridge/cardmirror";
+import { resolveContacts } from "@/lib/collab/contacts";
 import { COMMANDS } from "@/lib/commands/registry";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
@@ -42,6 +43,12 @@ export interface ConfigFileShape {
     collab_enabled: boolean;
     /** Whether a session may fall back to a relay. */
     collab_relay: boolean;
+    /**
+     * Peers shared with before, as one table per EndpointId. Nested objects
+     * become TOML tables and stale keys under them are pruned, so removing a
+     * contact in the app removes it from the file.
+     */
+    contacts: Record<string, { name: string; role: string }>;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
@@ -123,6 +130,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         cardmirror_text_type: s.cardmirrorTextType,
         collab_enabled: s.collabEnabled,
         collab_relay: s.collabRelayEnabled,
+        contacts: s.contacts,
         flows_dir: s.flowsDir,
         aff_color: s.affColor,
         neg_color: s.negColor,
@@ -168,6 +176,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         collabEnabled: bool(o.collab_enabled, false),
         collabRelayEnabled: bool(o.collab_relay, true),
+        contacts: resolveContacts(o.contacts),
         theme: resolveThemeMode(o.theme),
         flowsDir: typeof o.flows_dir === "string" && o.flows_dir.trim() ? o.flows_dir.trim() : null,
         affColor: resolveColor(o.aff_color),

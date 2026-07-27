@@ -14,6 +14,7 @@
 import { deltaSince, emptyVector, isEmptyDelta, vectorOf, type Vector } from "./delta";
 import type { DroppedCell } from "./merge";
 import type { PeerConn, WireMessage } from "./peerLink";
+import { incomingDoc, outgoingDoc } from "./rfdSync";
 import { compareStamps } from "./stamp";
 import type { CollabDoc } from "./types";
 
@@ -32,6 +33,8 @@ export interface SyncDeps {
      * host, so refusing inbound writes here is sufficient enforcement.
      */
     readOnly?: boolean;
+    /** This peer's own EndpointId, which its notes travel under. */
+    endpointId: string;
     now?: () => number;
     schedule?: (fn: () => void, ms: number) => () => void;
 }
@@ -74,7 +77,7 @@ export function attachSync(deps: SyncDeps): PeerSync {
         if (stopped) return;
         const delta = deltaSince(deps.doc(), seen);
         if (isEmptyDelta(delta)) return;
-        deps.conn.send({ type: "delta", doc: delta });
+        deps.conn.send({ type: "delta", doc: outgoingDoc(delta, deps.endpointId) });
         raiseSent(delta);
     }
 
@@ -99,7 +102,7 @@ export function attachSync(deps: SyncDeps): PeerSync {
         sendState() {
             if (stopped) return;
             const doc = deps.doc();
-            deps.conn.send({ type: "state", doc });
+            deps.conn.send({ type: "state", doc: outgoingDoc(doc, deps.endpointId) });
             raiseSent(doc);
         },
 
@@ -108,14 +111,14 @@ export function attachSync(deps: SyncDeps): PeerSync {
             switch (msg.type) {
                 case "delta":
                     if (deps.readOnly) return;
-                    deps.apply(msg.doc);
+                    deps.apply(incomingDoc(msg.doc));
                     return;
                 case "state": {
                     if (deps.readOnly) return;
                     // What the sender holds is what it has seen, so the reply
                     // is everything above that.
                     const theirs = vectorOf(msg.doc);
-                    deps.apply(msg.doc);
+                    deps.apply(incomingDoc(msg.doc));
                     sendDelta(theirs);
                     return;
                 }

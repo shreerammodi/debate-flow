@@ -95,6 +95,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             doc: deps.doc,
             apply: deps.apply,
             readOnly,
+            endpointId,
             schedule: deps.schedule,
         });
         live.set(peer.endpointId, { conn, sync, peer });

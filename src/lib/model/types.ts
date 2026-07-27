@@ -7,10 +7,20 @@ export interface Debater {
     last: string;
 }
 
-/** Round result as recorded for scouting. */
+/**
+ * Round result as recorded for scouting.
+ *
+ * `rfd` is this machine owner's own notes and nothing else. A partner's
+ * reasoning arrives under their EndpointId in `peerNotes`, so there is exactly
+ * one writer per field and the two can never overwrite each other. The two
+ * files are asymmetric by design: on your disk `rfd` is yours, on theirs it is
+ * theirs.
+ */
 export interface Decision {
     vote?: "aff" | "neg";
     rfd?: string;
+    /** EndpointId to that peer's own reasoning. Additive and optional. */
+    peerNotes?: Record<string, string>;
 }
 
 /** Scouting / Info-sheet data, mirroring the Excel Info sheet. */

@@ -20,6 +20,7 @@ const sample: AppConfig = {
     cardmirrorTextType: "tag",
     collabEnabled: false,
     collabRelayEnabled: true,
+    contacts: {},
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
@@ -137,5 +138,42 @@ describe("collaboration settings", () => {
             collabEnabled: true,
             collabRelayEnabled: false,
         });
+    });
+});
+
+describe("contacts", () => {
+    const ALEX = "k51qzi5uqu5dlalex";
+    const withAlex = {
+        ...sample,
+        contacts: { [ALEX]: { name: "Alex", role: "partner" as const } },
+    };
+
+    it("round-trips a saved contact through the file shape", () => {
+        expect(toAppConfig(configFromState(withAlex)).contacts).toEqual(withAlex.contacts);
+    });
+
+    it("writes one table per peer, so the file stays hand-editable", () => {
+        expect(configFromState(withAlex).contacts).toEqual({
+            [ALEX]: { name: "Alex", role: "partner" },
+        });
+    });
+
+    it("drops a hand-written entry whose role is not one this build knows", () => {
+        // Defaulting would decide from a typo whether that peer may write.
+        expect(
+            toAppConfig({ contacts: { [ALEX]: { name: "Alex", role: "admin" } } }).contacts,
+        ).toEqual({});
+    });
+
+    it("drops a hand-written entry with no name", () => {
+        expect(toAppConfig({ contacts: { [ALEX]: { role: "partner" } } }).contacts).toEqual({});
+    });
+
+    it("reads a file with no contacts at all as none", () => {
+        expect(toAppConfig({}).contacts).toEqual({});
+    });
+
+    it("leaves no key behind when a contact is removed", () => {
+        expect(configFromState({ ...withAlex, contacts: {} }).contacts).toEqual({});
     });
 });
