@@ -39,11 +39,11 @@ export default function ContactList() {
     return (
         <SettingRow
             title="Contacts"
-            description="Peers you have shared with. Inviting one dials them by name, with no ticket."
+            description="Peers you have shared with. Inviting one adds them by name."
         >
             {entries.length === 0 ? (
                 <p className="text-muted-foreground text-[12px]" data-testid="contact-list-empty">
-                    No partners saved yet. After a session, saving one is a click on the toast.
+                    No partners saved yet. Save one after a shared flow session.
                 </p>
             ) : (
                 <ul className="m-0 flex list-none flex-col gap-1.5 p-0">

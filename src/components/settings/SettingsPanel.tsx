@@ -604,7 +604,7 @@ export default function SettingsPanel() {
                             <div className="flex flex-col" data-testid="collab-section">
                                 <SettingRow
                                     title="Shared editing"
-                                    description="Off by default. On, it opens the routes a session needs; a session is still always started by hand."
+                                    description="Enables collaboration features, off by default. Sessions are always manually started."
                                     control={
                                         <Switch
                                             checked={collabEnabled}
@@ -619,7 +619,7 @@ export default function SettingsPanel() {
                                         <SessionControls />
                                         <SettingRow
                                             title="Allow relay"
-                                            description="Off restricts a session to direct connections."
+                                            description="Off restricts a session to direct connections. On enables connections across networks."
                                             control={
                                                 <Switch
                                                     checked={collabRelayEnabled}
