@@ -27,11 +27,14 @@ export function hashText(text: string): string {
 const ROW = "\u0001";
 
 function canonical(data: (string | null)[][], meta: Record<string, CellMeta>): string {
-    const width = data.reduce((w, row) => Math.max(w, row.length), 0);
-    // A trailing empty row is what minSpareRows leaves behind, not content.
+    // Both directions pad to a width of their own choosing: the store holds a
+    // row per grid column, the projection only as many columns as the replica
+    // has a cell in. Trailing empty columns are padding in both, exactly as
+    // trailing empty rows are, so neither counts as content.
+    let width = data.reduce((w, row) => Math.max(w, row.length), 0);
+    while (width > 0 && data.every((row) => (row[width - 1] ?? "") === "")) width--;
     let height = data.length;
     while (height > 0 && data[height - 1].every((v) => (v ?? "") === "")) height--;
-
     const rows: string[] = [];
     for (let row = 0; row < height; row++) {
         const line: string[] = [];

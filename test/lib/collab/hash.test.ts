@@ -44,6 +44,28 @@ describe("sheetDigest", () => {
         expect(sheetDigest([["a"], [null]], {})).toBe(sheetDigest([["a"]], {}));
     });
 
+    // The store keeps a cell per grid column and the replica's projection only
+    // as many columns as it holds a cell in, so a sheet in perfect sync
+    // reaches this function at two widths. Reporting that as drift makes every
+    // autosave re-seed the sheet, which re-keys every cell out from under the
+    // peer holding it.
+    it("treats a trailing empty column as absent", () => {
+        expect(sheetDigest([["a", null, null]], {})).toBe(sheetDigest([["a"]], {}));
+        expect(
+            sheetDigest(
+                [
+                    [null, null],
+                    ["arg", null],
+                ],
+                {},
+            ),
+        ).toBe(sheetDigest([[null], ["arg"]], {}));
+    });
+
+    it("still notices a cell in a column the other side does not have", () => {
+        expect(sheetDigest([["a", "b"]], {})).not.toBe(sheetDigest([["a"]], {}));
+    });
+
     it("notices a changed cell, a moved cell, and a changed decoration", () => {
         const base = sheetDigest([["a", "b"]], { "0,0": { bold: true } });
         expect(sheetDigest([["a", "c"]], { "0,0": { bold: true } })).not.toBe(base);

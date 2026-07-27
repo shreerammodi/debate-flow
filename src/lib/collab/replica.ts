@@ -65,6 +65,9 @@ export function clearReplica(): void {
  * Told after every local write, so a live session can push it out. A bridge
  * rather than a direct call because the runtime owns the session and already
  * reads this module; the dependency only ever runs one way.
+ *
+ * It is also the only signal this module has that a peer is watching: it is
+ * set for exactly the life of a session, which is what `healReplica` reads.
  */
 let onLocalChange: (() => void) | null = null;
 
@@ -150,8 +153,17 @@ export function driftedSheetIds(round: FlowRound): string[] {
     return drifted;
 }
 
-/** Repairs every drifted sheet, and names the ones it touched. */
+/**
+ * Repairs every drifted sheet, and names the ones it touched.
+ *
+ * Repairs nothing while a session is live. A repair re-seeds, which re-keys
+ * every cell from its row position, and a peer still holding the old keys
+ * merges the two sets into one doubled column: the flows stop matching, and
+ * unlike the drift it would have fixed there is no way back. Solo, there is
+ * nobody to disagree with, so the repair is free.
+ */
 export function healReplica(round: FlowRound): string[] {
+    if (onLocalChange) return [];
     const drifted = driftedSheetIds(round);
     for (const id of drifted) {
         const sheet = round.sheets.find((s) => s.id === id);
