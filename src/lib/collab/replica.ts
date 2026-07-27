@@ -38,6 +38,24 @@ export function seedReplica(round: FlowRound, actor = "", seeded: CollabDoc | nu
     live = { doc: seeded ?? seedDoc(round), clock: createClock(actor), actor };
 }
 
+/**
+ * Takes on this machine's own identity for everything written from here.
+ *
+ * Solo, the actor is empty: two peers who open the same file derive byte
+ * identical replicas, which is what lets them sync with no negotiation. That
+ * only holds for cells the file already had. A cell created during a session
+ * needs an author, because a cell's identity is its column, its rank, and its
+ * creator, and two peers inserting at one position derive the same rank. With
+ * one shared identity those two cells collide on the same key and one is lost
+ * with nothing reporting it.
+ *
+ * The document carries over untouched; only later writes are affected.
+ */
+export function adoptReplicaActor(actor: string): void {
+    if (!live || live.actor === actor) return;
+    live = { doc: live.doc, clock: createClock(actor), actor };
+}
+
 export function clearReplica(): void {
     live = null;
 }

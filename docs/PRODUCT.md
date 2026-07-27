@@ -63,6 +63,12 @@ speed, density, and correctness rather than decoration or hand-holding.
   sends it somewhere: an export they choose, or a peer they invite. Shared
   editing sits behind a master switch that is off by default, and the off state
   is proven by test, not promised.
+- **A shared round is honest about the one loss it can cause.** Solo, nothing
+  is ever lost. Sharing adds exactly one case: a partner deleting a row buries
+  a write made at the same moment on the same row. Resurrecting the text would
+  leave that column offset by one below the deletion and read as a bug, so the
+  delete wins and the buried text is reported instead. It is the one loss a
+  debater cannot see, so the app never keeps quiet about it.
 
 ## Accessibility & Inclusion
 

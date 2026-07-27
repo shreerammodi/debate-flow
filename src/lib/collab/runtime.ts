@@ -10,6 +10,8 @@
  * switch is enforced in exactly one place.
  */
 
+import { toast } from "sonner";
+
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore";
@@ -18,9 +20,16 @@ import { getCurrentVersion } from "@/lib/update/adapter";
 
 import { addContact, type Contact } from "./contacts";
 import { collabSettings } from "./enabled";
+import { lossMessage } from "./lossReport";
 import { merge, type DroppedCell } from "./merge";
 import { createPeerLinkFor } from "./peerLink";
-import { getReplica, replicaRoundId, seedReplica } from "./replica";
+import {
+    adoptReplicaActor,
+    getReplica,
+    replicaActor,
+    replicaRoundId,
+    seedReplica,
+} from "./replica";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
 import { createShadow } from "./shadow";
 import type { CollabDoc } from "./types";
@@ -41,6 +50,28 @@ function publish(peers: CollabPeer[]): void {
     }));
     useCollabStore.getState().setPeers(view);
     useCollabStore.getState().setStatus(view.length > 0 ? "connected" : "connecting");
+}
+
+/**
+ * Everything that happens to a remote document on the way in: merge it, keep
+ * the replica, move the grid under the apply rules, and tell the user about
+ * anything the merge buried.
+ *
+ * The replica is correct the instant the merge lands. What reaches the grid is
+ * governed by the apply rules, which is a separate question from what the
+ * document says.
+ */
+export function applyRemoteDoc(round: FlowRound, incoming: CollabDoc): DroppedCell[] {
+    const before = getReplica();
+    if (!before) return [];
+    const result = merge(before, incoming);
+    seedReplica(round, replicaActor(), result.doc);
+    applyRemote(before, result.doc);
+    // A delete leaves no mark on the grid, so this is the only place the user
+    // learns their text is gone.
+    const loss = lossMessage(useFlowStore.getState().contacts, result.dropped, replicaActor());
+    if (loss) toast.warning(loss, { duration: 10_000 });
+    return result.dropped;
 }
 
 export function currentSession(): CollabSession | null {
@@ -75,22 +106,19 @@ export async function startForRound(
         roundId: round.id,
         appVersion: await getCurrentVersion(),
         doc: () => getReplica() as CollabDoc,
-        apply: (incoming): DroppedCell[] => {
-            const before = getReplica();
-            if (!before) return [];
-            const result = merge(before, incoming);
-            seedReplica(round, "", result.doc);
-            // The replica is correct the instant the merge lands. What reaches
-            // the grid is governed by the apply rules, which is a separate
-            // question from what the document says.
-            applyRemote(before, result.doc);
-            return result.dropped;
-        },
+        apply: (incoming) => applyRemoteDoc(round, incoming),
         dial: knownPeers,
         onPeersChanged: publish,
     });
 
-    if (!session) useCollabStore.getState().reset();
+    if (!session) {
+        useCollabStore.getState().reset();
+        return session;
+    }
+    // Every cell written from here carries this machine's own identity, so a
+    // cell it inserts can never collide with one a peer inserts at the same
+    // position.
+    adoptReplicaActor(session.endpointId);
     return session;
 }
 
