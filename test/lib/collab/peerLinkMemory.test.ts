@@ -1,0 +1,92 @@
+import { describe, expect, it } from "vitest";
+
+import type { PeerConn, PeerLinkConfig, WireMessage } from "@/lib/collab/peerLink";
+import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+
+const CONFIG: PeerLinkConfig = { discovery: "mdns", relay: true };
+
+describe("peerLinkMemory", () => {
+    it("reports the endpoint id it was created for", async () => {
+        const net = createMemoryNet();
+        const link = await net.create("alex")(CONFIG);
+        expect(await link.endpointId()).toBe("alex");
+    });
+
+    it("delivers a dial to the listening peer", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        const arrived: PeerConn[] = [];
+        await host.listen((peer) => arrived.push(peer));
+        const conn = await guest.dial("alex");
+        expect(arrived).toHaveLength(1);
+        expect(arrived[0].id).toBe("sam");
+        expect(conn.id).toBe("alex");
+    });
+
+    it("carries a message both ways", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        const heard: WireMessage[] = [];
+        let hostSide: PeerConn | null = null;
+        await host.listen((peer) => {
+            hostSide = peer;
+            peer.onMessage((m) => heard.push(m));
+        });
+        const guestSide = await guest.dial("alex");
+        const replies: WireMessage[] = [];
+        guestSide.onMessage((m) => replies.push(m));
+
+        guestSide.send({ type: "bye" });
+        hostSide!.send({ type: "helloAck", ok: true });
+        expect(heard).toEqual([{ type: "bye" }]);
+        expect(replies).toEqual([{ type: "helloAck", ok: true }]);
+    });
+
+    it("tells both sides when one closes", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        let hostClosed = false;
+        let guestClosed = false;
+        await host.listen((peer) => peer.onClose(() => (hostClosed = true)));
+        const guestSide = await guest.dial("alex");
+        guestSide.onClose(() => (guestClosed = true));
+        guestSide.close();
+        expect(hostClosed).toBe(true);
+        expect(guestClosed).toBe(true);
+    });
+
+    it("refuses a dial to an endpoint that is not listening", async () => {
+        const net = createMemoryNet();
+        const guest = await net.create("sam")(CONFIG);
+        await expect(guest.dial("nobody")).rejects.toThrow(/nobody/);
+    });
+
+    it("reports a direct connection when neither side allows a relay", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")({ discovery: "mdns", relay: false });
+        const guest = await net.create("sam")({ discovery: "mdns", relay: false });
+        await host.listen(() => {});
+        expect((await guest.dial("alex")).connectionType()).toBe("direct");
+    });
+
+    it("records every call, which is how the off state is proven", async () => {
+        const net = createMemoryNet();
+        const link = await net.create("alex")(CONFIG);
+        await link.listen(() => {});
+        await link.stop();
+        expect(net.calls.map((c) => c.op)).toEqual(["create", "listen", "stop"]);
+        expect(net.calls[0].config).toEqual(CONFIG);
+    });
+
+    it("names the endpoint a dial reached out to", async () => {
+        const net = createMemoryNet();
+        const guest = await net.create("sam")(CONFIG);
+        await expect(guest.dial("alex")).rejects.toThrow();
+        expect(net.calls.filter((c) => c.op === "dial")).toEqual([
+            { op: "dial", endpointId: "alex" },
+        ]);
+    });
+});
