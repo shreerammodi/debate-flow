@@ -352,3 +352,82 @@ mod preset_guard {
         assert!(source.contains("presets::Minimal"));
     }
 }
+
+/// Real endpoints over real QUIC on loopback.
+///
+/// Everything above the socket is proven against an in-memory transport, so
+/// what is left to prove is that this configuration actually carries bytes:
+/// the Minimal preset with relays disabled and no discovery at all, which is
+/// exactly the shape an isolated room gets. Addresses are passed directly, so
+/// nothing is published anywhere for these to find each other.
+#[cfg(test)]
+mod loopback {
+    use super::*;
+    use tokio::io::AsyncBufReadExt;
+
+    async fn bound() -> Endpoint {
+        Endpoint::builder(presets::Minimal)
+            .alpns(vec![ALPN.to_vec()])
+            .relay_mode(RelayMode::Disabled)
+            .bind()
+            .await
+            .expect("bind")
+    }
+
+    #[tokio::test]
+    async fn two_endpoints_exchange_a_wire_message() {
+        let host = bound().await;
+        let guest = bound().await;
+        let host_addr = host.addr();
+
+        // Both halves run in one scope. Dropping either the endpoint or the
+        // connection closes it, so a spawned task that returns early tears the
+        // link down before the other side has read its reply.
+        let listener = async {
+            let incoming = host.accept().await.expect("incoming");
+            let conn = incoming.await.expect("accept");
+            let (mut send, recv) = conn.accept_bi().await.expect("accept_bi");
+            let mut lines = BufReader::new(recv).lines();
+            let hello = lines.next_line().await.expect("read").expect("a line");
+            send.write_all(b"{\"type\":\"helloAck\",\"ok\":true}\n")
+                .await
+                .expect("write");
+            send.finish().expect("finish");
+            // Held open until the dialler hangs up, which it does once it has
+            // the reply.
+            conn.closed().await;
+            hello
+        };
+
+        let dialler = async {
+            let conn = guest.connect(host_addr, ALPN).await.expect("connect");
+            let (mut send, recv) = conn.open_bi().await.expect("open_bi");
+            send.write_all(b"{\"type\":\"hello\",\"protocol\":1}\n")
+                .await
+                .expect("write");
+            let mut lines = BufReader::new(recv).lines();
+            let ack = lines.next_line().await.expect("read").expect("a line");
+            conn.close(0u32.into(), b"done");
+            ack
+        };
+
+        let (hello, ack) = tokio::join!(listener, dialler);
+        assert_eq!(hello, "{\"type\":\"hello\",\"protocol\":1}");
+        assert_eq!(ack, "{\"type\":\"helloAck\",\"ok\":true}");
+    }
+
+    #[tokio::test]
+    async fn a_connection_on_another_protocol_is_refused() {
+        let host = bound().await;
+        let guest = bound().await;
+        let addr = host.addr();
+        let listener = host.clone();
+        tokio::spawn(async move {
+            if let Some(incoming) = listener.accept().await {
+                let _ = incoming.await;
+            }
+        });
+        assert!(guest.connect(addr, b"someone/else/1").await.is_err());
+        drop(host);
+    }
+}

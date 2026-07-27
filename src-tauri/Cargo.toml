@@ -61,6 +61,10 @@ tauri-plugin-process = "2"
 # hands its argv to the running one so two copies never autosave over one file.
 tauri-plugin-single-instance = "2"
 
+[dev-dependencies]
+# The loopback transport tests drive real endpoints, which needs a test runtime.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync"] }
+
 [features]
 # This feature is used for production builds where the developer tools are
 # disabled and Cmd+R reload is neutralized. `tauri dev` runs without it.
