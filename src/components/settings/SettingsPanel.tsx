@@ -23,7 +23,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tip } from "@/components/ui/tooltip";
 import type { CardMirrorTextType } from "@/lib/bridge/cardmirror";
-import { CARDMIRROR_COMMANDS, COMMANDS, type CommandId } from "@/lib/commands/registry";
+import {
+    CARDMIRROR_COMMANDS,
+    COLLAB_COMMANDS,
+    COMMANDS,
+    type CommandId,
+} from "@/lib/commands/registry";
 import { FONTS, DEFAULT_FONT_ID, type FontId } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { eventToChord } from "@/lib/keymap/resolve";
@@ -176,11 +181,15 @@ export default function SettingsPanel() {
     // isDesktop() gates the bridge itself; the setting gates the user's choice.
     const cardmirrorOn = cardmirrorEnabled && isDesktop();
 
-    // Rebinding a command the integration owns is pointless while it is off.
+    // Rebinding a command a switched-off feature owns is pointless. The
+    // collaboration commands are palette-only by design, so they never appear
+    // here at all.
     const visibleCommands = useMemo(() => {
-        const list = cardmirrorOn
-            ? COMMAND_LIST
-            : COMMAND_LIST.filter((c) => !CARDMIRROR_COMMANDS.includes(c.id));
+        const list = COMMAND_LIST.filter(
+            (c) =>
+                !COLLAB_COMMANDS.includes(c.id) &&
+                (cardmirrorOn || !CARDMIRROR_COMMANDS.includes(c.id)),
+        );
         const q = query.trim().toLowerCase();
         if (!q) return list;
         return list.filter((c) => c.label.toLowerCase().includes(q));

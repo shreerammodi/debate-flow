@@ -7,6 +7,8 @@
  * commands unconditionally.
  */
 
+import { toast } from "sonner";
+
 import { runJumpToSource, runSendToDoc } from "@/lib/bridge/commands";
 import { recordOp } from "@/lib/collab/replica";
 import { insertCell as insertCellChanges } from "@/lib/grid/cellShift";
@@ -24,6 +26,7 @@ import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
+import { runEnd, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
 import {
     closeOpenFlow,
     openFlowFromPicker,
@@ -31,6 +34,7 @@ import {
     saveOpenFlow,
     saveOpenFlowAs,
 } from "./fileCommands";
+import { navigateToFlow } from "./flowNav";
 import type { CommandId } from "./registry";
 
 /** Jumps to the Nth (1-indexed, order-sorted) flow sheet, no-op if out of range. */
@@ -143,6 +147,24 @@ function startMove(): void {
     if (tl.row == null || tl.col == null || br.row == null || br.col == null) return;
     beginMove(hot, { startRow: tl.row, endRow: br.row, startCol: tl.col, endCol: br.col });
     hot.render();
+}
+
+/**
+ * How the collaboration commands reach the user: corner messages only, and a
+ * ticket that arrives through the clipboard rather than a dialog. Nothing here
+ * blocks the grid or takes focus.
+ */
+function collabDeps(): CollabCommandDeps {
+    return {
+        notify: (message) => toast.success(message),
+        fail: (message) => toast.error(message),
+        async askForTicket() {
+            const text = await navigator.clipboard.readText().catch(() => "");
+            return text.trim() ? text : null;
+        },
+        copy: (text) => navigator.clipboard.writeText(text),
+        openFlow: (path) => navigateToFlow(path),
+    };
 }
 
 export function executeCommand(id: CommandId): void {
@@ -314,6 +336,15 @@ export function executeCommand(id: CommandId): void {
             return;
         case "theme.system":
             state.setTheme("system");
+            return;
+        case "collab.share":
+            void runShare(collabDeps());
+            return;
+        case "collab.join":
+            void runJoin(collabDeps());
+            return;
+        case "collab.end":
+            void runEnd(collabDeps());
             return;
     }
 }

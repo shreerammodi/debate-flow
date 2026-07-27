@@ -57,7 +57,10 @@ export type CommandId =
     | "palette.open"
     | "theme.light"
     | "theme.dark"
-    | "theme.system";
+    | "theme.system"
+    | "collab.share"
+    | "collab.join"
+    | "collab.end";
 
 export interface CommandDef {
     id: CommandId;
@@ -124,7 +127,13 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.light": { id: "theme.light", label: "Theme: Light" },
     "theme.dark": { id: "theme.dark", label: "Theme: Dark" },
     "theme.system": { id: "theme.system", label: "Theme: System" },
+    "collab.share": { id: "collab.share", label: "Share this round" },
+    "collab.join": { id: "collab.join", label: "Join a shared round" },
+    "collab.end": { id: "collab.end", label: "End shared session" },
 };
 
 /** The commands the CardMirror integration owns; dead when it is switched off. */
 export const CARDMIRROR_COMMANDS: readonly CommandId[] = ["cell.jumpToSource", "cell.sendToDoc"];
+
+/** The commands shared editing owns; dead while the master switch is off. */
+export const COLLAB_COMMANDS: readonly CommandId[] = ["collab.share", "collab.join", "collab.end"];
