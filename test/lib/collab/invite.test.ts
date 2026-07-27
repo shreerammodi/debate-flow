@@ -52,7 +52,7 @@ function hello(from: string, roundId: string, label?: string): WireMessage {
 
 describe("inviteFrom", () => {
     it("reads a contact's dial about another round as an invitation", () => {
-        expect(inviteFrom(hello(ALEX, "r2", "Round 3"), contacts, "r1")).toEqual({
+        expect(inviteFrom(hello(ALEX, "r2", "Round 3"), contacts, "r1", ALEX)).toEqual({
             endpointId: ALEX,
             roundId: "r2",
             label: "Round 3",
@@ -60,24 +60,37 @@ describe("inviteFrom", () => {
     });
 
     it("takes an invitation with no round open at all", () => {
-        expect(inviteFrom(hello(ALEX, "r2"), contacts, null)?.label).toBe("");
+        expect(inviteFrom(hello(ALEX, "r2"), contacts, null, ALEX)?.label).toBe("");
     });
 
     it("is silent for a peer nobody saved", () => {
-        expect(inviteFrom(hello(STRANGER, "r2"), contacts, "r1")).toBeNull();
+        expect(inviteFrom(hello(STRANGER, "r2"), contacts, "r1", STRANGER)).toBeNull();
+    });
+
+    // An EndpointId is public: it ships inside every ticket its owner hands
+    // out. Naming a saved contact must not borrow their standing.
+    it("is silent for a stranger dialling under a saved contact's id", () => {
+        expect(inviteFrom(hello(ALEX, "r2", "Round 3"), contacts, "r1", STRANGER)).toBeNull();
+    });
+
+    // A key that is on nobody's contact list, including through the prototype.
+    it("is silent for a dialler naming a property every object has", () => {
+        for (const id of ["constructor", "__proto__", "toString"]) {
+            expect(inviteFrom(hello(id, "r2", "join me"), contacts, "r1", id)).toBeNull();
+        }
     });
 
     it("is silent about the round this side is already holding", () => {
         // That dial is a peer joining, which admission answers, not an offer.
-        expect(inviteFrom(hello(ALEX, "r1"), contacts, "r1")).toBeNull();
+        expect(inviteFrom(hello(ALEX, "r1"), contacts, "r1", ALEX)).toBeNull();
     });
 
     it("is silent across a protocol skew, which has its own refusal", () => {
         const skewed = { ...hello(ALEX, "r2"), protocol: PROTOCOL_MAJOR + 1 };
-        expect(inviteFrom(skewed, contacts, "r1")).toBeNull();
+        expect(inviteFrom(skewed, contacts, "r1", ALEX)).toBeNull();
     });
 
     it("is silent for anything that is not a hello", () => {
-        expect(inviteFrom({ type: "bye" }, contacts, "r1")).toBeNull();
+        expect(inviteFrom({ type: "bye" }, contacts, "r1", ALEX)).toBeNull();
     });
 });

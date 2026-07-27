@@ -1,12 +1,13 @@
 /**
  * Who may join, and what they are allowed to do.
  *
- * Two rules carry the weight. A single-use secret admits the first peer that
+ * Three rules carry the weight. A single-use secret admits the first peer that
  * presents it, and that peer's EndpointId admits it forever after, which is
- * what turns every later reconnect into no interaction at all. And an unknown
- * peer with no valid secret is refused with no UI whatsoever: otherwise
- * anyone who learns your EndpointId can put notifications on your screen
- * mid-round.
+ * what turns every later reconnect into no interaction at all. An unknown peer
+ * with no valid secret is refused with no UI whatsoever: otherwise anyone who
+ * learns your EndpointId can put notifications on your screen mid-round. And
+ * every one of those decisions is made about the endpoint the transport
+ * authenticated, never the one the hello claims to come from.
  */
 
 import { PROTOCOL_MAJOR, type WireMessage } from "./peerLink";
@@ -16,10 +17,15 @@ export interface HostPolicy {
     /** The only round this host will talk about. */
     roundId: string;
     appVersion: string;
-    /** The unspent ticket secret, or null once it has been used. */
-    pendingSecret: string | null;
+    /**
+     * The unspent ticket, and what it grants. The role is the host's to give:
+     * a coach's ticket admits a coach however the guest introduces itself.
+     */
+    pending: { secret: string; role: Role } | null;
     /** Peers already admitted once, which need no secret again. */
     knownPeers: string[];
+    /** What an already-known peer was admitted as. Absent means partner. */
+    roles: Record<string, Role>;
 }
 
 export type Admission =
@@ -68,7 +74,15 @@ function secretMatches(a: string, b: string): boolean {
 
 const SILENT = { ok: false as const, reason: "refused", silent: true };
 
-export function admit(msg: WireMessage, policy: HostPolicy): Admission {
+/**
+ * `remoteId` is the endpoint the transport authenticated: iroh proved the far
+ * side holds that key before a byte of this message existed. `msg.endpointId`
+ * is a string the far side typed. They must agree, or the peer is claiming to
+ * be somebody else and every later decision - who is admitted, whose name the
+ * chip shows, whose reasoning a note is filed under - would be about the
+ * wrong person.
+ */
+export function admit(msg: WireMessage, policy: HostPolicy, remoteId: string): Admission {
     if (msg.type !== "hello") return SILENT;
     if (msg.role !== "partner" && msg.role !== "coach") return SILENT;
 
@@ -82,12 +96,16 @@ export function admit(msg: WireMessage, policy: HostPolicy): Admission {
         };
     }
     if (msg.roundId !== policy.roundId) return SILENT;
+    if (msg.endpointId !== remoteId) return SILENT;
 
-    if (policy.knownPeers.includes(msg.endpointId)) {
-        return { ok: true, role: msg.role, spendSecret: false };
+    if (policy.knownPeers.includes(remoteId)) {
+        // A peer this round already knew but never graded is a partner: they
+        // were admitted to it before, and the round remembers only that.
+        return { ok: true, role: policy.roles[remoteId] ?? "partner", spendSecret: false };
     }
-    if (policy.pendingSecret && msg.ticket && secretMatches(msg.ticket, policy.pendingSecret)) {
-        return { ok: true, role: msg.role, spendSecret: true };
+    if (policy.pending && msg.ticket && secretMatches(msg.ticket, policy.pending.secret)) {
+        // The role the host granted, never the one the guest asked for.
+        return { ok: true, role: policy.pending.role, spendSecret: true };
     }
     return SILENT;
 }

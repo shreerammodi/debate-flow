@@ -19,7 +19,7 @@ import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore"
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
-import { addContact, contactName, type Contact } from "./contacts";
+import { addContact, contactName, contactOf, type Contact } from "./contacts";
 import { projectDoc } from "./doc";
 import { collabSettings } from "./enabled";
 import { announceInvite } from "./inbox";
@@ -72,7 +72,7 @@ const offered = new Map<string, string>();
 function offerToSave(peers: CollabPeer[]): void {
     const contacts = useFlowStore.getState().contacts;
     for (const peer of peers) {
-        if (contacts[peer.endpointId]) continue;
+        if (contactOf(contacts, peer.endpointId)) continue;
         const name = contactName(contacts, peer.endpointId, peer.name);
         if (offered.get(peer.endpointId) === name) continue;
         offered.set(peer.endpointId, name);
@@ -218,8 +218,16 @@ export async function startForRound(
 /**
  * Re-dials the peers a round remembers, which is what makes a reconnect cost
  * no ticket and no interaction. A round nobody has shared stays offline.
+ *
+ * Called for every flow that opens, including the ones nobody shares, because
+ * this is also where a session for the round being left is ended. A session
+ * outliving its round is not a stale chip: the replica is a singleton and has
+ * already been re-pointed at the new flow, so the next keystroke in a private
+ * round would be pushed to the last round's partner, and their edits would be
+ * merged onto a grid they were never invited to.
  */
 export async function resumeSession(round: FlowRound): Promise<CollabSession | null> {
+    if (session && session.roundId !== round.id) await endSession();
     const peers = knownRoundPeers(round.id);
     if (peers.length === 0) return null;
     return startForRound(round, peers);

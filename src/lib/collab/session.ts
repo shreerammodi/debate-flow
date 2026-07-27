@@ -116,10 +116,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     const policy: HostPolicy = {
         roundId: deps.roundId,
         appVersion: deps.appVersion,
-        pendingSecret: null,
+        pending: null,
         knownPeers: [...(deps.dial ?? [])],
+        roles: {},
     };
     const live = new Map<string, Live>();
+    /** Peers this side reached out to, and so is the one to reach out again. */
+    const dialled = new Set<string>();
     /** Cells peers have an editor open on. Advisory, and always expiring. */
     let locks: Lock[] = [];
     let stopped = false;
@@ -172,7 +175,19 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         const sync = attachSync({
             conn,
             doc: deps.doc,
-            apply: deps.apply,
+            apply: (incoming) => {
+                const dropped = deps.apply(incoming);
+                // The star has the host for a hub, and a hub that does not
+                // pass a change on is not one: two partners and a coach would
+                // each see the host's typing at once and each other's only
+                // when the repair tick came round, seconds later. A guest
+                // holds one peer, the host, so this is the host's job alone
+                // and stops after one hop.
+                for (const [id, other] of live) {
+                    if (id !== peer.endpointId) other.sync.notifyLocalChange();
+                }
+                return dropped;
+            },
             readOnly,
             endpointId,
             schedule: deps.schedule,
@@ -188,6 +203,15 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             locks = releasePeer(locks, peer.endpointId);
             publishLocks();
             announce();
+            // A link that blips mid-round is the ordinary case in a gym full
+            // of laptops, and the dial that opened this one only retried while
+            // the session was coming up. Without re-arming here, the first
+            // drop is the last thing that ever happens to this peer.
+            //
+            // Only the side that dialled redials: the host cannot reach a
+            // guest that has not spoken, and both sides trying would race two
+            // connections into one slot.
+            if (!stopped && dialled.has(peer.endpointId)) redial(peer.endpointId);
         });
         announce();
         return sync;
@@ -205,13 +229,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (greeted) return;
             greeted = true;
 
-            const verdict = admit(msg, policy);
+            // The connection's own id, not the one the hello claims: iroh
+            // proved the far side holds that key, and everything downstream is
+            // filed under it.
+            const remoteId = conn.id;
+            const verdict = admit(msg, policy, remoteId);
             if (!verdict.ok) {
                 // A contact dialling about a round this side is not holding is
                 // offering it, not failing to join one. The notice is all that
                 // crosses; joining is the receiver's own move.
                 const notice = deps.contacts
-                    ? inviteFrom(msg, deps.contacts(), policy.roundId)
+                    ? inviteFrom(msg, deps.contacts(), policy.roundId, remoteId)
                     : null;
                 if (notice && deps.onInvite) {
                     deps.onInvite(notice);
@@ -223,15 +251,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 return;
             }
             if (msg.type !== "hello") return;
-            if (verdict.spendSecret) policy.pendingSecret = null;
-            if (!policy.knownPeers.includes(msg.endpointId)) {
-                policy.knownPeers.push(msg.endpointId);
-            }
+            if (verdict.spendSecret) policy.pending = null;
+            if (!policy.knownPeers.includes(remoteId)) policy.knownPeers.push(remoteId);
+            policy.roles[remoteId] = verdict.role;
             conn.send({ type: "helloAck", ok: true, name: deps.displayName });
             const sync = track(
                 conn,
                 {
-                    endpointId: msg.endpointId,
+                    endpointId: remoteId,
                     role: verdict.role,
                     connectionType: conn.connectionType(),
                     name: typeof msg.name === "string" ? msg.name : undefined,
@@ -249,6 +276,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
     async function dialPeer(target: string, ticket?: string): Promise<void> {
         if (stopped) return;
+        dialled.add(target);
         const conn = await link.dial(target, ticket);
         const secret = ticket ? (parseTicket(ticket)?.secret ?? undefined) : undefined;
 
@@ -295,6 +323,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         });
     }
 
+    /**
+     * Keeps trying a peer until it answers.
+     *
+     * On the session's own scheduler, not the injectable one: a session that
+     * only retried when a test handed it a clock would never reconnect on a
+     * real machine, which is the only place a link actually drops.
+     */
+    function redial(target: string): void {
+        retryForever({ dial: () => dialPeer(target), schedule });
+    }
+
     for (const target of deps.dial ?? []) {
         try {
             await dialPeer(target, deps.ticket);
@@ -303,12 +342,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // reason to fail opening the round. Retry runs on its own, except
             // against a peer who answered: they heard this round offered and
             // are not holding it, so dialling again would only repeat itself.
-            if (!stopped && deps.schedule && !isInvited(err)) {
-                retryForever({
-                    dial: () => dialPeer(target),
-                    schedule: deps.schedule,
-                });
-            }
+            if (!stopped && !isInvited(err)) redial(target);
         }
     }
 
@@ -327,7 +361,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 role,
                 relay: settings.relay,
             });
-            policy.pendingSecret = ticket.secret;
+            // The role rides with the secret. What the ticket grants is the
+            // host's to decide, so a coach's ticket cannot be spent as a
+            // partner by a guest that simply says it is one.
+            policy.pending = { secret: ticket.secret, role };
             return ticket;
         },
 

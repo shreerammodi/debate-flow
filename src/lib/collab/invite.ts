@@ -34,21 +34,24 @@ export interface InviteNotice {
 /**
  * The invite in a hello this side cannot admit, or null when there is none.
  *
- * Membership in the contact table is the whole test. An unknown dialler is
- * refused in silence, which is what keeps an EndpointId from being a way to
- * put a notification on a debater's screen mid-speech.
+ * Membership in the contact table is the whole test, and it is applied to the
+ * endpoint the transport authenticated rather than the one the hello names.
+ * An unknown dialler is refused in silence, which is what keeps an EndpointId
+ * from being a way to put a notification on a debater's screen mid-speech.
  */
 export function inviteFrom(
     msg: WireMessage,
     contacts: Contacts,
     ownRoundId: string | null,
+    remoteId: string,
 ): InviteNotice | null {
     if (msg.type !== "hello") return null;
     if (msg.protocol !== PROTOCOL_MAJOR) return null;
     if (msg.roundId === ownRoundId) return null;
-    if (!isKnown(contacts, msg.endpointId)) return null;
+    if (msg.endpointId !== remoteId) return null;
+    if (!isKnown(contacts, remoteId)) return null;
     return {
-        endpointId: msg.endpointId,
+        endpointId: remoteId,
         roundId: msg.roundId,
         label: typeof msg.label === "string" ? msg.label : "",
     };

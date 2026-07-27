@@ -40,7 +40,16 @@ import type { InviteNotice } from "@/lib/collab/invite";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import { peerNotePath } from "@/lib/collab/rfdSync";
-import { endSession, inviteContact, startForRound, syncInviteWatch } from "@/lib/collab/runtime";
+import { rememberRoundPeers } from "@/lib/collab/roundPeers";
+import {
+    currentSession,
+    endSession,
+    inviteContact,
+    notifyLocalChange,
+    resumeSession,
+    startForRound,
+    syncInviteWatch,
+} from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
@@ -353,5 +362,39 @@ describe("sharing a round with a saved contact", () => {
         for (let i = 0; i < 20; i++) await Promise.resolve();
 
         expect(heard).toHaveLength(1);
+    });
+});
+
+describe("opening another flow while a session is live", () => {
+    // The replica is a singleton. A session left running for the round the
+    // debater just left would be handed the new round's keystrokes, and would
+    // merge the old partner's edits onto a grid they were never invited to.
+    it("ends the session, even when the new round has nobody to dial", async () => {
+        const shared = await startForRound(round);
+        expect(shared).not.toBeNull();
+
+        const priv = makeFlowRound({});
+        expect(await resumeSession(priv)).toBeNull();
+
+        expect(currentSession()).toBeNull();
+        expect(useCollabStore.getState().status).toBe("off");
+        expect(useCollabStore.getState().peers).toEqual([]);
+    });
+
+    it("keeps the session when the same round is opened again", async () => {
+        const shared = await startForRound(round);
+        rememberRoundPeers(round.id, ["sam"]);
+        expect(await resumeSession(round)).toBe(shared);
+        expect(currentSession()).toBe(shared);
+    });
+
+    it("stops pushing local edits into the round that was left", async () => {
+        await startForRound(round);
+        clearReplica();
+        await resumeSession(makeFlowRound({}));
+        // The bridge the replica pushes through is let go with the session, so
+        // a write in the new round reaches nothing at all.
+        expect(() => notifyLocalChange()).not.toThrow();
+        expect(currentSession()).toBeNull();
     });
 });

@@ -48,7 +48,7 @@ export async function startInviteListener(
             if (greeted) return;
             greeted = true;
             // No round is held here, so every hello is about someone else's.
-            const notice = inviteFrom(msg, deps.contacts(), null);
+            const notice = inviteFrom(msg, deps.contacts(), null, conn.id);
             if (notice) {
                 deps.onInvite(notice);
                 conn.send({ type: "helloAck", ok: false, reason: INVITED });

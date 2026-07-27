@@ -59,6 +59,13 @@ function blankCell(col: number, rank: string, actor: string, stamp: Stamp): Coll
  * of its live neighbours, so a delete followed by an insert at the same place
  * can compute a rank that is already spent. Writing that key would overwrite
  * the tombstone, and the deleted cell would come back on the next merge.
+ *
+ * The two neighbours can also hold the same rank: two peers inserting at one
+ * position derive it identically, and the merge keeps both cells with their
+ * authors breaking the tie. No rank sorts between those two, so an insert
+ * aimed at the pair takes the room above them instead of asking for a gap
+ * that cannot exist. One row lower than asked for, on a pair that is already
+ * one row apart, and the alternative is throwing mid-keystroke.
  */
 function freshRank(
     sheet: CollabSheet,
@@ -72,13 +79,20 @@ function freshRank(
     for (const cell of Object.values(sheet.cells)) if (cell.col === col) taken.push(cell.rank);
     for (const cell of Object.values(pending)) if (cell.col === col) taken.push(cell.rank);
 
-    let rank = rankBetween(before, after);
+    /** The lowest rank the column holds above `floor`, or null for open sky. */
+    function nextAbove(floor: string): string | null {
+        let best: string | null = null;
+        for (const r of taken) if (r > floor && (best === null || r < best)) best = r;
+        return best;
+    }
+
+    const ceiling =
+        before !== null && after !== null && before >= after ? nextAbove(before) : after;
+    let rank = rankBetween(before, ceiling);
     while (sheet.cells[cellKey(col, rank, actor)] || pending[cellKey(col, rank, actor)]) {
         // Step above the spent rank, staying below whatever occupies the next
         // position, so the new cell keeps the row the caller asked for.
-        let upper = after;
-        for (const r of taken) if (r > rank && (upper === null || r < upper)) upper = r;
-        rank = rankBetween(rank, upper);
+        rank = rankBetween(rank, nextAbove(rank));
     }
     return rank;
 }

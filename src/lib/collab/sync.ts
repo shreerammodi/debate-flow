@@ -7,8 +7,16 @@
  *
  * The periodic vector is repair and never the primary path. It states the
  * highest stamp seen per actor; the far side replies with everything above
- * that, which is exact, needs no hashing, and recovers whatever a dropped link
- * lost.
+ * that, which is exact and needs no hashing.
+ *
+ * That is a high-water mark per actor, so it can only describe a tail, never a
+ * hole: a peer that missed one write and then received a later one from the
+ * same author reports the later stamp, and the reply skips what was missed.
+ * The transport is what makes that sound. A stream either delivers in order or
+ * fails, and a failure closes the connection, which drops the peer and rebuilds
+ * this sync from an empty vector against a full state. Loss without a
+ * reconnect is the one thing below this line that would not heal, and QUIC
+ * does not do it.
  */
 
 import { deltaSince, emptyVector, isEmptyDelta, vectorOf, type Vector } from "./delta";
@@ -111,6 +119,14 @@ export function attachSync(deps: SyncDeps): PeerSync {
             switch (msg.type) {
                 case "delta":
                     if (deps.readOnly) return;
+                    // `sent` is deliberately not raised from what arrives. A
+                    // delta carries whatever its sender holds, this peer's own
+                    // writes among it, and `sent` is a high-water mark per
+                    // author: crediting an echo of one of our cells would
+                    // suppress every earlier cell of ours the sender never
+                    // received, and the vector cannot describe that hole
+                    // either. Handing a peer a write of their own back costs a
+                    // message and settles; the alternative loses it.
                     deps.apply(incomingDoc(msg.doc, deps.endpointId));
                     return;
                 case "state": {

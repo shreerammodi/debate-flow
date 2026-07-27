@@ -16,10 +16,11 @@ vi.mock("sonner", () => ({
             message: string,
             opts?: { id?: string; action?: { label: string; onClick: () => void } },
         ) => {
-            const corner = { message, action: opts?.action };
-            const at = opts?.id ? corners.findIndex((c) => c.id === opts.id) : -1;
-            if (at >= 0) corners[at] = { ...corner, id: opts.id };
-            else corners.push({ ...corner, id: opts?.id });
+            const id = opts?.id;
+            const corner = { message, id, action: opts?.action };
+            const at = id ? corners.findIndex((c) => c.id === id) : -1;
+            if (at >= 0) corners[at] = corner;
+            else corners.push(corner);
         },
         {
             warning: () => {},

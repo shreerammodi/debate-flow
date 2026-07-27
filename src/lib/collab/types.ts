@@ -89,9 +89,18 @@ export function flattenLeaves(value: unknown, prefix: string, out: Record<string
     out[prefix] = value as Json;
 }
 
-/** Inverse of flattenLeaves for one path, creating the objects along the way. */
+/**
+ * Inverse of flattenLeaves for one path, creating the objects along the way.
+ *
+ * A register path is whatever a peer put on the wire, and three segments reach
+ * the prototype chain rather than the round: walking one would assign through
+ * `Object.prototype` for the whole process, and the sidecar would carry it
+ * back in on every later open. A path holding one is not a path into this
+ * document, so nothing is written.
+ */
 export function setPath(target: Record<string, unknown>, path: string, value: Json): void {
     const parts = path.split(".");
+    if (parts.some((p) => p === "__proto__" || p === "constructor" || p === "prototype")) return;
     let node = target;
     for (let i = 0; i < parts.length - 1; i++) {
         const key = parts[i];

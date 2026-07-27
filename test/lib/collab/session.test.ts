@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { seedDoc } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
+import type { PeerConn, PeerLinkFactory } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { startCollabSession, type CollabPeer } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
@@ -118,5 +119,101 @@ describe("startCollabSession", () => {
         useFlowStore.setState({ collabRelayEnabled: false });
         const session = await open("alex");
         expect(session!.share("partner").relay).toBe(false);
+    });
+});
+
+describe("a link that drops mid-round", () => {
+    /** Time the test owns, so a backoff is a step rather than a wait. */
+    function manualClock() {
+        let pending: { fn: () => void; at: number }[] = [];
+        let now = 0;
+        return {
+            schedule(fn: () => void, ms: number) {
+                const entry = { fn, at: now + ms };
+                pending.push(entry);
+                return () => {
+                    pending = pending.filter((p) => p !== entry);
+                };
+            },
+            advance(ms: number) {
+                now += ms;
+                const due = pending.filter((p) => p.at <= now);
+                pending = pending.filter((p) => p.at > now);
+                for (const p of due) p.fn();
+            },
+        };
+    }
+
+    /** A link that hands back every connection it dials, so a test can cut one. */
+    function watched(endpointId: string, dialled: PeerConn[]): PeerLinkFactory {
+        return async (config) => {
+            const link = await net.create(endpointId)(config);
+            return {
+                ...link,
+                async dial(target: string, ticket?: string) {
+                    const conn = await link.dial(target, ticket);
+                    dialled.push(conn);
+                    return conn;
+                },
+            };
+        };
+    }
+
+    // The dial that opened a link only retried while the session was coming
+    // up, and only when a test handed it a scheduler. A wifi blip mid-round
+    // left the peer gone for the rest of the round, and the debater's only way
+    // back was to close the flow and open it again.
+    it("dials the peer again, without anyone being asked", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open("alex"))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: ["alex"],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(guest.peers()).toHaveLength(1);
+
+        conns[0].close();
+        await settle();
+        expect(guest.peers()).toHaveLength(0);
+
+        // The backoff comes round and the guest reaches the host again, with
+        // no ticket and nothing on screen to answer.
+        for (let i = 0; i < 6 && guest.peers().length === 0; i++) {
+            clock.advance(60_000);
+            await settle();
+        }
+        expect(guest.peers()).toHaveLength(1);
+        expect(conns.length).toBeGreaterThan(1);
+
+        await host.stop();
+        await guest.stop();
+    });
+
+    it("stops trying once the session is over", async () => {
+        const clock = manualClock();
+        const conns: PeerConn[] = [];
+        const host = (await open("alex"))!;
+        const guest = (await open("sam", {
+            createLink: watched("sam", conns),
+            ticket: encodeTicket(host.share("partner")),
+            dial: ["alex"],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+
+        await guest.stop();
+        const dialsAtStop = conns.length;
+        for (let i = 0; i < 4; i++) {
+            clock.advance(60_000);
+            await settle();
+        }
+        expect(conns).toHaveLength(dialsAtStop);
+        expect(guest.peers()).toHaveLength(0);
+
+        await host.stop();
     });
 });

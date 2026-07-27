@@ -69,15 +69,32 @@ export function removeContact(contacts: Contacts, endpointId: string): Contacts 
 }
 
 /**
+ * The contact saved under this id, if there is one.
+ *
+ * An EndpointId arrives off the wire, and `in` and a plain index both walk the
+ * prototype chain: `constructor` and `__proto__` are on every object, so a
+ * stranger naming one would read as a saved partner and earn everything a
+ * saved partner gets, starting with a message on the debater's screen.
+ */
+export function contactOf(contacts: Contacts, endpointId: string): Contact | undefined {
+    return Object.prototype.hasOwnProperty.call(contacts, endpointId)
+        ? contacts[endpointId]
+        : undefined;
+}
+
+/**
  * What to call this peer on screen: the name the receiver saved, then the one
  * the peer broadcast, then the short id. A saved name wins because it is the
  * receiver's own word for this peer, and a peer cannot rename themselves out
  * from under it mid-round.
  */
 export function contactName(contacts: Contacts, endpointId: string, broadcast?: string): string {
-    return contacts[endpointId]?.name ?? (broadcast?.trim() || endpointId.slice(0, SHORT_ID));
+    return (
+        contactOf(contacts, endpointId)?.name ??
+        (broadcast?.trim() || endpointId.slice(0, SHORT_ID))
+    );
 }
 
 export function isKnown(contacts: Contacts, endpointId: string): boolean {
-    return endpointId in contacts;
+    return contactOf(contacts, endpointId) !== undefined;
 }
