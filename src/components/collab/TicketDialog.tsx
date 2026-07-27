@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,10 +16,10 @@ import { useTicketDialog } from "@/lib/store/useTicketDialog";
 /**
  * The invite, on screen: shown after a share, asked for before a join.
  *
- * The text is always selectable, so handing a ticket over never depends on the
- * webview granting clipboard access. Copy tries the clipboard from inside the
- * click, which is the only context that is ever granted, and falls back to
- * selecting the ticket for a manual copy when even that is refused.
+ * A copy that lands says so in a corner message and closes, because there is
+ * nothing left to do with a dialog holding a ticket already on the clipboard.
+ * The ticket is selectable text rather than a field, so a webview that refuses
+ * the write still leaves a Cmd+C, which is what the failure path selects for.
  */
 export default function TicketDialog() {
     const showing = useTicketDialog((s) => s.showing);
@@ -40,29 +41,38 @@ export default function TicketDialog() {
             {/* The field lives in the content, which unmounts with the dialog,
                 so each opening starts empty without an effect to reset it. */}
             <DialogContent className="max-w-md" data-testid="ticket-dialog">
-                {showing !== null ? <Handover ticket={showing} /> : <Ask onSubmit={submit} />}
+                {showing !== null ? (
+                    <Handover ticket={showing} onDone={close} />
+                ) : (
+                    <Ask onSubmit={submit} />
+                )}
             </DialogContent>
         </Dialog>
     );
 }
 
-function Handover({ ticket }: { ticket: string }) {
-    const field = useRef<HTMLTextAreaElement>(null);
-    const [copied, setCopied] = useState<"idle" | "done" | "manual">("idle");
+function Handover({ ticket, onDone }: { ticket: string; onDone: () => void }) {
+    const text = useRef<HTMLParagraphElement>(null);
 
-    // Selected on open, so the ticket is one Cmd+C away even if the button is
-    // never pressed and the clipboard API is never granted.
-    useEffect(() => {
-        field.current?.select();
-    }, []);
+    /** Puts the ticket under the caret, for the Cmd+C a refused write leaves. */
+    function selectTicket() {
+        const node = text.current;
+        if (!node) return;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+    }
 
     async function copy() {
-        field.current?.select();
         try {
             await navigator.clipboard.writeText(ticket);
-            setCopied("done");
+            toast.success("Invite copied. It works once.");
+            onDone();
         } catch {
-            setCopied("manual");
+            selectTicket();
+            toast.error("Could not reach the clipboard. Press Cmd+C to copy the invite.");
         }
     }
 
@@ -75,24 +85,14 @@ function Handover({ ticket }: { ticket: string }) {
                     else.
                 </DialogDescription>
             </DialogHeader>
-            <textarea
-                ref={field}
-                readOnly
-                rows={3}
-                value={ticket}
+            <p
+                ref={text}
                 data-testid="ticket-text"
-                aria-label="Invite"
-                onFocus={(e) => e.currentTarget.select()}
-                className="border-border bg-muted/40 text-foreground w-full resize-none rounded-md border p-2 font-mono text-[12px] break-all"
-            />
-            <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground text-[12px]" data-testid="ticket-copy-hint">
-                    {copied === "done"
-                        ? "Copied."
-                        : copied === "manual"
-                          ? "Selected. Press Cmd+C to copy."
-                          : ""}
-                </span>
+                className="border-border bg-muted/40 text-foreground max-h-32 overflow-y-auto rounded-md border p-2 font-mono text-[12px] break-all select-all"
+            >
+                {ticket}
+            </p>
+            <div className="flex justify-end">
                 <Button type="button" size="sm" onClick={copy} data-testid="ticket-copy">
                     Copy
                 </Button>

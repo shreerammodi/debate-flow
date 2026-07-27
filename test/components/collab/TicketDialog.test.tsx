@@ -13,9 +13,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TicketDialog from "@/components/collab/TicketDialog";
 import { askForTicket, showTicket, useTicketDialog } from "@/lib/store/useTicketDialog";
 
+const { toastSuccess, toastError } = vi.hoisted(() => ({
+    toastSuccess: vi.fn(),
+    toastError: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: toastError } }));
+
 const TICKET = "ebb1:eyJlbmRwb2ludElkIjoiYWxleCJ9";
 
 beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
     useTicketDialog.setState({ showing: null, resolve: null });
 });
 
@@ -25,16 +34,16 @@ describe("TicketDialog", () => {
         expect(screen.queryByTestId("ticket-dialog")).toBeNull();
     });
 
-    it("shows a minted ticket where it can be read and selected", () => {
+    it("shows a minted ticket as text, not a field to click into", () => {
         render(<TicketDialog />);
         act(() => showTicket(TICKET));
 
-        const field = screen.getByTestId("ticket-text") as HTMLTextAreaElement;
-        expect(field.value).toBe(TICKET);
-        expect(field.readOnly).toBe(true);
+        const text = screen.getByTestId("ticket-text");
+        expect(text.textContent).toBe(TICKET);
+        expect(text.querySelector("input, textarea")).toBeNull();
     });
 
-    it("copies from inside the click, which is the only context the webview grants", async () => {
+    it("copies from inside the click, then says so and gets out of the way", async () => {
         const writeText = vi.fn(async () => {});
         vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
         render(<TicketDialog />);
@@ -42,11 +51,12 @@ describe("TicketDialog", () => {
 
         await userEvent.click(screen.getByTestId("ticket-copy"));
         expect(writeText).toHaveBeenCalledWith(TICKET);
-        expect(screen.getByTestId("ticket-copy-hint").textContent).toMatch(/Copied/);
+        expect(toastSuccess.mock.calls[0]?.[0]).toMatch(/copied/i);
+        expect(screen.queryByTestId("ticket-dialog")).toBeNull();
         vi.unstubAllGlobals();
     });
 
-    it("falls back to a manual copy when the webview refuses anyway", async () => {
+    it("stays open and selects the ticket when the webview refuses the write", async () => {
         const writeText = vi.fn(async () => {
             throw new Error("The request is not allowed by the user agent");
         });
@@ -55,7 +65,9 @@ describe("TicketDialog", () => {
         act(() => showTicket(TICKET));
 
         await userEvent.click(screen.getByTestId("ticket-copy"));
-        expect(screen.getByTestId("ticket-copy-hint").textContent).toMatch(/Cmd\+C/);
+        expect(toastError.mock.calls[0]?.[0]).toMatch(/Cmd\+C/);
+        expect(screen.getByTestId("ticket-dialog")).toBeTruthy();
+        expect(window.getSelection()?.toString()).toBe(TICKET);
         vi.unstubAllGlobals();
     });
 
