@@ -22,12 +22,18 @@ import { projectDoc } from "./doc";
 import { collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
+import { rememberRoundPeers } from "./roundPeers";
 import { parseTicket } from "./ticket";
-import type { CollabDoc } from "./types";
+import type { CollabDoc, Role } from "./types";
 
 export interface JoinDeps {
-    /** The pasted ticket, verbatim. */
-    ticket: string;
+    /** The pasted ticket, verbatim. Absent when a contact's invite is being taken. */
+    ticket?: string;
+    /**
+     * The round a saved contact offered. No secret rides along: they dialled
+     * this install by EndpointId, so their host already admits it by name.
+     */
+    invite?: { endpointId: string; roundId: string };
     createLink: PeerLinkFactory;
     appVersion: string;
     settings?: () => CollabSettings;
@@ -62,18 +68,23 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     const settings = (deps.settings ?? collabSettings)();
     if (!settings.enabled) return null;
 
-    const ticket = parseTicket(deps.ticket);
-    if (!ticket) throw new Error("That does not look like an ebb ticket");
+    const ticket = deps.ticket ? parseTicket(deps.ticket) : null;
+    if (deps.ticket && !ticket) throw new Error("That does not look like an ebb ticket");
+    const host = ticket ?? deps.invite;
+    if (!host) throw new Error("That does not look like an ebb ticket");
+    // A contact's invite carries no role, and a coach is only ever made one by
+    // the ticket that admitted them, so an invite joins as a partner.
+    const role: Role = ticket?.role ?? "partner";
 
     const link = await deps.createLink({
         discovery: "mdns",
         // Both sides have to agree before a relay carries anything.
-        relay: settings.relay && ticket.relay,
+        relay: settings.relay && (ticket?.relay ?? true),
     });
 
     try {
         const endpointId = await link.endpointId();
-        const conn = await link.dial(ticket.endpointId, deps.ticket);
+        const conn = await link.dial(host.endpointId, deps.ticket);
 
         const doc = await new Promise<CollabDoc>((resolve, reject) => {
             conn.onMessage((msg: WireMessage) => {
@@ -88,10 +99,10 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
             conn.send(
                 helloFrom({
                     endpointId,
-                    roundId: ticket.roundId,
-                    role: ticket.role,
+                    roundId: host.roundId,
+                    role,
                     appVersion: deps.appVersion,
-                    ticket: ticket.secret,
+                    ticket: ticket?.secret,
                 }),
             );
         });
@@ -109,17 +120,21 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         };
         const round = projectDoc(doc, base);
 
+        // The file about to be opened has no sidecar yet, so this is the only
+        // record of who to re-dial once it is.
+        rememberRoundPeers(doc.roundId, [host.endpointId]);
+
         if (existing)
             return {
                 roundId: doc.roundId,
-                hostEndpointId: ticket.endpointId,
+                hostEndpointId: host.endpointId,
                 path: existing,
                 created: false,
             };
 
         const dir = await resolveFlowsDir(io);
         const path = await io.createFlow(dir, suggestFilename(round), serializeFlow(round));
-        return { roundId: doc.roundId, hostEndpointId: ticket.endpointId, path, created: true };
+        return { roundId: doc.roundId, hostEndpointId: host.endpointId, path, created: true };
     } finally {
         // The round's own session owns the peer from here.
         await link.stop();

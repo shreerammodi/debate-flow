@@ -122,3 +122,41 @@ describe("useCollabStore shadow log", () => {
         expect(seen).not.toHaveBeenCalled();
     });
 });
+
+describe("useCollabStore invitations", () => {
+    const invite = { endpointId: "alex", roundId: "r1", label: "Round 3" };
+
+    beforeEach(() => {
+        useCollabStore.getState().dismissInvite("alex", "r1");
+        useCollabStore.getState().dismissInvite("alex", "r2");
+    });
+
+    it("starts with none", () => {
+        expect(useCollabStore.getState().invites).toEqual([]);
+    });
+
+    it("keeps one offer per round, however many times a partner dials", () => {
+        useCollabStore.getState().pushInvite(invite);
+        useCollabStore.getState().pushInvite({ ...invite, label: "Round 3 again" });
+        expect(useCollabStore.getState().invites).toEqual([invite]);
+    });
+
+    it("keeps a second round from the same partner apart from the first", () => {
+        useCollabStore.getState().pushInvite(invite);
+        useCollabStore.getState().pushInvite({ ...invite, roundId: "r2" });
+        expect(useCollabStore.getState().invites.map((i) => i.roundId)).toEqual(["r1", "r2"]);
+    });
+
+    it("drops exactly the one that was acted on", () => {
+        useCollabStore.getState().pushInvite(invite);
+        useCollabStore.getState().pushInvite({ ...invite, roundId: "r2" });
+        useCollabStore.getState().dismissInvite("alex", "r1");
+        expect(useCollabStore.getState().invites.map((i) => i.roundId)).toEqual(["r2"]);
+    });
+
+    it("outlives the session that carried it, which may end before anyone looks", () => {
+        useCollabStore.getState().pushInvite(invite);
+        useCollabStore.getState().reset();
+        expect(useCollabStore.getState().invites).toEqual([invite]);
+    });
+});

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { recoverReplica } from "@/lib/collab/persist";
+import { resumeSession } from "@/lib/collab/runtime";
 import { flowRouteFor } from "@/lib/commands/flowNav";
 import { errorMessage } from "@/lib/errorMessage";
 import { applyFlowFont } from "@/lib/fonts/applyFlowFont";
@@ -84,8 +85,10 @@ export default function AppRoot() {
                 // loadRound already seeded the replica from the file, which is
                 // the fallback; this upgrades it to the sidecar when one still
                 // matches. Anything typed in the gap is repaired by the drift
-                // check that runs before the next sidecar write.
-                void recoverReplica(r, serializeFlow(r));
+                // check that runs before the next sidecar write. The peers it
+                // recovers are the ones this round was shared with, which a
+                // session re-dials with no ticket and no interaction.
+                void recoverReplica(r, serializeFlow(r)).then(() => resumeSession(r));
                 // The round just came off disk, so it is already saved.
                 autosave.prime();
                 void noteOpened(path);

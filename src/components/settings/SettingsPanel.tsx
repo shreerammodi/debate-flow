@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import ContactList from "@/components/collab/ContactList";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -640,6 +641,7 @@ export default function SettingsPanel() {
                                                     }
                                                 />
                                                 <ShadowLog />
+                                                <ContactList />
                                             </>
                                         )}
                                     </section>

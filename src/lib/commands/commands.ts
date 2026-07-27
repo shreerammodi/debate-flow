@@ -24,6 +24,7 @@ import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
+import { chooseContact } from "@/lib/store/useContactPicker";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
 import { runEnd, runInvite, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
@@ -150,12 +151,13 @@ function startMove(): void {
 }
 
 /**
- * How the collaboration commands reach the user: corner messages only, and a
- * ticket that arrives through the clipboard rather than a dialog. Nothing here
- * blocks the grid or takes focus.
+ * How the collaboration commands reach the user: corner messages, a ticket
+ * that travels by clipboard rather than by prompt, and one dialog, the contact
+ * picker, because choosing who to dial is a decision and not a notice.
  */
 function collabDeps(): CollabCommandDeps {
     return {
+        chooseContact,
         notify: (message) => toast.success(message),
         fail: (message) => toast.error(message),
         async askForTicket() {

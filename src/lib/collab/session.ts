@@ -15,8 +15,10 @@
 
 import { setLocks } from "@/lib/grid/lockBridge";
 
+import type { Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
 import { admit, helloFrom, type HostPolicy } from "./handshake";
+import { INVITED, inviteFrom, type InviteNotice } from "./invite";
 import type { DroppedCell } from "./merge";
 import type { PeerConn, PeerLink, PeerLinkFactory, WireMessage } from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Lock } from "./presence";
@@ -74,12 +76,29 @@ export interface CollabSessionDeps {
     role?: Role;
     onPeersChanged?: (peers: CollabPeer[]) => void;
     schedule?: (fn: () => void, ms: number) => () => void;
+    /** What this side calls the round, so an invite it sends can name it. */
+    roundLabel?: string;
+    /**
+     * The contact table, consulted only to decide whether a dial this session
+     * cannot admit is an invite worth showing. Absent means every refusal is
+     * silent.
+     */
+    contacts?: () => Contacts;
+    onInvite?: (notice: InviteNotice) => void;
 }
 
 interface Live {
     conn: PeerConn;
     sync: PeerSync;
     peer: CollabPeer;
+}
+
+/**
+ * Whether a dial ended in the far side taking the invite rather than joining.
+ * The notice landed, so the caller has nothing to report and nothing to retry.
+ */
+function isInvited(err: unknown): boolean {
+    return err instanceof Error && err.message === INVITED;
 }
 
 export async function startCollabSession(deps: CollabSessionDeps): Promise<CollabSession | null> {
@@ -195,7 +214,18 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
             const verdict = admit(msg, policy);
             if (!verdict.ok) {
-                conn.send({ type: "helloAck", ok: false, reason: verdict.reason });
+                // A contact dialling about a round this side is not holding is
+                // offering it, not failing to join one. The notice is all that
+                // crosses; joining is the receiver's own move.
+                const notice = deps.contacts
+                    ? inviteFrom(msg, deps.contacts(), policy.roundId)
+                    : null;
+                if (notice && deps.onInvite) {
+                    deps.onInvite(notice);
+                    conn.send({ type: "helloAck", ok: false, reason: INVITED });
+                } else {
+                    conn.send({ type: "helloAck", ok: false, reason: verdict.reason });
+                }
                 conn.close();
                 return;
             }
@@ -263,6 +293,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     role: deps.role ?? "partner",
                     appVersion: deps.appVersion,
                     ticket: secret,
+                    label: deps.roundLabel,
                 }),
             );
         });
@@ -271,10 +302,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     for (const target of deps.dial ?? []) {
         try {
             await dialPeer(target, deps.ticket);
-        } catch {
+        } catch (err) {
             // A peer that is not up yet is ordinary, and a refusal is not a
-            // reason to fail opening the round. Retry runs on its own.
-            if (!stopped && deps.schedule) {
+            // reason to fail opening the round. Retry runs on its own, except
+            // against a peer who answered: they heard this round offered and
+            // are not holding it, so dialling again would only repeat itself.
+            if (!stopped && deps.schedule && !isInvited(err)) {
                 retryForever({
                     dial: () => dialPeer(target),
                     schedule: deps.schedule,
@@ -306,7 +339,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // A contact is admitted by EndpointId, so it joins the known list
             // before the dial rather than presenting a secret.
             if (!policy.knownPeers.includes(target)) policy.knownPeers.push(target);
-            await dialPeer(target);
+            try {
+                await dialPeer(target);
+            } catch (err) {
+                // They are on another round, so the dial delivered a notice
+                // instead of a peer. That is the invite working.
+                if (!isInvited(err)) throw err;
+            }
         },
 
         notifyLocalChange() {

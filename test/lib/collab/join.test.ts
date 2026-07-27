@@ -4,11 +4,14 @@ import { seedDoc } from "@/lib/collab/doc";
 import { joinRound } from "@/lib/collab/join";
 import { merge } from "@/lib/collab/merge";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { recoverReplica } from "@/lib/collab/persist";
+import { forgetRoundPeers, knownRoundPeers } from "@/lib/collab/roundPeers";
 import { startCollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { serializeFlow } from "@/lib/persistence/flowFile";
+import { parseFlowFile } from "@/lib/persistence/flowFile";
 import type { FlowFs } from "@/lib/persistence/flowFs";
 import { createFlowFs } from "@/lib/persistence/flowFsMemory";
 import { saveRecents } from "@/lib/persistence/recents";
@@ -43,6 +46,7 @@ async function hostWithTicket(): Promise<string> {
 
 beforeEach(async () => {
     net.reset();
+    forgetRoundPeers();
     useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
     shared = makeFlowRound({});
     shared.sheets.find((s) => s.kind !== "cx")!.data = [["perm", "link"]];
@@ -132,5 +136,95 @@ describe("joinRound", () => {
         const ticket = await hostWithTicket();
         await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
         expect(net.calls.filter((c) => c.op === "stop").length).toBeGreaterThan(0);
+    });
+});
+
+describe("joining a contact's invitation", () => {
+    /** Alex, having invited Sam: the dial put Sam in the known list. */
+    async function hostWhoInvited(): Promise<void> {
+        const host = (await startCollabSession({
+            createLink: net.create("alex"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            ...side(shared),
+        }))!;
+        await host.invite("sam").catch(() => {
+            // Sam has nothing bound to answer with, which is the state a
+            // debater is in between the corner message and the Join.
+        });
+    }
+
+    it("takes the round with no ticket at all", async () => {
+        await hostWhoInvited();
+        const result = await joinRound({
+            invite: { endpointId: "alex", roundId: shared.id },
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        expect(result!.created).toBe(true);
+        expect(result!.hostEndpointId).toBe("alex");
+        expect((await fs.readFlow(result!.path))!.text).toContain("perm");
+    });
+
+    it("is refused by a host who never invited this peer", async () => {
+        await startCollabSession({
+            createLink: net.create("alex"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            ...side(shared),
+        });
+        await expect(
+            joinRound({
+                invite: { endpointId: "alex", roundId: shared.id },
+                createLink: net.create("sam"),
+                appVersion: "0.11.0",
+                fs,
+            }),
+        ).rejects.toThrow();
+    });
+
+    it("reaches no network at all while shared editing is off", async () => {
+        useFlowStore.setState({ collabEnabled: false });
+        const result = await joinRound({
+            invite: { endpointId: "alex", roundId: shared.id },
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        expect(result).toBeNull();
+        expect(net.calls).toEqual([]);
+    });
+
+    it("refuses a call with neither a ticket nor an invitation", async () => {
+        await expect(
+            joinRound({ createLink: net.create("sam"), appVersion: "0.11.0", fs }),
+        ).rejects.toThrow(/ticket/i);
+        expect(net.calls).toEqual([]);
+    });
+});
+
+describe("what a joined round remembers", () => {
+    it("keeps the host, so opening the file re-dials them with no ticket", async () => {
+        const ticket = await hostWithTicket();
+        const result = await joinRound({
+            ticket,
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        expect(knownRoundPeers(result!.roundId)).toEqual(["alex"]);
+    });
+
+    it("survives the open, which has no sidecar to recover yet", async () => {
+        const ticket = await hostWithTicket();
+        const joined = await joinRound({
+            ticket,
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
+        expect(await recoverReplica(round, serializeFlow(round))).toEqual(["alex"]);
     });
 });

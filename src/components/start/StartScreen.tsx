@@ -6,10 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand/Logo";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
+import { acceptInvite } from "@/lib/collab/inbox";
+import { inviteToastFor } from "@/lib/collab/invite";
 import { openFlowFromPicker } from "@/lib/commands/fileCommands";
 import { flowRouteFor } from "@/lib/commands/flowNav";
 import { openExternal } from "@/lib/openExternal";
 import { relativeTime } from "@/lib/start/format";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion, isDesktop } from "@/lib/update/adapter";
 import { cn } from "@/lib/utils";
@@ -42,6 +45,8 @@ export default function StartScreen() {
     const { entries, refresh } = useRecentFlows();
     const [cursor, setCursor] = useState(0);
     const [version, setVersion] = useState(process.env.NEXT_PUBLIC_EBB_VERSION ?? "");
+    const invites = useCollabStore((s) => s.invites);
+    const contacts = useFlowStore((s) => s.contacts);
 
     useEffect(() => {
         // The packaged version is the truth on desktop; the injected constant
@@ -52,10 +57,20 @@ export default function StartScreen() {
 
     const open = useCallback((path: string) => router.push(flowRouteFor(path)), [router]);
 
+    // An invitation leads, because it is the one row that expires: the partner
+    // who sent it is already flowing. Every invite is its own row, and the key
+    // takes the first, which is the one that has been waiting longest.
+    const inviteRows = invites.map((invite, i) => ({
+        id: `invite-${invite.endpointId}-${invite.roundId}`,
+        key: i === 0 ? "i" : "",
+        label: inviteToastFor(contacts, invite.endpointId, invite.label),
+        run: () => void acceptInvite(invite),
+    }));
     const actions = [
-        { key: "n", label: "New flow", run: () => setNewFlowOpen(true) },
-        { key: "o", label: "Open", run: () => void openFlowFromPicker() },
-        { key: "s", label: "Settings", run: () => setSettingsOpen(true) },
+        ...inviteRows,
+        { id: "new", key: "n", label: "New flow", run: () => setNewFlowOpen(true) },
+        { id: "open", key: "o", label: "Open", run: () => void openFlowFromPicker() },
+        { id: "settings", key: "s", label: "Settings", run: () => setSettingsOpen(true) },
     ];
 
     // The cursor runs over the actions and then the recents as one column, so
@@ -135,12 +150,12 @@ export default function StartScreen() {
 
                 {actions.map((action, i) => (
                     <Row
-                        key={action.key}
+                        key={action.id}
                         badge={action.key}
                         active={cursor === i}
                         onHover={() => setCursor(i)}
                         onSelect={action.run}
-                        testid={`start-${action.label.split(" ")[0].toLowerCase()}`}
+                        testid={`start-${action.id}`}
                     >
                         <span>{action.label}</span>
                     </Row>

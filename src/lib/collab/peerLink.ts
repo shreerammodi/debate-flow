@@ -25,6 +25,8 @@ export type WireMessage =
           roundId: string;
           role: Role;
           capabilities: string[];
+          /** What the dialler calls this round, for an invite's corner message. */
+          label?: string;
           /** Present only on the first join, and spent when it is accepted. */
           ticket?: string;
       }

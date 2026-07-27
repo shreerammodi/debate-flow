@@ -12,10 +12,22 @@ import Sidebar from "@/components/flow/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound } from "@/lib/model/flow";
-import { useCollabStore } from "@/lib/store/useCollabStore";
+import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 vi.mock("@/lib/grid/hotInstance", () => ({ focusActiveHot: vi.fn() }));
+vi.mock("@/lib/collab/runtime", () => ({
+    disconnectPeer: vi.fn(async () => {}),
+    endSession: vi.fn(async () => {}),
+}));
+import { disconnectPeer, endSession } from "@/lib/collab/runtime";
+
+const ALEX: CollabPeerView = {
+    endpointId: "alex-endpoint",
+    name: "Alex",
+    role: "partner",
+    connectionType: "direct",
+};
 
 function renderSidebar() {
     return render(
@@ -62,6 +74,7 @@ function setupRound() {
 describe("Sidebar", () => {
     beforeEach(() => {
         resetStore();
+        vi.clearAllMocks();
     });
 
     it("lists all flow sheets in one order-sorted list with side markers", () => {
@@ -312,5 +325,24 @@ describe("Sidebar", () => {
             expect(slot).not.toBeNull();
             expect(slot).not.toHaveClass("relative");
         });
+
+        // The chip draws its actions only for a caller that wired them, so an
+        // unwired mount would leave both unreachable.
+        it.each([false, true])(
+            "reaches the session actions with the sidebar collapsed=%s",
+            async (collapsed) => {
+                setupRound();
+                useFlowStore.setState({ sidebarCollapsed: collapsed });
+                useCollabStore.setState({ status: "connected", peers: [ALEX] });
+                renderSidebar();
+
+                await userEvent.click(screen.getByTestId("collab-chip"));
+                await userEvent.click(screen.getByTestId("collab-peer-disconnect"));
+                expect(disconnectPeer).toHaveBeenCalledWith("alex-endpoint");
+
+                await userEvent.click(screen.getByTestId("collab-end-session"));
+                expect(endSession).toHaveBeenCalled();
+            },
+        );
     });
 });

@@ -9,6 +9,7 @@ import SessionChip from "@/components/collab/SessionChip";
 import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
+import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { compareSheets, type FlowSheet } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
@@ -79,7 +80,11 @@ export default function Sidebar() {
                 </nav>
                 {/* No footer to sit in, so the chip floats over the grid's left
                     edge, clear of the collapsed rail. */}
-                <SessionChip className="no-print fixed bottom-3 left-11 z-30" />
+                <SessionChip
+                    className="no-print fixed bottom-3 left-11 z-30"
+                    onDisconnectPeer={(id) => void disconnectPeer(id)}
+                    onEndSession={() => void endSession()}
+                />
             </>
         );
     }
@@ -206,7 +211,11 @@ export default function Sidebar() {
             </div>
             {/* Footer, below the scrolling list, so a live session never covers
                 a sheet name. */}
-            <SessionChip className="border-border/60 shrink-0 border-t p-2" />
+            <SessionChip
+                className="border-border/60 shrink-0 border-t p-2"
+                onDisconnectPeer={(id) => void disconnectPeer(id)}
+                onEndSession={() => void endSession()}
+            />
         </nav>
     );
 }

@@ -14,6 +14,45 @@
  */
 
 import { contactName, isKnown, type Contacts } from "./contacts";
+import { PROTOCOL_MAJOR, type WireMessage } from "./peerLink";
+
+/**
+ * The refusal a dialler gets when the far side heard the invite but does not
+ * hold the round. It is not an error: the notice landed, and joining is the
+ * receiver's move to make.
+ */
+export const INVITED = "invited";
+
+export interface InviteNotice {
+    /** The dialler, who is holding the round. */
+    endpointId: string;
+    roundId: string;
+    /** What they call it, which may be nothing at all. */
+    label: string;
+}
+
+/**
+ * The invite in a hello this side cannot admit, or null when there is none.
+ *
+ * Membership in the contact table is the whole test. An unknown dialler is
+ * refused in silence, which is what keeps an EndpointId from being a way to
+ * put a notification on a debater's screen mid-speech.
+ */
+export function inviteFrom(
+    msg: WireMessage,
+    contacts: Contacts,
+    ownRoundId: string | null,
+): InviteNotice | null {
+    if (msg.type !== "hello") return null;
+    if (msg.protocol !== PROTOCOL_MAJOR) return null;
+    if (msg.roundId === ownRoundId) return null;
+    if (!isKnown(contacts, msg.endpointId)) return null;
+    return {
+        endpointId: msg.endpointId,
+        roundId: msg.roundId,
+        label: typeof msg.label === "string" ? msg.label : "",
+    };
+}
 
 /** Whether this dialler has earned a corner message. */
 export function shouldAnnounceInvite(contacts: Contacts, endpointId: string): boolean {

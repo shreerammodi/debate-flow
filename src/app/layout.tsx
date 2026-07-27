@@ -3,6 +3,8 @@ import localFont from "next/font/local";
 import { Toaster } from "sonner";
 
 import { BridgeHost } from "@/components/BridgeHost";
+import ContactPickerDialog from "@/components/collab/ContactPickerDialog";
+import InviteWatch from "@/components/collab/InviteWatch";
 import ConfigFileSync from "@/components/ConfigFileSync";
 import { DesktopMenu } from "@/components/DesktopMenu";
 import MotionRoot from "@/components/MotionRoot";
@@ -339,6 +341,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <OpenWithHost />
                 <ThemeSync />
                 <ConfigFileSync />
+                <InviteWatch />
                 <TooltipProvider>
                     <UpdateProvider>
                         {/* The chip lives inside MotionRoot (LazyMotion strict
@@ -351,10 +354,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         </MotionRoot>
                         {/* Inside UpdateProvider so the Updates settings pane can
                             read the update context, and mounted here (not per
-                            screen) so the settings chord and the New flow prompt
-                            work on the start screen as well as in a flow. */}
+                            screen) so the settings chord, the New flow prompt, and
+                            the invite picker work on the start screen as well as
+                            in a flow. */}
                         <SettingsPanel />
                         <NewFlowDialog />
+                        <ContactPickerDialog />
                     </UpdateProvider>
                 </TooltipProvider>
                 <Toaster position="bottom-center" />

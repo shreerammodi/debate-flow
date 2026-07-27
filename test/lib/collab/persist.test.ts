@@ -85,6 +85,39 @@ describe("recoverReplica", () => {
         await recoverReplica(round, serializeFlow(round));
         expect(getReplica()).toEqual(seedDoc(round));
     });
+
+    it("reports the peers the round was shared with", async () => {
+        const text = serializeFlow(round);
+        fs.files.set(
+            round.id,
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(text),
+                peers: ["sam", "kim"],
+                doc: seedDoc(round),
+            }),
+        );
+        expect(await recoverReplica(round, text)).toEqual(["sam", "kim"]);
+    });
+
+    it("reports nobody for a round that was never shared", async () => {
+        expect(await recoverReplica(round, serializeFlow(round))).toEqual([]);
+    });
+
+    it("reports nobody at all when shared editing is off", async () => {
+        const text = serializeFlow(round);
+        fs.files.set(
+            round.id,
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(text),
+                peers: ["sam"],
+                doc: seedDoc(round),
+            }),
+        );
+        useFlowStore.setState({ collabEnabled: false });
+        expect(await recoverReplica(round, text)).toEqual([]);
+    });
 });
 
 describe("persistReplica", () => {
@@ -97,6 +130,23 @@ describe("persistReplica", () => {
         const written = parseSidecar(fs.files.get(round.id)!, round.id, hashText(text));
         expect(written).not.toBeNull();
         expect(written!.roundId).toBe(round.id);
+    });
+
+    it("carries the round's peers forward, so the next open re-dials them", async () => {
+        const text = serializeFlow(round);
+        fs.files.set(
+            round.id,
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(text),
+                peers: ["sam"],
+                doc: seedDoc(round),
+            }),
+        );
+        await recoverReplica(round, text);
+        await persistReplica(round, text);
+        const written = parseSidecar(fs.files.get(round.id)!, round.id, hashText(text));
+        expect(written!.peers).toEqual(["sam"]);
     });
 
     it("heals a drifted sheet before it writes", async () => {

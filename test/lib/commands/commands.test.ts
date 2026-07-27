@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { executeCommand } from "@/lib/commands/commands";
 import { BOLD_CLASS, GROUP_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
 import { makeFlowRound, type CellSource } from "@/lib/model/flow";
+import { useContactPicker } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 function loadRound() {
@@ -375,5 +376,27 @@ describe("grid commands", () => {
         executeCommand("cell.move");
 
         expect(movingBlock()).toBeNull();
+    });
+});
+
+describe("collab commands", () => {
+    const ALEX = { name: "Alex", role: "partner" } as const;
+
+    afterEach(() => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+        useContactPicker.getState().cancel();
+        useFlowStore.setState({ collabEnabled: false, contacts: {} });
+    });
+
+    it("invite asks which saved contact to dial, and dials nobody before the answer", async () => {
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        loadRound();
+        useFlowStore.setState({ collabEnabled: true, contacts: { alex: ALEX } });
+
+        executeCommand("collab.invite");
+
+        await vi.waitFor(() =>
+            expect(useContactPicker.getState().contacts).toEqual({ alex: ALEX }),
+        );
     });
 });

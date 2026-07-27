@@ -13,7 +13,17 @@ const push = vi.fn();
 const stableRouter = { push };
 vi.mock("next/navigation", () => ({ useRouter: () => stableRouter }));
 
+const joined: unknown[] = [];
+vi.mock("@/lib/collab/inbox", () => ({
+    acceptInvite: (notice: unknown) => {
+        joined.push(notice);
+        return Promise.resolve();
+    },
+    announceInvite: () => {},
+}));
+
 import StartScreen from "@/components/start/StartScreen";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 
 let fs: FakeFlowFs;
 
@@ -154,5 +164,51 @@ describe("StartScreen", () => {
             "href",
             "https://smodi.net",
         );
+    });
+});
+
+describe("an invitation on the start screen", () => {
+    const ALEX = "alex";
+    const invite = { endpointId: ALEX, roundId: "r1", label: "Round 3 - Harvard" };
+
+    beforeEach(() => {
+        joined.length = 0;
+        useCollabStore.setState({ invites: [] });
+        useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+    });
+
+    it("shows nothing at all when nobody has invited this machine", () => {
+        render(<StartScreen />);
+        expect(screen.queryByText(/shared/)).not.toBeInTheDocument();
+    });
+
+    it("leads the column, naming the partner and the round", () => {
+        useCollabStore.setState({ invites: [invite] });
+        render(<StartScreen />);
+        expect(screen.getByTestId(`start-invite-${ALEX}-r1`)).toHaveTextContent(
+            "Alex shared Round 3 - Harvard",
+        );
+    });
+
+    it("joins nothing until it is chosen", async () => {
+        useCollabStore.setState({ invites: [invite] });
+        render(<StartScreen />);
+        await waitFor(() => expect(screen.getByTestId("start-new")).toBeInTheDocument());
+        expect(joined).toEqual([]);
+    });
+
+    it("takes the round when it is chosen", async () => {
+        useCollabStore.setState({ invites: [invite] });
+        render(<StartScreen />);
+        await userEvent.click(screen.getByTestId(`start-invite-${ALEX}-r1`));
+        expect(joined).toEqual([invite]);
+    });
+
+    it("takes the one that has been waiting longest on i", async () => {
+        const second = { endpointId: ALEX, roundId: "r2", label: "Round 4" };
+        useCollabStore.setState({ invites: [invite, second] });
+        render(<StartScreen />);
+        await userEvent.keyboard("i");
+        expect(joined).toEqual([invite]);
     });
 });

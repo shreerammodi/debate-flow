@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 
+import type { InviteNotice } from "@/lib/collab/invite";
 import type { ShadowEntry } from "@/lib/collab/shadow";
 
 export type CollabStatus = "off" | "connecting" | "connected" | "reconnecting";
@@ -22,10 +23,14 @@ export interface CollabPeerView {
 export interface CollabUiState {
     status: CollabStatus;
     peers: CollabPeerView[];
+    /** Rounds saved contacts have offered and nobody has acted on yet. */
+    invites: readonly InviteNotice[];
     /** What shadow mode has observed this session, oldest first. */
     shadowLog: readonly ShadowEntry[];
     setStatus(status: CollabStatus): void;
     setPeers(peers: CollabPeerView[]): void;
+    pushInvite(invite: InviteNotice): void;
+    dismissInvite(endpointId: string, roundId: string): void;
     pushShadow(entry: ShadowEntry): void;
     clearShadow(): void;
     reset(): void;
@@ -33,6 +38,8 @@ export interface CollabUiState {
 
 /** One array backs every empty peer list, so a reset changes no identity. */
 const NO_PEERS: CollabPeerView[] = [];
+
+const NO_INVITES: readonly InviteNotice[] = [];
 
 const NO_SHADOW: readonly ShadowEntry[] = [];
 
@@ -46,8 +53,22 @@ export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
     shadowLog: NO_SHADOW,
+    invites: NO_INVITES,
     setStatus: (status) => set({ status }),
     setPeers: (peers) => set({ peers }),
+    // A partner who dials twice about one round is one invitation, not two.
+    pushInvite: (invite) =>
+        set((s) =>
+            s.invites.some(
+                (i) => i.endpointId === invite.endpointId && i.roundId === invite.roundId,
+            )
+                ? s
+                : { invites: [...s.invites, invite] },
+        ),
+    dismissInvite: (endpointId, roundId) =>
+        set((s) => ({
+            invites: s.invites.filter((i) => i.endpointId !== endpointId || i.roundId !== roundId),
+        })),
     pushShadow: (entry) =>
         set((s) => ({
             shadowLog:

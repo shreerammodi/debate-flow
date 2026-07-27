@@ -69,6 +69,24 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Added
 
+- **Shared editing**, off by default under Settings > Editor. On, you can hand
+  a partner a one-time invite from the command palette, and the two of you flow
+  one round together: every cell each of you writes reaches the other, the cell
+  someone has an editor open on is marked so nobody types over it, and each of
+  you keeps a real `.ebb` of your own, so a dead laptop or a dead network costs
+  nothing. A coach can be given a view-only link instead. Off, the app binds no
+  endpoint, dials no peer, publishes no discovery record, and contacts no
+  relay, which is a tested invariant rather than a promise.
+- **Contacts.** After a session, one click saves that partner, and inviting
+  them again needs no link at all: pick them from Invite a saved partner and
+  they get a corner message offering the round, with a Join that is theirs to
+  press. Nobody you have not saved can put anything on your screen. Saved
+  partners are listed under Settings > Editor, where you can rename them,
+  change what they may do, or drop them.
+- A round remembers the partners it was shared with, so opening the file again
+  reconnects to them silently, with no new invite.
+- The session chip in the bottom-left corner reports the connection and lists
+  who is in the round, with a way to drop one peer or end the session.
 - Right-clicking a cell that came in from CardMirror now offers "Jump to
   source" below the row items, so the jump is reachable without remembering
   its shortcut. It acts on the cell you clicked, which in split view can sit

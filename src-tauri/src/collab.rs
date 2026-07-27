@@ -13,11 +13,12 @@
 //! crates are not dependencies at all.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
 use iroh::endpoint::{presets, Connection, TransportAddrUsage};
-use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode};
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -79,6 +80,88 @@ fn relay_mode(relay: bool) -> RelayMode {
     } else {
         RelayMode::Disabled
     }
+}
+
+/// The identity file, kept beside the config file.
+fn identity_path() -> Option<PathBuf> {
+    crate::config::config_dir().map(|dir| dir.join("identity.key"))
+}
+
+/// This install's long-lived secret key, minted on first use.
+///
+/// Saved contacts and a host's known-peer list are keyed by EndpointId, which
+/// is this key's public half, so a key drawn fresh on every bind would turn a
+/// saved partner back into a stranger after a restart.
+///
+/// None means the key could not be stored, which a read-only config directory
+/// is enough to cause. That is not fatal: the endpoint mints its own and the
+/// session runs on an identity that lasts one process.
+fn load_or_create_secret_key() -> Option<SecretKey> {
+    secret_key_at(&identity_path()?)
+}
+
+fn secret_key_at(path: &Path) -> Option<SecretKey> {
+    let stored = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| decode_hex(text.trim()));
+    if let Some(bytes) = stored {
+        return Some(SecretKey::from_bytes(&bytes));
+    }
+    // Unreadable, truncated and malformed are one case: whatever is on disk is
+    // not a key, so a new one takes its place.
+    let key = SecretKey::generate();
+    write_identity(path, &encode_hex(&key.to_bytes())).ok()?;
+    Some(key)
+}
+
+/// Writes the key where only this account can read it. Anyone holding these
+/// bytes can present themselves as this install to a saved contact.
+fn write_identity(path: &Path, hex: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        // `mode` applies only when the open creates the file, so a file left by
+        // an earlier run would otherwise keep whatever permissions it has.
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(hex.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, hex)
+    }
+}
+
+fn encode_hex(bytes: &[u8; 32]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(64), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
+
+fn decode_hex(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64 {
+        return None;
+    }
+    let mut bytes = [0u8; 32];
+    for (slot, pair) in bytes.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+        let high = char::from(pair[0]).to_digit(16)?;
+        let low = char::from(pair[1]).to_digit(16)?;
+        *slot = (high * 16 + low) as u8;
+    }
+    Some(bytes)
 }
 
 /// Pumps one connection's bidirectional stream in both directions.
@@ -172,9 +255,13 @@ pub fn collab_start(
 
     let endpoint = runtime.block_on(async {
         // Minimal, never N0: see the module comment.
-        let endpoint = Endpoint::builder(presets::Minimal)
+        let mut builder = Endpoint::builder(presets::Minimal)
             .alpns(vec![ALPN.to_vec()])
-            .relay_mode(relay_mode(relay))
+            .relay_mode(relay_mode(relay));
+        if let Some(key) = load_or_create_secret_key() {
+            builder = builder.secret_key(key);
+        }
+        let endpoint = builder
             .bind()
             .await
             .map_err(|e| format!("Could not bind an endpoint: {e}"))?;
@@ -328,6 +415,118 @@ mod tests {
     fn relay_off_disables_relays_outright() {
         assert_eq!(relay_mode(false), RelayMode::Disabled);
         assert_eq!(relay_mode(true), RelayMode::Default);
+    }
+}
+
+/// The stored key behind a stable EndpointId.
+#[cfg(test)]
+mod identity {
+    use super::*;
+
+    const KNOWN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    /// A path under a directory of this test's own, never the real config dir.
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ebb-collab-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&dir);
+        dir.join("identity.key")
+    }
+
+    /// The wiring `collab_start` uses: the stored key, or the endpoint's own
+    /// when there is none.
+    async fn bound_with(path: &Path) -> Endpoint {
+        let mut builder = Endpoint::builder(presets::Minimal)
+            .alpns(vec![ALPN.to_vec()])
+            .relay_mode(RelayMode::Disabled);
+        if let Some(key) = secret_key_at(path) {
+            builder = builder.secret_key(key);
+        }
+        builder.bind().await.expect("bind")
+    }
+
+    /// A contact is saved under an EndpointId, which is the public half of the
+    /// stored key, so two binds from one identity file are one peer.
+    #[tokio::test]
+    async fn rebinding_keeps_the_endpoint_id() {
+        let path = scratch("rebind");
+
+        let first = bound_with(&path).await;
+        let id = first.id();
+        drop(first);
+        let second = bound_with(&path).await;
+
+        assert_eq!(second.id(), id);
+    }
+
+    #[test]
+    fn a_stored_key_is_read_back_byte_for_byte() {
+        let path = scratch("stored");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{KNOWN}\n")).unwrap();
+
+        let key = secret_key_at(&path).expect("the stored key");
+        assert_eq!(encode_hex(&key.to_bytes()), KNOWN);
+    }
+
+    #[test]
+    fn a_minted_key_is_the_same_key_on_the_next_run() {
+        let path = scratch("minted");
+
+        let first = secret_key_at(&path).expect("a minted key");
+        let second = secret_key_at(&path).expect("the same key again");
+
+        assert_eq!(first.to_bytes(), second.to_bytes());
+        assert_eq!(std::fs::read_to_string(&path).unwrap().len(), 64);
+    }
+
+    #[test]
+    fn a_malformed_file_yields_a_fresh_key_rather_than_an_error() {
+        for (tag, junk) in [
+            ("empty", ""),
+            ("short", "abcd"),
+            ("prose", "not a key"),
+            ("nonhex", "zz23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        ] {
+            let path = scratch(tag);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, junk).unwrap();
+
+            let key = secret_key_at(&path).expect("a fresh key");
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                encode_hex(&key.to_bytes()),
+                "{tag}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_stored_key_is_readable_only_by_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = scratch("mode");
+        secret_key_at(&path).expect("a minted key");
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn a_config_directory_that_cannot_be_written_is_not_fatal() {
+        let blocked = scratch("blocked");
+        std::fs::write(blocked.parent().unwrap(), "a file where a directory would go").unwrap();
+
+        assert!(secret_key_at(&blocked).is_none());
+    }
+
+    #[test]
+    fn hex_decoding_takes_exactly_thirty_two_bytes() {
+        let bytes = decode_hex(KNOWN).expect("64 hex characters");
+        assert_eq!(&bytes[..4], &[0x01, 0x23, 0x45, 0x67]);
+        assert_eq!(encode_hex(&bytes), KNOWN);
+        assert!(decode_hex(&KNOWN[..62]).is_none());
+        assert!(decode_hex(&format!("{KNOWN}00")).is_none());
     }
 }
 

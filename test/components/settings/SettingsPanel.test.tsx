@@ -58,6 +58,7 @@ function resetStore() {
         collabEnabled: false,
         collabRelayEnabled: true,
         shadowMode: false,
+        contacts: {},
     });
 }
 
@@ -420,6 +421,17 @@ describe("SettingsPanel", () => {
             await user.click(screen.getByTestId("shadow-mode-toggle"));
             expect(useFlowStore.getState().shadowMode).toBe(true);
             expect(screen.getByTestId("shadow-log")).toBeTruthy();
+        });
+
+        it("hides the contact list until shared editing is switched on", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ contacts: { alex: { name: "Alex", role: "partner" } } });
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-editor"));
+            expect(screen.queryByTestId("contact-row-alex")).toBeNull();
+
+            await user.click(screen.getByTestId("collab-enabled-toggle"));
+            expect(screen.getByTestId("contact-row-alex")).toBeTruthy();
         });
     });
 

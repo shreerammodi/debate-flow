@@ -17,14 +17,18 @@ import type { FlowRound } from "@/lib/model/flow";
 import { collabSettings } from "./enabled";
 import { hashText } from "./hash";
 import { getReplica, healReplica, replicaRoundId, seedReplica } from "./replica";
+import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { parseSidecar, serializeSidecar } from "./sidecar";
 import { getSidecarFs } from "./sidecarFs";
 
-/** Seeds the replica for a round that is being opened. */
-export async function recoverReplica(round: FlowRound, flowText: string): Promise<void> {
+/**
+ * Seeds the replica for a round that is being opened, and answers with the
+ * peers that round remembers, which is who a session re-dials.
+ */
+export async function recoverReplica(round: FlowRound, flowText: string): Promise<string[]> {
     if (!collabSettings().enabled) {
         seedReplica(round);
-        return;
+        return [];
     }
     let recovered = null;
     try {
@@ -34,6 +38,10 @@ export async function recoverReplica(round: FlowRound, flowText: string): Promis
         // A broken config directory is not a reason to refuse to open a round.
     }
     seedReplica(round, "", recovered?.doc ?? null);
+    // Remembered rather than replaced: a round taken from an invitation knows
+    // its host before any sidecar for it exists.
+    rememberRoundPeers(round.id, recovered?.peers ?? []);
+    return knownRoundPeers(round.id);
 }
 
 /** Repairs any drift, then makes the replica durable beside the saved file. */
@@ -47,7 +55,12 @@ export async function persistReplica(round: FlowRound, flowText: string): Promis
         const fs = await getSidecarFs();
         await fs.write(
             round.id,
-            serializeSidecar({ roundId: round.id, flowHash: hashText(flowText), peers: [], doc }),
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(flowText),
+                peers: knownRoundPeers(round.id),
+                doc,
+            }),
         );
     } catch {
         // The flow itself is already saved. A sidecar that did not land only
