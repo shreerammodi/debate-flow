@@ -10,6 +10,7 @@
  * no-ops and text undo keeps working.
  */
 
+import { rebaseActions, type StructuralChange, type UndoAction } from "@/lib/collab/undoRebase";
 import type { CellSource } from "@/lib/model/flow";
 
 import type { CellGrid } from "./cellShift";
@@ -110,4 +111,77 @@ export function restoreMetaRedo(grid: CellGrid): boolean {
 export function resetMetaUndo(): void {
     lastPushed = null;
     lastUndone = null;
+}
+
+/** The parts of Handsontable's undo plugin this has to correct. */
+interface UndoPluginLike {
+    doneActions?: UndoAction[];
+    undoneActions?: UndoAction[];
+}
+
+/** Shifts a decoration snapshot's rows the same way the text stack moved. */
+function rebaseEntries(entries: ClassEntry[], change: StructuralChange): ClassEntry[] | null {
+    const out: ClassEntry[] = [];
+    for (const entry of entries) {
+        const [row, col, className, source] = entry;
+        const asAction: UndoAction = { actionType: "change", changes: [[row, col, null, null]] };
+        const moved = rebaseActions([asAction], change);
+        if (moved === null) return null;
+        const newRow = moved[0].changes![0][0];
+        out.push(source ? [newRow, col, className, source] : [newRow, col, className]);
+    }
+    return out;
+}
+
+/**
+ * Corrects both undo histories for a partner's structural change, or drops
+ * both when it cannot.
+ *
+ * The two stacks are halves of one history: rebasing text and not decorations
+ * would leave a bold toggle undoing onto a row its text no longer sits on.
+ * The action objects are corrected in place rather than replaced, because the
+ * decoration snapshots are keyed on their identity.
+ */
+export function rebaseUndoStacks(
+    plugin: UndoPluginLike | undefined,
+    change: StructuralChange,
+): void {
+    if (!plugin) return;
+
+    for (const key of ["doneActions", "undoneActions"] as const) {
+        const stack = plugin[key];
+        if (!stack || stack.length === 0) continue;
+
+        const rebased = rebaseActions(stack, change);
+        const metas = stack.map((a) => snapshots.get(a));
+        const rebasedMetas = metas.map((m) =>
+            m
+                ? {
+                      cols: m.cols,
+                      before: rebaseEntries(m.before, change),
+                      after: rebaseEntries(m.after, change),
+                  }
+                : null,
+        );
+        const metaFailed = rebasedMetas.some((m) => m && (!m.before || !m.after));
+
+        if (rebased === null || metaFailed) {
+            // Losing history beats writing to the wrong cell.
+            stack.length = 0;
+            resetMetaUndo();
+            continue;
+        }
+
+        stack.forEach((action, i) => {
+            const next = rebased[i];
+            if (next.changes) action.changes = next.changes;
+            if (typeof next.index === "number") action.index = next.index;
+            const meta = rebasedMetas[i];
+            const held = snapshots.get(action);
+            if (meta && held) {
+                held.before = meta.before as ClassEntry[];
+                held.after = meta.after as ClassEntry[];
+            }
+        });
+    }
 }

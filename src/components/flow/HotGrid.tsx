@@ -15,6 +15,7 @@ import {
     rowOpFromHook,
     textOpsFromChanges,
 } from "@/lib/collab/gridOps";
+import { planRemoteApply } from "@/lib/collab/remoteApply";
 import { recordOp } from "@/lib/collab/replica";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
@@ -24,6 +25,7 @@ import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
 import {
     attachMetaUndo,
+    rebaseUndoStacks,
     onRedoStackChange,
     onUndoStackChange,
     restoreMetaRedo,
@@ -39,6 +41,7 @@ import {
     nudge,
     revertMove,
 } from "@/lib/grid/moveSession";
+import { setRemoteApply, type RemoteApplyHandler } from "@/lib/grid/remoteBridge";
 import { breakEmptiedLinks, type GridChange } from "@/lib/grid/staleSource";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { resolveCommand } from "@/lib/keymap/resolve";
@@ -230,6 +233,51 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             if (getActiveHot() === hot) setActiveHot(null, null);
         };
     }, []);
+
+    // A partner's change reaching this grid. The plan decides what may be
+    // touched; this only carries it out, and it never scrolls, never takes
+    // focus, and never writes under the editor the debater is typing in.
+    useEffect(() => {
+        const onRemote: RemoteApplyHandler = (before, after) => {
+            const hot = hotRef.current?.hotInstance;
+            const sid = currentSheetIdRef.current;
+            if (!hot || !sid) return;
+
+            const editor = hot.getActiveEditor();
+            const editorOpen = Boolean(editor?.isOpened?.());
+            const sel = hot.getSelectedLast();
+            const plan = planRemoteApply(before, after, {
+                editorOpen,
+                editorCell: editorOpen && sel ? { sheetId: sid, col: sel[1], row: sel[0] } : null,
+                selection: sel ? { sheetId: sid, col: sel[1], row: sel[0] } : null,
+                activeSheetId: sid,
+            });
+
+            // The grid reloads from the store, which the projection already
+            // wrote; the deferred cells are simply left for the editor to
+            // finish before the next snapshot picks them up.
+            if (plan.writeCells) snapshot();
+
+            // A stale index would make an undo write into a row the debater
+            // never touched, so correct the two stacks together or drop both.
+            if (plan.structural) {
+                rebaseUndoStacks(
+                    (hot as unknown as { undoRedo?: Parameters<typeof rebaseUndoStacks>[0] })
+                        .undoRedo,
+                    plan.structural,
+                );
+            }
+
+            if (plan.selectRow !== null && sel) {
+                // The fifth argument is what keeps the viewport still. Its
+                // default is true, and the difference is invisible until a
+                // partner types on a sheet the debater has scrolled away from.
+                hot.selectCell(plan.selectRow, sel[1], plan.selectRow, sel[1], false);
+            }
+        };
+        setRemoteApply(onRemote);
+        return () => setRemoteApply(null);
+    }, [snapshot]);
 
     // Zoom scales the grid via CSS on the wrapper; Handsontable measures its
     // viewport once, so re-measure it against the new zoomed box or the last

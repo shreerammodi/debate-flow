@@ -10,6 +10,7 @@
  * switch is enforced in exactly one place.
  */
 
+import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
@@ -65,10 +66,14 @@ export async function startForRound(
         appVersion: await getCurrentVersion(),
         doc: () => getReplica() as CollabDoc,
         apply: (incoming): DroppedCell[] => {
-            const held = getReplica();
-            if (!held) return [];
-            const result = merge(held, incoming);
+            const before = getReplica();
+            if (!before) return [];
+            const result = merge(before, incoming);
             seedReplica(round, "", result.doc);
+            // The replica is correct the instant the merge lands. What reaches
+            // the grid is governed by the apply rules, which is a separate
+            // question from what the document says.
+            applyRemote(before, result.doc);
             return result.dropped;
         },
         dial: knownPeers,
