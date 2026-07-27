@@ -112,12 +112,12 @@ async function pair(round: FlowRound) {
         });
     }
 
-    const listenerLink = await net.create("sam")({ relay: false, alpn: "x" });
+    const listenerLink = await net.create("sam")({ discovery: "mdns", relay: false });
     let samConn: Parameters<typeof attachSync>[0]["conn"] | null = null;
     await listenerLink.listen((peer) => {
         samConn = peer;
     });
-    const diallerLink = await net.create("alex")({ relay: false, alpn: "x" });
+    const diallerLink = await net.create("alex")({ discovery: "mdns", relay: false });
     const alexConn = await diallerLink.dial("sam");
 
     alex.sync = wire(alex, alexConn);
