@@ -31,7 +31,7 @@ export default function MyEndpointId() {
     return (
         <SettingRow
             title="Your ID"
-            description="Send this to a partner and they can add you as a contact. It is the same on every round and cannot be used to reach your files."
+            description="Send this to a partner and they can add you as a contact to easily share flows. Flows still need to be shared manually."
             control={
                 <Button
                     type="button"

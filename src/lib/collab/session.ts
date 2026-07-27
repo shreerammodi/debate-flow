@@ -32,6 +32,11 @@ export interface CollabPeer {
     endpointId: string;
     role: Role;
     connectionType: "direct" | "relayed";
+    /**
+     * What the peer calls themselves, when they said. A suggestion only: a
+     * saved contact's name is the receiver's own word for them and wins.
+     */
+    name?: string;
 }
 
 export interface CollabSession {
@@ -78,6 +83,8 @@ export interface CollabSessionDeps {
     schedule?: (fn: () => void, ms: number) => () => void;
     /** What this side calls the round, so an invite it sends can name it. */
     roundLabel?: string;
+    /** What this side calls itself, carried to every peer it greets. */
+    displayName?: string;
     /**
      * The contact table, consulted only to decide whether a dial this session
      * cannot admit is an invite worth showing. Absent means every refusal is
@@ -234,13 +241,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (!policy.knownPeers.includes(msg.endpointId)) {
                 policy.knownPeers.push(msg.endpointId);
             }
-            conn.send({ type: "helloAck", ok: true });
+            conn.send({ type: "helloAck", ok: true, name: deps.displayName });
             const sync = track(
                 conn,
                 {
                     endpointId: msg.endpointId,
                     role: verdict.role,
                     connectionType: conn.connectionType(),
+                    name: typeof msg.name === "string" ? msg.name : undefined,
                 },
                 verdict.role === "coach",
             );
@@ -274,6 +282,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                         endpointId: target,
                         role: deps.role ?? "partner",
                         connectionType: conn.connectionType(),
+                        name: typeof msg.name === "string" ? msg.name : undefined,
                     },
                     false,
                 );
@@ -294,6 +303,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     appVersion: deps.appVersion,
                     ticket: secret,
                     label: deps.roundLabel,
+                    name: deps.displayName,
                 }),
             );
         });

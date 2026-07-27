@@ -68,9 +68,14 @@ export function removeContact(contacts: Contacts, endpointId: string): Contacts 
     return rest;
 }
 
-/** What to call this peer on screen. */
-export function contactName(contacts: Contacts, endpointId: string): string {
-    return contacts[endpointId]?.name ?? endpointId.slice(0, SHORT_ID);
+/**
+ * What to call this peer on screen: the name the receiver saved, then the one
+ * the peer broadcast, then the short id. A saved name wins because it is the
+ * receiver's own word for this peer, and a peer cannot rename themselves out
+ * from under it mid-round.
+ */
+export function contactName(contacts: Contacts, endpointId: string, broadcast?: string): string {
+    return contacts[endpointId]?.name ?? (broadcast?.trim() || endpointId.slice(0, SHORT_ID));
 }
 
 export function isKnown(contacts: Contacts, endpointId: string): boolean {

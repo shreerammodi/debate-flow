@@ -93,6 +93,15 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   invite each other by name for the rest of the day. The ID is checked as you
   type it, opens nothing but a round you invite them to, and is the same one
   the app has always used, so nothing about an existing contact changes.
+- **Your name travels with the round you share.** A session carries what
+  Settings > Collaboration calls Your name, so a partner sees "Rin" in the
+  chip and on the toast that offers to save you, instead of eight characters
+  of key. Left blank it is your machine's name, which is what most people
+  would recognise anyway, and that hostname is never written to `config.toml`:
+  the file syncs between machines, and a name baked in there would follow one
+  laptop onto another. A name you have already saved for a partner always
+  wins over the one they send, so nobody can rename themselves on your screen
+  mid-round.
 - A round remembers the partners it was shared with, so opening the file again
   reconnects to them silently, with no new invite.
 - The session chip in the bottom-left corner reports the connection and lists

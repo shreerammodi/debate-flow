@@ -103,6 +103,12 @@ export interface FlowState {
     /** Whether a session may fall back to a relay when a direct link fails. */
     collabRelayEnabled: boolean;
     /**
+     * What a shared round calls this side. Empty means the machine's own name
+     * is broadcast instead, which is why the hostname is never written here:
+     * the config file syncs between machines.
+     */
+    collabName: string;
+    /**
      * A partner's changes are recorded and shown rather than applied. Only
      * meaningful while shared editing is on.
      */
@@ -166,6 +172,7 @@ export interface FlowActions {
     setCardmirrorTextType(type: CardMirrorTextType): void;
     setCollabEnabled(on: boolean): void;
     setCollabRelayEnabled(on: boolean): void;
+    setCollabName(name: string): void;
     setShadowMode(on: boolean): void;
     setContacts(contacts: Contacts): void;
     setTheme(mode: ThemeMode): void;
@@ -214,6 +221,7 @@ export interface AppConfig {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    collabName: string;
     shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
@@ -280,6 +288,7 @@ interface DisplaySettings {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    collabName: string;
     shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
@@ -308,6 +317,7 @@ function loadDisplaySettings(): DisplaySettings {
         theme: "system",
         collabEnabled: false,
         collabRelayEnabled: true,
+        collabName: "",
         shadowMode: false,
         contacts: {},
         affColor: null,
@@ -335,6 +345,7 @@ function loadDisplaySettings(): DisplaySettings {
             collabEnabled: typeof p.collabEnabled === "boolean" ? p.collabEnabled : false,
             collabRelayEnabled:
                 typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
+            collabName: typeof p.collabName === "string" ? p.collabName : "",
             shadowMode: typeof p.shadowMode === "boolean" ? p.shadowMode : false,
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
@@ -371,6 +382,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         theme: s.theme,
         collabEnabled: s.collabEnabled,
         collabRelayEnabled: s.collabRelayEnabled,
+        collabName: s.collabName,
         shadowMode: s.shadowMode,
         contacts: s.contacts,
         flowsDir: s.flowsDir,
@@ -446,6 +458,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
     collabEnabled: initialDisplaySettings.collabEnabled,
     collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
+    collabName: initialDisplaySettings.collabName,
     shadowMode: initialDisplaySettings.shadowMode,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
@@ -764,6 +777,11 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCollabRelayEnabled(on) {
         saveDisplaySettings({ ...displaySettingsOf(get()), collabRelayEnabled: on });
         set({ collabRelayEnabled: on });
+    },
+
+    setCollabName(name) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), collabName: name });
+        set({ collabName: name });
     },
 
     setShadowMode(on) {

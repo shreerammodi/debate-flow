@@ -92,6 +92,7 @@ pub fn run() {
             collab::collab_send,
             collab::collab_start,
             collab::collab_stop,
+            collab::machine_name,
             config::read_config,
             config::write_config,
             flowfile::create_flow_file,

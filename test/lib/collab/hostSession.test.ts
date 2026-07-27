@@ -201,6 +201,53 @@ describe("a hosted session", () => {
     });
 });
 
+describe("the name each side broadcasts", () => {
+    async function named(hostName?: string, guestName?: string) {
+        const hostSide = replicaFor(shared, "alex");
+        const host = (await startCollabSession({
+            createLink: net.create("alex"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            doc: hostSide.doc,
+            apply: hostSide.apply,
+            displayName: hostName,
+            schedule: clock.schedule,
+        }))!;
+        const ticket = encodeTicket(host.share("partner"));
+
+        const guestSide = replicaFor(shared, "sam");
+        const guest = (await startCollabSession({
+            createLink: net.create("sam"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            doc: guestSide.doc,
+            apply: guestSide.apply,
+            displayName: guestName,
+            ticket,
+            dial: ["alex"],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        return { host, guest };
+    }
+
+    it("reaches the host from the guest's hello", async () => {
+        const { host } = await named("Alex", "Rin");
+        expect(host.peers()[0].name).toBe("Rin");
+    });
+
+    it("comes back to the guest on the ack, so naming works both ways", async () => {
+        const { guest } = await named("Alex", "Rin");
+        expect(guest.peers()[0].name).toBe("Alex");
+    });
+
+    it("leaves a peer nameless when the far side broadcasts nothing", async () => {
+        const { host, guest } = await named(undefined, undefined);
+        expect(host.peers()[0].name).toBeUndefined();
+        expect(guest.peers()[0].name).toBeUndefined();
+    });
+});
+
 describe("editing across a session", () => {
     it("carries an edit from the host to the guest", async () => {
         const { host, hostSide, guestSide } = await hostAndGuest();

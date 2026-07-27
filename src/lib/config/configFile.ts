@@ -43,6 +43,12 @@ export interface ConfigFileShape {
     collab_enabled: boolean;
     /** Whether a session may fall back to a relay. */
     collab_relay: boolean;
+    /**
+     * What a shared round calls this side. Empty broadcasts the machine's own
+     * name, which is why the hostname is never written into this file: it
+     * syncs between machines and would follow one laptop's name onto another.
+     */
+    collab_name: string;
     /** Whether a peer's changes are recorded and shown instead of applied. */
     shadow_mode: boolean;
     /**
@@ -132,6 +138,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         cardmirror_text_type: s.cardmirrorTextType,
         collab_enabled: s.collabEnabled,
         collab_relay: s.collabRelayEnabled,
+        collab_name: s.collabName,
         shadow_mode: s.shadowMode,
         contacts: s.contacts,
         flows_dir: s.flowsDir,
@@ -179,6 +186,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         collabEnabled: bool(o.collab_enabled, false),
         collabRelayEnabled: bool(o.collab_relay, true),
+        collabName: typeof o.collab_name === "string" ? o.collab_name : "",
         shadowMode: bool(o.shadow_mode, false),
         contacts: resolveContacts(o.contacts),
         theme: resolveThemeMode(o.theme),

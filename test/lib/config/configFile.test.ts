@@ -20,6 +20,7 @@ const sample: AppConfig = {
     cardmirrorTextType: "tag",
     collabEnabled: false,
     collabRelayEnabled: true,
+    collabName: "Rin",
     shadowMode: false,
     contacts: {},
     theme: "dark",

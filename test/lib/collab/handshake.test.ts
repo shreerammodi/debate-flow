@@ -44,6 +44,13 @@ describe("helloFrom", () => {
         expect(helloFrom(base)).not.toHaveProperty("ticket");
         expect(helloFrom({ ...base, ticket: SECRET })).toHaveProperty("ticket", SECRET);
     });
+
+    it("carries a name only when this side has one to broadcast", () => {
+        const base = { endpointId: "me", roundId: "r", role: "partner" as const, appVersion: "1" };
+        expect(helloFrom(base)).not.toHaveProperty("name");
+        expect(helloFrom({ ...base, name: "" })).not.toHaveProperty("name");
+        expect(helloFrom({ ...base, name: "Rin" })).toHaveProperty("name", "Rin");
+    });
 });
 
 describe("admit", () => {

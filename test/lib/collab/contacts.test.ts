@@ -88,6 +88,18 @@ describe("contactName", () => {
         expect(short.length).toBeLessThan(ALEX.length);
         expect(ALEX.startsWith(short)).toBe(true);
     });
+
+    it("takes the name a peer broadcast over the short form", () => {
+        expect(contactName({}, ALEX, "Rin")).toBe("Rin");
+    });
+
+    it("keeps the saved name, so a peer cannot rename themselves on your screen", () => {
+        expect(contactName(saved, ALEX, "Someone Else")).toBe("Alex");
+    });
+
+    it("ignores a broadcast name that is only whitespace", () => {
+        expect(contactName({}, ALEX, "   ")).toBe(ALEX.slice(0, 8));
+    });
 });
 
 describe("isKnown", () => {

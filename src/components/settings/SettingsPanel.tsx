@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import ContactList from "@/components/collab/ContactList";
+import DisplayNameRow from "@/components/collab/DisplayNameRow";
 import MyEndpointId from "@/components/collab/MyEndpointId";
 import SessionControls from "@/components/collab/SessionControls";
 import { Button } from "@/components/ui/button";
@@ -643,6 +644,7 @@ export default function SettingsPanel() {
                                             }
                                         />
                                         <ShadowLog />
+                                        <DisplayNameRow />
                                         <MyEndpointId />
                                         <ContactList />
                                     </>

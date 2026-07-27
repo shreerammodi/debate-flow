@@ -27,10 +27,17 @@ export type WireMessage =
           capabilities: string[];
           /** What the dialler calls this round, for an invite's corner message. */
           label?: string;
+          /**
+           * What the dialler calls themselves. A suggestion the far side may
+           * show and may save; a name a contact already carries wins over it,
+           * because that one is the receiver's own word for this peer.
+           */
+          name?: string;
           /** Present only on the first join, and spent when it is accepted. */
           ticket?: string;
       }
-    | { type: "helloAck"; ok: true }
+    /** The host answers with its own name, so naming works in both directions. */
+    | { type: "helloAck"; ok: true; name?: string }
     | { type: "helloAck"; ok: false; reason: string }
     | { type: "state"; doc: CollabDoc }
     | { type: "delta"; doc: CollabDoc }

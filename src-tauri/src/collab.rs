@@ -402,6 +402,33 @@ pub fn collab_stop(state: State<'_, CollabState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Strips what a hostname carries for the network and a debater does not: the
+/// mDNS suffix, and any domain past the first label. `smodi-mbp.local` and
+/// `smodi-mbp.tourney.lan` are both `smodi-mbp`.
+fn short_host(raw: &str) -> String {
+    raw.trim()
+        .trim_end_matches('.')
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+/// What this machine calls itself, for the display name a shared round
+/// carries. Read from the `hostname` binary every desktop platform ships,
+/// rather than pulling in a crate for one string. Empty when it cannot be
+/// read, which the caller shows as no default rather than as an error.
+#[tauri::command]
+pub fn machine_name() -> String {
+    let Ok(out) = std::process::Command::new("hostname").output() else {
+        return String::new();
+    };
+    if !out.status.success() {
+        return String::new();
+    }
+    short_host(&String::from_utf8_lossy(&out.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,6 +442,14 @@ mod tests {
     fn relay_off_disables_relays_outright() {
         assert_eq!(relay_mode(false), RelayMode::Disabled);
         assert_eq!(relay_mode(true), RelayMode::Default);
+    }
+
+    #[test]
+    fn a_host_keeps_its_first_label_and_nothing_else() {
+        assert_eq!(short_host("smodi-mbp.local\n"), "smodi-mbp");
+        assert_eq!(short_host("smodi-mbp.tourney.lan"), "smodi-mbp");
+        assert_eq!(short_host("  smodi-mbp  "), "smodi-mbp");
+        assert_eq!(short_host(""), "");
     }
 }
 

@@ -35,6 +35,8 @@ export function helloFrom(input: {
     ticket?: string;
     /** What this side calls the round, so an invite can name it. */
     label?: string;
+    /** What this side calls itself, so a peer has something to save. */
+    name?: string;
 }): WireMessage {
     const hello: Extract<WireMessage, { type: "hello" }> = {
         type: "hello",
@@ -48,6 +50,7 @@ export function helloFrom(input: {
         capabilities: [],
     };
     if (input.label) hello.label = input.label;
+    if (input.name) hello.name = input.name;
     return input.ticket ? { ...hello, ticket: input.ticket } : hello;
 }
 

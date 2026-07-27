@@ -25,6 +25,7 @@ import { announceInvite } from "./inbox";
 import type { InviteNotice } from "./invite";
 import { startInviteListener, type InviteListener } from "./inviteListener";
 import { lossMessage } from "./lossReport";
+import { broadcastName } from "./machineName";
 import { merge, type DroppedCell } from "./merge";
 import { createPeerLinkFor } from "./peerLink";
 import {
@@ -47,22 +48,18 @@ let watching: Promise<void> | null = null;
 /** Peers already offered as a contact, so one session asks about each once. */
 const offered = new Set<string>();
 
-/** An EndpointId is a long key; a chip shows the first eight characters. */
-function shortName(endpointId: string): string {
-    return endpointId.slice(0, 8);
-}
-
 /**
  * A peer nobody has saved is worth one offer, because the alternative is
- * trading keys by hand next time. The name defaults to the short id
- * and is theirs to change in Settings; what matters is the id behind it.
+ * trading keys by hand next time. The name defaults to the one they broadcast,
+ * falling back to the short id, and is theirs to change in Settings; what
+ * matters is the id behind it.
  */
 function offerToSave(peers: CollabPeer[]): void {
     const contacts = useFlowStore.getState().contacts;
     for (const peer of peers) {
         if (contacts[peer.endpointId] || offered.has(peer.endpointId)) continue;
         offered.add(peer.endpointId);
-        const name = shortName(peer.endpointId);
+        const name = contactName(contacts, peer.endpointId, peer.name);
         toast(`Save ${name} as a ${peer.role}?`, {
             duration: 20_000,
             action: {
@@ -77,7 +74,7 @@ function publish(peers: CollabPeer[]): void {
     const contacts = useFlowStore.getState().contacts;
     const view: CollabPeerView[] = peers.map((p) => ({
         endpointId: p.endpointId,
-        name: contactName(contacts, p.endpointId),
+        name: contactName(contacts, p.endpointId, p.name),
         role: p.role,
         connectionType: p.connectionType,
     }));
@@ -152,6 +149,7 @@ export async function startForRound(
             // so it is what an invite names.
             roundLabel: store.docPath ? basename(store.docPath).replace(/\.ebb$/i, "") : "",
             appVersion: await getCurrentVersion(),
+            displayName: await broadcastName(),
             doc: () => getReplica() as CollabDoc,
             apply: (incoming) => applyRemoteDoc(round, incoming),
             dial: knownPeers,

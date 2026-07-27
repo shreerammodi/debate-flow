@@ -149,7 +149,7 @@ describe("a session opened for a round", () => {
 
 describe("a peer nobody has saved", () => {
     /** Brings a guest onto the host's session, the way a ticket does. */
-    async function guestJoins(host: CollabSession): Promise<void> {
+    async function guestJoins(host: CollabSession, displayName?: string): Promise<void> {
         const ticket = encodeTicket(host.share("partner"));
         await startCollabSession({
             createLink: net.create("sam"),
@@ -157,6 +157,7 @@ describe("a peer nobody has saved", () => {
             appVersion: "0.11.0",
             doc: () => seedDoc(round),
             apply: () => [],
+            displayName,
             ticket,
             dial: ["me"],
         });
@@ -189,6 +190,29 @@ describe("a peer nobody has saved", () => {
         useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
         const host = await startForRound(round);
         await guestJoins(host!);
+        expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Sam"]);
+    });
+
+    it("is offered under the name they broadcast, not their id", async () => {
+        const host = await startForRound(round);
+        await guestJoins(host!, "Rin");
+        expect(corners.find((c) => c.message.startsWith("Save "))!.message).toBe(
+            "Save Rin as a partner?",
+        );
+        corners.find((c) => c.action)!.action!.onClick();
+        expect(useFlowStore.getState().contacts.sam).toEqual({ name: "Rin", role: "partner" });
+    });
+
+    it("is named in the chip by what they broadcast until they are saved", async () => {
+        const host = await startForRound(round);
+        await guestJoins(host!, "Rin");
+        expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Rin"]);
+    });
+
+    it("keeps a saved name over the one they broadcast", async () => {
+        useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
+        const host = await startForRound(round);
+        await guestJoins(host!, "Rin");
         expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Sam"]);
     });
 });
