@@ -10,6 +10,7 @@
 
 import type ExcelJS from "exceljs";
 
+import type { Contacts } from "@/lib/collab/contacts";
 import { gridWidth } from "@/lib/grid/codec";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { sortedSheets, type FlowRound, type FlowSheet } from "@/lib/model/flow";
@@ -107,17 +108,22 @@ export function addFlowWorksheet(
 }
 
 /** Fill an empty workbook with every worksheet for the round, in tab order. */
-export function fillWorkbook(workbook: ExcelJS.Workbook, round: FlowRound): void {
+export function fillWorkbook(
+    workbook: ExcelJS.Workbook,
+    round: FlowRound,
+    contacts: Contacts = {},
+): void {
     applyInfoWorksheet(workbook, round);
-    maybeAddRfdWorksheet(workbook, round);
+    maybeAddRfdWorksheet(workbook, round, contacts);
     const used = new Set(workbook.worksheets.map((ws) => ws.name.toLowerCase()));
     for (const sheet of sortedSheets(round)) addFlowWorksheet(workbook, round, sheet, used);
 }
 
-export async function downloadXlsx(round: FlowRound): Promise<void> {
+/** Contacts name the authors of any peer notes on the RFD worksheet. */
+export async function downloadXlsx(round: FlowRound, contacts: Contacts = {}): Promise<void> {
     const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
-    fillWorkbook(workbook, round);
+    fillWorkbook(workbook, round, contacts);
     const out = await workbook.xlsx.writeBuffer();
     await saveBlob(new Blob([out], { type: XLSX_MIME }), exportFilename(round.createdAt, "xlsx"));
 }

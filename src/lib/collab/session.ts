@@ -13,10 +13,13 @@
  * role.
  */
 
+import { setLocks } from "@/lib/grid/lockBridge";
+
 import { collabSettings, type CollabSettings } from "./enabled";
 import { admit, helloFrom, type HostPolicy } from "./handshake";
 import type { DroppedCell } from "./merge";
 import type { PeerConn, PeerLink, PeerLinkFactory, WireMessage } from "./peerLink";
+import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Lock } from "./presence";
 import { retryForever } from "./reconnect";
 import { attachSync, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
@@ -36,6 +39,12 @@ export interface CollabSession {
     share(role: Role): Ticket;
     /** Tells every peer about a local edit. */
     notifyLocalChange(): void;
+    /**
+     * Claims the cell this side has an editor open on, or releases it with
+     * null. Sent immediately rather than on a tick, and refreshed on a
+     * heartbeat so a frozen process stops holding it.
+     */
+    setPresence(cell: { sheetId: string; col: number; row: number } | null): void;
     stop(): Promise<void>;
 }
 
@@ -83,13 +92,55 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         knownPeers: [...(deps.dial ?? [])],
     };
     const live = new Map<string, Live>();
+    /** Cells peers have an editor open on. Advisory, and always expiring. */
+    let locks: Lock[] = [];
     let stopped = false;
+
+    function publishLocks(): void {
+        setLocks(locks);
+    }
+
+    /** The cell this side holds, refreshed until the editor closes. */
+    let held: { sheetId: string; col: number; row: number } | null = null;
+    let cancelHeartbeat: (() => void) | null = null;
+    const schedule =
+        deps.schedule ??
+        ((fn, ms) => {
+            const id = setTimeout(fn, ms);
+            return () => clearTimeout(id);
+        });
+
+    function broadcastPresence(): void {
+        for (const l of live.values()) l.conn.send({ type: "presence", cell: held });
+    }
+
+    function armHeartbeat(): void {
+        cancelHeartbeat = schedule(() => {
+            if (stopped || !held) return;
+            broadcastPresence();
+            armHeartbeat();
+        }, HEARTBEAT_MS);
+    }
 
     function announce(): void {
         deps.onPeersChanged?.([...live.values()].map((l) => l.peer));
     }
 
+    function onPresence(endpointId: string, cell: Lock | null): void {
+        locks = cell ? claim(locks, cell) : releaseCell(locks, endpointId);
+        publishLocks();
+    }
+
     function track(conn: PeerConn, peer: CollabPeer, readOnly: boolean): PeerSync {
+        // A peer's open editor claims a cell so this side sees it before
+        // typing into it; the claim goes the moment the link does.
+        conn.onMessage((msg) => {
+            if (msg.type !== "presence") return;
+            onPresence(
+                peer.endpointId,
+                msg.cell ? { endpointId: peer.endpointId, ...msg.cell, heldAt: Date.now() } : null,
+            );
+        });
         const sync = attachSync({
             conn,
             doc: deps.doc,
@@ -104,6 +155,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (held?.conn !== conn) return;
             held.sync.stop();
             live.delete(peer.endpointId);
+            // A peer that is gone holds nothing, instantly and without waiting
+            // for the heartbeat to lapse.
+            locks = releasePeer(locks, peer.endpointId);
+            publishLocks();
             announce();
         });
         announce();
@@ -235,6 +290,15 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             for (const l of live.values()) l.sync.notifyLocalChange();
         },
 
+        setPresence(cell) {
+            held = cell;
+            broadcastPresence();
+            cancelHeartbeat?.();
+            cancelHeartbeat = null;
+            // Only an open editor needs refreshing; a release is final.
+            if (cell) armHeartbeat();
+        },
+
         async stop() {
             stopped = true;
             for (const l of [...live.values()]) {
@@ -243,6 +307,11 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 l.conn.close();
             }
             live.clear();
+            cancelHeartbeat?.();
+            cancelHeartbeat = null;
+            held = null;
+            locks = [];
+            publishLocks();
             announce();
             await link.stop();
         },

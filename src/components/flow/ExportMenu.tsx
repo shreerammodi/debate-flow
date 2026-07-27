@@ -48,7 +48,7 @@ export default function ExportMenu() {
                     Save As writes one wherever the user wants it. */}
                 <DropdownMenuItem
                     data-testid="export-excel"
-                    onSelect={() => run((r) => downloadXlsx(r))}
+                    onSelect={() => run((r) => downloadXlsx(r, useFlowStore.getState().contacts))}
                 >
                     Excel
                 </DropdownMenuItem>

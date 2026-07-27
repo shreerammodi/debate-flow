@@ -12,7 +12,37 @@
 import { gridWidth, trimGrid } from "@/lib/grid/codec";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { sortedSheets } from "@/lib/model/flow";
+import { renderRfdHtml } from "@/lib/rfd/markdown";
+import { authoredPeerNotes } from "@/lib/rfd/peerNotes";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+
+/**
+ * Reasons for decision, printed after the sheets so the flow reads first.
+ *
+ * The owner's notes lead and each peer follows under their own label, in the
+ * order the preview pane lists them. Every section is rendered on its own, so
+ * one author's markdown cannot run into the next author's.
+ */
+function PrintRfd() {
+    const decision = useFlowStore((s) => s.round?.scouting.decision);
+    const contacts = useFlowStore((s) => s.contacts);
+    const rfd = decision?.rfd?.trim() ?? "";
+    const peers = authoredPeerNotes(decision, contacts);
+    if (!rfd && peers.length === 0) return null;
+
+    return (
+        <section className="print-rfd" data-testid="print-rfd">
+            <h2>RFD</h2>
+            {rfd && <div dangerouslySetInnerHTML={{ __html: renderRfdHtml(rfd) }} />}
+            {peers.map((note) => (
+                <section key={note.endpointId} data-testid="print-rfd-peer-note">
+                    <h3>{note.author}</h3>
+                    <div dangerouslySetInnerHTML={{ __html: renderRfdHtml(note.text) }} />
+                </section>
+            ))}
+        </section>
+    );
+}
 
 export default function PrintView() {
     const round = useFlowStore((s) => s.round);
@@ -69,6 +99,7 @@ export default function PrintView() {
                     </section>
                 );
             })}
+            <PrintRfd />
         </div>
     );
 }

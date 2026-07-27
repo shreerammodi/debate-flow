@@ -1,13 +1,27 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { seedDoc } from "@/lib/collab/doc";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { startCollabSession } from "@/lib/collab/session";
+import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net = createMemoryNet();
+const round = makeFlowRound({});
 
-function deps(peers: string[] = ["sam", "kim"]) {
-    return { createLink: net.create("alex"), peers };
+/**
+ * A fully formed session request. Everything a real one carries is present, so
+ * the only reason nothing happens below is the switch itself.
+ */
+function deps(dial: string[] = ["sam", "kim"]) {
+    return {
+        createLink: net.create("alex"),
+        roundId: round.id,
+        appVersion: "0.11.0",
+        doc: () => seedDoc(round),
+        apply: () => [],
+        dial,
+    };
 }
 
 beforeEach(() => {
@@ -47,7 +61,7 @@ describe("with shared editing switched off", () => {
 describe("discovery", () => {
     it("never publishes a DNS record, switch on included", async () => {
         useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
-        await startCollabSession({ createLink: net.create("alex") });
+        await startCollabSession(deps([]));
         const configs = net.calls.filter((c) => c.op === "create").map((c) => c.config);
         expect(configs).toHaveLength(1);
         expect(configs[0]!.discovery).toBe("mdns");
@@ -56,7 +70,7 @@ describe("discovery", () => {
 
     it("follows the relay setting", async () => {
         useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: false });
-        await startCollabSession({ createLink: net.create("alex") });
+        await startCollabSession(deps([]));
         expect(net.calls.find((c) => c.op === "create")!.config!.relay).toBe(false);
     });
 });

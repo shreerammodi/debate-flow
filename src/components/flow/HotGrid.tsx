@@ -9,6 +9,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import "handsontable/styles/handsontable.min.css";
 import "handsontable/styles/ht-theme-main.min.css";
 
+import { contactName } from "@/lib/collab/contacts";
 import {
     isReplicatedSource,
     resyncActiveSheet,
@@ -24,6 +25,8 @@ import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
+import { getLocks, onLocksChanged } from "@/lib/grid/lockBridge";
+import { LOCK_CLASS, lockClassFor, lockLabel } from "@/lib/grid/lockDecor";
 import {
     attachMetaUndo,
     rebaseUndoStacks,
@@ -63,6 +66,15 @@ const ARROW_DELTAS: Record<string, { dr: number; dc: number }> = {
     ArrowLeft: { dr: 0, dc: -1 },
     ArrowRight: { dr: 0, dc: 1 },
 };
+
+// Non-printable keys that still write the selected cell, so a held cell has to
+// refuse them alongside the printable ones. Everything else navigates and is
+// free on a cell a peer is editing.
+const EDIT_KEYS: Record<string, true> = { Backspace: true, Delete: true, F2: true };
+
+// How long the refusal hint stays up. Long enough to read at speed, short
+// enough that it is gone before the next argument.
+const LOCK_HINT_MS = 2_000;
 
 /**
  * Excel-style Cmd/Ctrl+Arrow: from a filled cell adjacent to a filled cell,
@@ -211,6 +223,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // Cross-ex sheets render a period tier (headerLevel 0) above the leaf
     // Aff/Neg headers (headerLevel 1); the period tier stays neutral and bold.
     const hasGroupTierRef = useRef(false);
+    // The refusal message for a keystroke aimed at a cell a peer holds. It sits
+    // in the pane's corner and clears itself, so the debater is told without
+    // anything to dismiss.
+    const [lockHint, setLockHint] = useState<string | null>(null);
+    const lockHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const snapshot = useCallback(() => {
         const hot = hotRef.current?.hotInstance;
@@ -279,6 +296,26 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         setRemoteApply(onRemote);
         return () => setRemoteApply(null);
     }, [snapshot]);
+
+    // A peer claiming or releasing a cell has to show up without waiting for
+    // an unrelated render, so the table's own change drives the repaint. Only
+    // decorations move, so the pass is a render and never a data write.
+    useEffect(() => {
+        return onLocksChanged(() => hotRef.current?.hotInstance?.render());
+    }, []);
+
+    useEffect(() => {
+        return () => clearTimeout(lockHintTimer.current ?? undefined);
+    }, []);
+
+    // One hint at a time: a held-down key replaces the message and restarts
+    // the clock rather than stacking timers that clear it out from under a
+    // later refusal.
+    const showLockHint = useCallback((holder: string) => {
+        setLockHint(`${holder} is editing this cell`);
+        clearTimeout(lockHintTimer.current ?? undefined);
+        lockHintTimer.current = setTimeout(() => setLockHint(null), LOCK_HINT_MS);
+    }, []);
 
     // Zoom scales the grid via CSS on the wrapper; Handsontable measures its
     // viewport once, so re-measure it against the new zoomed box or the last
@@ -451,8 +488,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     );
 
     // Cells inherit their column header's side color: blue for aff, red for neg.
-    // The move tint and the linked rail are classes on the TD alone, never
-    // cellMeta, so neither can leak into a saved sheet through collectMeta.
+    // The move tint, the linked rail, and the lock mark are classes on the TD
+    // alone, never cellMeta, so none of them can leak into a saved sheet
+    // through collectMeta.
     const afterRenderer = useCallback(
         (
             TD: HTMLTableCellElement,
@@ -471,6 +509,14 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // when a source saved before the emptying rule existed outlived it.
             if (cellProperties.source && value !== null && value !== undefined && value !== "") {
                 TD.classList.add("cell-linked");
+            }
+            // A cell a peer holds is marked before the debater types into it,
+            // which is what makes the refusal predictable instead of a
+            // surprise. The lock expires against the clock, so a peer that
+            // vanished stops marking the cell on the next pass.
+            const sid = currentSheetIdRef.current;
+            if (sid && lockClassFor(getLocks(), sid, col, row, Date.now())) {
+                TD.classList.add(LOCK_CLASS);
             }
         },
         [],
@@ -684,6 +730,28 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     return;
                 }
             }
+
+            // A cell a peer holds refuses the keystroke and says who has it.
+            // Silence would be worse than the collision it prevents: nothing
+            // would tell the debater why the character never arrived. This
+            // sits below the command lookup, so a bare key bound to a command
+            // still runs it - a held cell blocks editing, not the whole app.
+            if (hot && !e.metaKey && !e.ctrlKey && (e.key.length === 1 || EDIT_KEYS[e.key])) {
+                const sid = currentSheetIdRef.current;
+                const cell = hot.getSelectedRangeLast()?.highlight;
+                const holder =
+                    sid && cell && cell.row != null && cell.col != null
+                        ? lockLabel(getLocks(), sid, cell.col, cell.row, Date.now(), (id) =>
+                              contactName(useFlowStore.getState().contacts, id),
+                          )
+                        : null;
+                if (holder) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    showLockHint(holder);
+                    return false;
+                }
+            }
             const dir = ARROW_DELTAS[e.key];
             if (hot && (e.metaKey || e.ctrlKey) && dir) {
                 e.preventDefault();
@@ -702,7 +770,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 return false;
             }
         },
-        [snapshot],
+        [showLockHint, snapshot],
     );
 
     return (
@@ -710,10 +778,22 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         // stays in memory, so only the focused pane shows an active cell.
         <div
             ref={wrapRef}
-            className={`ht-theme-main h-full min-h-0 overflow-hidden${isFocused ? "" : " ht-blurred"}`}
+            className={`ht-theme-main relative h-full min-h-0 overflow-hidden${isFocused ? "" : " ht-blurred"}`}
             style={{ opacity: ready ? 1 : 0 }}
             data-testid="hot-grid"
         >
+            {/* The refusal message for a held cell. It sits in the corner and
+                takes no pointer events, so it never covers the cell being
+                worked in, never takes focus, and never needs dismissing. */}
+            {lockHint !== null && (
+                <div
+                    role="status"
+                    data-testid="lock-hint"
+                    className="bg-foreground/90 text-background pointer-events-none absolute right-2 bottom-2 z-10 rounded-md px-2 py-1 text-xs shadow-sm"
+                >
+                    {lockHint}
+                </div>
+            )}
             {/* zoom scales the grid's content and layout uniformly. A zoomed
                 width/height:100% child still fills this pane exactly (CSS zoom
                 resolves the percentage against the pane), and Handsontable reads

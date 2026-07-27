@@ -9,13 +9,13 @@ import { githubDark } from "@fsegurai/codemirror-theme-github-dark";
 import { githubLight } from "@fsegurai/codemirror-theme-github-light";
 import { X } from "@phosphor-icons/react";
 import { vim } from "@replit/codemirror-vim";
-import DOMPurify from "dompurify";
-import { marked } from "marked";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Tip } from "@/components/ui/tooltip";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { makeCellCompletionSource } from "@/lib/rfd/cellCompletion";
+import { renderRfdHtml } from "@/lib/rfd/markdown";
+import { authoredPeerNotes } from "@/lib/rfd/peerNotes";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 /**
@@ -187,10 +187,25 @@ export default function RfdDrawer() {
     }
 
     // The editor's updateListener keeps this current on every keystroke, so
-    // preview reads straight from the store. Sanitized because an imported
-    // flow's RFD is a trust boundary, not purely the user's own text.
+    // preview reads straight from the store.
     const rfd = useFlowStore((s) => s.round?.scouting.decision?.rfd ?? "");
-    const previewHtml = mode === "preview" ? DOMPurify.sanitize(marked.parse(rfd) as string) : "";
+    const previewHtml = mode === "preview" ? renderRfdHtml(rfd) : "";
+
+    // Peer notes belong to the wire, which writes them, and to the preview,
+    // which only reads them. Rendering runs per author so no peer's markdown
+    // can reach past its own section.
+    const peerNotes = useFlowStore((s) => s.round?.scouting.decision?.peerNotes);
+    const contacts = useFlowStore((s) => s.contacts);
+    const peerSections = useMemo(
+        () =>
+            mode === "preview"
+                ? authoredPeerNotes({ peerNotes }, contacts).map((note) => ({
+                      ...note,
+                      html: renderRfdHtml(note.text),
+                  }))
+                : [],
+        [mode, peerNotes, contacts],
+    );
 
     return (
         <section
@@ -263,8 +278,25 @@ export default function RfdDrawer() {
                 <div
                     data-testid="rfd-preview"
                     className="text-foreground [&_blockquote]:border-border [&_blockquote]:text-muted-foreground min-h-0 flex-1 overflow-auto px-3.5 py-2.5 text-[14px] leading-relaxed [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_h1]:mt-2 [&_h1]:mb-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1 [&_h2]:text-base [&_h2]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_p]:my-1.5"
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                />
+                >
+                    <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                    {peerSections.length > 0 && (
+                        <div data-testid="rfd-peer-notes" className="mt-3">
+                            {peerSections.map((note) => (
+                                <section
+                                    key={note.endpointId}
+                                    data-testid="rfd-peer-note"
+                                    className="border-border mt-3 border-t pt-3 first:mt-0"
+                                >
+                                    <h3 className="text-muted-foreground mb-1 text-[12px] font-semibold tracking-wide">
+                                        {note.author}
+                                    </h3>
+                                    <div dangerouslySetInnerHTML={{ __html: note.html }} />
+                                </section>
+                            ))}
+                        </div>
+                    )}
+                </div>
             )}
         </section>
     );

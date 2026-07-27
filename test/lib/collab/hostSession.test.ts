@@ -8,6 +8,7 @@ import { startCollabSession, type CollabSession } from "@/lib/collab/session";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
+import { getLocks } from "@/lib/grid/lockBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -281,5 +282,37 @@ describe("the opt-in gate still holds", () => {
         });
         expect(session).toBeNull();
         expect(net.calls).toEqual([]);
+    });
+});
+
+describe("presence across a session", () => {
+    it("shows the cell a partner has an editor open on", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setPresence({ sheetId, col: 1, row: 4 });
+        await settle();
+        expect(getLocks()).toHaveLength(1);
+        expect(getLocks()[0]).toMatchObject({ endpointId: "sam", col: 1, row: 4 });
+        await host.stop();
+    });
+
+    it("releases it the moment their editor closes", async () => {
+        const { guest } = await hostAndGuest();
+        guest.setPresence({ sheetId, col: 1, row: 4 });
+        await settle();
+        guest.setPresence(null);
+        await settle();
+        expect(getLocks()).toEqual([]);
+    });
+
+    it("leaves an unreachable peer holding nothing", async () => {
+        const { guest } = await hostAndGuest();
+        guest.setPresence({ sheetId, col: 0, row: 0 });
+        await settle();
+        expect(getLocks()).toHaveLength(1);
+
+        // The link drops. Nothing waits for the heartbeat to lapse.
+        await guest.stop();
+        await settle();
+        expect(getLocks()).toEqual([]);
     });
 });

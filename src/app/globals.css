@@ -339,6 +339,16 @@ html .ht-theme-main {
     background: rgba(37, 99, 235, 0.16);
 }
 
+/* A cell a peer is editing. Outline rather than box-shadow, because the card
+   and group markers already own the cell's box-shadow and shadows do not stack
+   across rules; the negative offset draws it inside the cell so no neighbour
+   shifts. Painted by afterRenderer from the live lock table, never from
+   cellMeta, so it never reaches a saved sheet. */
+.handsontable tbody tr td.ebb-locked {
+    outline: 2px dashed #7c3aed;
+    outline-offset: -2px;
+}
+
 /* Hidden on screen; visible only during print */
 .print-only {
     display: none;
@@ -395,6 +405,28 @@ html .ht-theme-main {
         box-shadow: inset 3px 0 0 #6b7280;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+    }
+
+    /* The RFD trails the sheets on its own page, one block per author. */
+    .print-flow .print-rfd {
+        page-break-before: always;
+    }
+    .print-flow .print-rfd section {
+        margin-top: 12px;
+    }
+    .print-flow .print-rfd h3 {
+        margin: 0 0 4px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .print-flow .print-rfd p,
+    .print-flow .print-rfd li {
+        margin: 0 0 4px;
+        font-size: 11px;
+    }
+    .print-flow .print-rfd li {
+        margin-left: 16px;
+        list-style: disc;
     }
 
     body {

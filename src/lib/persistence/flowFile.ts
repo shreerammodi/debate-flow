@@ -93,6 +93,14 @@ function checkScouting(value: unknown, path: string): void {
             fail(`${path}.decision.vote`, 'is not "aff" or "neg"');
         }
         optStr(d.rfd, `${path}.decision.rfd`);
+        if (!optional(d.peerNotes)) {
+            // One entry per peer, each that peer's own notes. A hand edit that
+            // put something else in here would reach the RFD preview.
+            const notes = obj(d.peerNotes, `${path}.decision.peerNotes`);
+            for (const [endpointId, note] of Object.entries(notes)) {
+                optStr(note, `${path}.decision.peerNotes.${endpointId}`);
+            }
+        }
     }
 }
 

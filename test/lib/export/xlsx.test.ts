@@ -70,4 +70,13 @@ describe("fillWorkbook", () => {
         // Plain cells carry no fill, so worksheets keep Excel's default white.
         expect(flow.getCell(2, 2).fill ?? {}).not.toHaveProperty("fgColor");
     });
+
+    it("names peer note authors from the contacts it is handed", () => {
+        const wb = new ExcelJS.Workbook();
+        const round = judgedRound();
+        round.scouting.decision = { peerNotes: { aaa11111aaa: "aff on T" } };
+        fillWorkbook(wb, round, { aaa11111aaa: { name: "Rae", role: "coach" } });
+        expect(wb.worksheets.map((ws) => ws.name)).toEqual(["Info", "RFD", "CX", "1. Topicality"]);
+        expect(wb.getWorksheet("RFD")!.getCell("A3").value).toBe("Notes from Rae");
+    });
 });

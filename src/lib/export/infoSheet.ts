@@ -5,8 +5,10 @@
 
 import type ExcelJS from "exceljs";
 
+import type { Contacts } from "@/lib/collab/contacts";
 import type { FlowRound } from "@/lib/model/flow";
 import type { Debater } from "@/lib/model/types";
+import { authoredPeerNotes } from "@/lib/rfd/peerNotes";
 
 import { isoDate } from "./download";
 
@@ -42,18 +44,42 @@ export function applyInfoWorksheet(workbook: ExcelJS.Workbook, round: FlowRound)
     labeled(ws, 15, "Decision", sc.decision?.vote?.toUpperCase());
 }
 
-/** RFD worksheet, only when there is a vote or a non-empty RFD to show. */
-export function maybeAddRfdWorksheet(workbook: ExcelJS.Workbook, round: FlowRound): void {
+/** Body cell holding an author's notes, wrapped and top-aligned. */
+function notes(ws: ExcelJS.Worksheet, row: number, text: string): void {
+    ws.getCell(row, 1).value = text;
+    ws.getCell(row, 1).alignment = { wrapText: true, vertical: "top" };
+}
+
+/**
+ * RFD worksheet, only when there is a vote, local notes, or a peer's notes.
+ *
+ * Peers follow the local author in the order the preview pane shows them, each
+ * under a label, because an EndpointId alone names nobody.
+ */
+export function maybeAddRfdWorksheet(
+    workbook: ExcelJS.Workbook,
+    round: FlowRound,
+    contacts: Contacts = {},
+): void {
     const decision = round.scouting.decision;
     const rfd = decision?.rfd?.trim() ?? "";
-    if (!decision?.vote && !rfd) return;
+    const peers = authoredPeerNotes(decision, contacts);
+    if (!decision?.vote && !rfd && peers.length === 0) return;
     const ws = workbook.addWorksheet("RFD", { views: [{ showGridLines: false }] });
     ws.getColumn(1).width = 100;
     ws.getCell("A1").value = "Decision";
     ws.getCell("A1").font = { bold: true };
     if (decision?.vote) ws.getCell("B1").value = decision.vote.toUpperCase();
-    if (rfd) {
-        ws.getCell("A2").value = rfd;
-        ws.getCell("A2").alignment = { wrapText: true, vertical: "top" };
+    if (rfd) notes(ws, 2, rfd);
+    // Tracks the last written row so each author lands below the decision
+    // block and below whichever author precedes them.
+    let row = rfd ? 2 : 1;
+    for (const peer of peers) {
+        // A blank row separates one author's section from the last.
+        row += 2;
+        ws.getCell(row, 1).value = `Notes from ${peer.author}`;
+        ws.getCell(row, 1).font = { bold: true };
+        notes(ws, row + 1, peer.text);
+        row += 1;
     }
 }
