@@ -62,7 +62,7 @@ pub fn flow_paths() -> Result<FlowPaths, String> {
 /// The rename is the atomic step, but only if the bytes are already durable, so
 /// the temp file is synced before it is moved: a crash mid-round can cost the
 /// last debounce interval, never a truncated flow.
-fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     let dir = path
         .parent()
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;

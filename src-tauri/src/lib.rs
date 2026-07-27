@@ -9,6 +9,7 @@ mod config;
 mod flowfile;
 mod menu;
 mod shutdown;
+mod sidecar;
 
 use tauri::{Emitter, Manager};
 
@@ -94,6 +95,8 @@ pub fn run() {
             flowfile::write_flow_file,
             flowfile::write_recents,
             menu::rebuild_menu,
+            sidecar::read_sidecar,
+            sidecar::write_sidecar,
             shutdown::finish_quit,
             system_info
         ])
