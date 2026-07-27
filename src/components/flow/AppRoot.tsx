@@ -88,7 +88,14 @@ export default function AppRoot() {
                 // check that runs before the next sidecar write. The peers it
                 // recovers are the ones this round was shared with, which a
                 // session re-dials with no ticket and no interaction.
-                void recoverReplica(r, serializeFlow(r)).then(() => resumeSession(r));
+                void recoverReplica(r, serializeFlow(r))
+                    .then(() => resumeSession(r))
+                    .catch((err: unknown) => {
+                        // A round nobody can be reached about is still a round
+                        // to flow, so this reports and stops rather than taking
+                        // the open down with it.
+                        toast.error(errorMessage(err, "Could not reconnect to your partners"));
+                    });
                 // The round just came off disk, so it is already saved.
                 autosave.prime();
                 void noteOpened(path);

@@ -85,6 +85,20 @@ export async function createPeerLink(
     let onPeer: ((conn: PeerConn) => void) | null = null;
     const unlisten: (() => void)[] = [];
 
+    /**
+     * Forgets a connection the shell no longer holds, and tells whoever was
+     * using it. The shell is the authority: once it has dropped a connection
+     * nothing can be sent over it again, so this is a close in every sense but
+     * the one command it does not need to issue.
+     */
+    function dropConn(connId: string): void {
+        const entry = held.get(connId);
+        if (!entry?.open) return;
+        entry.open = false;
+        held.delete(connId);
+        for (const cb of entry.onClose) cb();
+    }
+
     function makeConn(connId: string, remote: string, kind: ConnectionKind): PeerConn {
         const entry: Held = {
             open: true,
@@ -96,7 +110,15 @@ export async function createPeerLink(
                 connectionType: () => entry.kind,
                 send(msg) {
                     if (!entry.open) return;
-                    void shell.invoke("collab_send", { connId, payload: JSON.stringify(msg) });
+                    // The shell refuses a send for one reason: it is not
+                    // holding this connection. A peer that quit and an endpoint
+                    // that stopped both land here, neither is retryable, and a
+                    // peer going away is ordinary. So the link is dropped
+                    // rather than left claiming to be up, and nothing about it
+                    // reaches the debater as an error.
+                    void shell
+                        .invoke("collab_send", { connId, payload: JSON.stringify(msg) })
+                        .catch(() => dropConn(connId));
                 },
                 onMessage(cb) {
                     entry.onMessage.push(cb);
@@ -107,7 +129,9 @@ export async function createPeerLink(
                 close() {
                     if (!entry.open) return;
                     entry.open = false;
-                    void shell.invoke("collab_close", { connId });
+                    // Already gone on the shell's side is the ordinary way a
+                    // close races a peer that hung up first.
+                    void shell.invoke("collab_close", { connId }).catch(() => {});
                     held.delete(connId);
                     for (const cb of entry.onClose) cb();
                 },
@@ -143,11 +167,7 @@ export async function createPeerLink(
             if (payload === null || typeof payload !== "object") return;
             const p = payload as { connId?: unknown };
             if (typeof p.connId !== "string") return;
-            const entry = held.get(p.connId);
-            if (!entry?.open) return;
-            entry.open = false;
-            held.delete(p.connId);
-            for (const cb of entry.onClose) cb();
+            dropConn(p.connId);
         }),
     );
 

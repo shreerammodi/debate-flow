@@ -7,9 +7,12 @@ import { createPeerLink, type TauriBridge } from "@/lib/collab/peerLinkTauri";
 function fakeBridge() {
     const calls: { cmd: string; args: Record<string, unknown> }[] = [];
     const listeners: Record<string, ((payload: unknown) => void)[]> = {};
+    /** Commands the shell should refuse, the way it refuses a dead connection. */
+    const refuse = new Set<string>();
     const bridge: TauriBridge = {
         async invoke(cmd, args) {
             calls.push({ cmd, args });
+            if (refuse.has(cmd)) throw new Error("That peer is gone");
             if (cmd === "collab_start") return "alex";
             if (cmd === "collab_dial") return { connId: "c1", connectionType: "direct" };
             return undefined;
@@ -24,6 +27,7 @@ function fakeBridge() {
     return {
         bridge,
         calls,
+        refuse,
         emit(event: string, payload: unknown) {
             for (const cb of listeners[event] ?? []) cb(payload);
         },
@@ -157,5 +161,46 @@ describe("createPeerLink", () => {
         expect(fake.calls.some((c) => c.cmd === "collab_stop")).toBe(true);
         fake.emit("collab:peer", { connId: "c9", endpointId: "kim", connectionType: "direct" });
         expect(seen).toHaveLength(0);
+    });
+
+    // The shell refuses a send only for a connection it no longer holds: a peer
+    // that quit, or an endpoint that stopped. Both are ordinary, and neither
+    // may reach the debater as an unhandled rejection.
+    it("drops a connection the shell will not send on, without rejecting", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.dial("sam");
+        const onClose = vi.fn();
+        conn.onClose(onClose);
+
+        fake.refuse.add("collab_send");
+        conn.send({ type: "bye" });
+        await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+
+        // Gone is gone: the link stops trying, and the shell hears no more.
+        const before = fake.calls.filter((c) => c.cmd === "collab_send").length;
+        conn.send({ type: "bye" });
+        expect(fake.calls.filter((c) => c.cmd === "collab_send")).toHaveLength(before);
+    });
+
+    it("reports a refused send once, not once per message", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.dial("sam");
+        const onClose = vi.fn();
+        conn.onClose(onClose);
+
+        fake.refuse.add("collab_send");
+        conn.send({ type: "bye" });
+        conn.send({ type: "bye" });
+        conn.send({ type: "bye" });
+        await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+        fake.emit("collab:closed", { connId: "c1" });
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("survives a close the shell refuses, which a peer that hung up first causes", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.dial("sam");
+        fake.refuse.add("collab_close");
+        expect(() => conn.close()).not.toThrow();
     });
 });

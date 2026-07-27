@@ -118,6 +118,41 @@ describe("the idle invite listener", () => {
         await syncInviteWatch();
         expect(useCollabStore.getState().endpointId).toBe(id);
     });
+
+    // There is one endpoint per install. A listener that bound while a session
+    // was coming up would share it, hear the session's own peers arrive as
+    // diallers, and hang up on them - after which every send is refused and
+    // the chip still says Connected.
+    it("binds nothing while a session is coming up", async () => {
+        const start = startForRound(round);
+        await syncInviteWatch();
+        await start;
+        expect(listens()).toBe(1);
+    });
+
+    it("lets go of a listener whose stop the shell refuses", async () => {
+        // beforeEach ends a session, which binds a listener again, so this
+        // starts from nothing bound before counting.
+        useFlowStore.setState({ collabEnabled: false });
+        await syncInviteWatch();
+        net.reset();
+
+        transport.link = async (config) => {
+            const link = await net.create("me")(config);
+            return { ...link, stop: () => Promise.reject(new Error("no shell")) };
+        };
+        useFlowStore.setState({ collabEnabled: true });
+        await syncInviteWatch();
+        useFlowStore.setState({ collabEnabled: false });
+        await expect(syncInviteWatch()).resolves.toBeUndefined();
+
+        // The handle is gone, so turning the switch back on binds a new one
+        // rather than believing it still holds the old.
+        transport.link = net.create("me");
+        useFlowStore.setState({ collabEnabled: true });
+        await syncInviteWatch();
+        expect(listens()).toBe(2);
+    });
 });
 
 describe("a session opened for a round", () => {
@@ -142,6 +177,17 @@ describe("a session opened for a round", () => {
     it("leaves no chip behind when the transport will not come up", async () => {
         transport.link = () => Promise.reject(new Error("no shell"));
         await expect(startForRound(round)).rejects.toThrow("no shell");
+        expect(useCollabStore.getState().status).toBe("off");
+        transport.link = net.create("me");
+    });
+
+    it("ends a session whose link will not stop, because End session cannot fail", async () => {
+        transport.link = async (config) => {
+            const link = await net.create("me")(config);
+            return { ...link, stop: () => Promise.reject(new Error("no shell")) };
+        };
+        await startForRound(round);
+        await expect(endSession()).resolves.toBeUndefined();
         expect(useCollabStore.getState().status).toBe("off");
         transport.link = net.create("me");
     });

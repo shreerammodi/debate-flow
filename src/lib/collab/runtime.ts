@@ -48,6 +48,12 @@ let session: CollabSession | null = null;
 let listener: InviteListener | null = null;
 /** In-flight listener change, so two callers cannot bind two endpoints. */
 let watching: Promise<void> | null = null;
+/**
+ * A session is coming up but has not been assigned yet. There is one endpoint
+ * per install: a listener that bound during this window would share it with
+ * the session, hear the session's own peers as diallers, and hang up on them.
+ */
+let starting = false;
 /** Peers already offered as a contact, so one session asks about each once. */
 const offered = new Set<string>();
 
@@ -136,6 +142,9 @@ export async function startForRound(
     if (session?.roundId === round.id) return session;
     // A session speaks for one round, so opening another one ends it.
     if (session) await endSession();
+    // Claimed before the release, and held until the session is assigned, so
+    // no listener can bind the endpoint in between.
+    starting = true;
     // One endpoint per install, so the idle listener lets go of it first.
     await releaseInviteWatch();
 
@@ -171,10 +180,12 @@ export async function startForRound(
         // A chip left saying "connecting" would outlast the corner message and
         // read as a session that is still coming up.
         session = null;
+        starting = false;
         useCollabStore.getState().reset();
         await syncInviteWatch();
         throw err;
     }
+    starting = false;
 
     if (!session) {
         useCollabStore.getState().reset();
@@ -208,13 +219,26 @@ export function notifyLocalChange(): void {
     session?.notifyLocalChange();
 }
 
+/**
+ * Ends the session, whatever the transport thinks. The state above the link is
+ * already torn down by the time the link is asked to stop, so a shell that
+ * refuses cannot leave a half-ended session behind - and End session is a
+ * button a debater presses mid-round, which must never answer with an error.
+ */
 export async function endSession(): Promise<void> {
     const held = session;
     session = null;
     setLocalChangeListener(null);
     offered.clear();
+    try {
+        await held?.stop();
+    } catch {
+        // The endpoint is going away with the session either way.
+    }
+    // After the stop, never before it: a session announces an empty peer list
+    // on its way out, and a reset that ran first would be overwritten by it
+    // and leave the chip saying "connecting" for a session that is over.
     useCollabStore.getState().reset();
-    await held?.stop();
     await syncInviteWatch();
 }
 
@@ -256,10 +280,10 @@ export async function syncInviteWatch(): Promise<void> {
     const next = (watching ?? Promise.resolve())
         .catch(() => {})
         .then(async () => {
-            const wanted = collabSettings().enabled && !session;
+            const wanted = collabSettings().enabled && !session && !starting;
             if (wanted !== (listener !== null)) {
                 if (!wanted) {
-                    await releaseInviteWatch();
+                    await dropListener();
                 } else {
                     try {
                         listener = await startInviteListener({
@@ -283,8 +307,30 @@ export async function syncInviteWatch(): Promise<void> {
     await next;
 }
 
-async function releaseInviteWatch(): Promise<void> {
+/**
+ * Lets go of the listener. For callers already inside the watch chain.
+ *
+ * A shell that refuses to stop is not a reason to keep a handle nobody can
+ * use: the endpoint is dropped here either way, so a session asking for it
+ * next is never blocked by a failed release.
+ */
+async function dropListener(): Promise<void> {
     const held = listener;
     listener = null;
-    await held?.stop();
+    try {
+        await held?.stop();
+    } catch {
+        // Nothing above this holds the listener any more.
+    }
+}
+
+/**
+ * Lets go of the listener from outside the watch chain, queued behind a bind
+ * already in flight. Releasing ahead of that bind would let it land afterwards
+ * and take the endpoint a session is on its way to needing.
+ */
+async function releaseInviteWatch(): Promise<void> {
+    const next = (watching ?? Promise.resolve()).catch(() => {}).then(dropListener);
+    watching = next;
+    await next;
 }
