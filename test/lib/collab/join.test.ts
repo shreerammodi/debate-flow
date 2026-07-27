@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { seedDoc } from "@/lib/collab/doc";
 import { joinRound } from "@/lib/collab/join";
 import { merge } from "@/lib/collab/merge";
+import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { recoverReplica } from "@/lib/collab/persist";
 import { forgetRoundPeers, knownRoundPeers } from "@/lib/collab/roundPeers";
+import { applyRemoteDoc } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
+import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
@@ -24,12 +27,17 @@ let fs: FlowFs;
 
 function side(base: FlowRound) {
     let doc = seedDoc(base);
+    let t = 1_000;
+    const ctx: OpContext = { actor: "alex", clock: createClock("alex", () => t++) };
     return {
         doc: () => doc,
         apply: (incoming: CollabDoc) => {
             const result = merge(doc, incoming);
             doc = result.doc;
             return result.dropped;
+        },
+        edit(sheetId: string, col: number, row: number, text: string) {
+            doc = applyOp(doc, { kind: "cellText", sheetId, col, row, text }, ctx);
         },
     };
 }
@@ -216,7 +224,7 @@ describe("what a joined round remembers", () => {
         expect(knownRoundPeers(result!.roundId)).toEqual(["alex"]);
     });
 
-    it("survives the open, which has no sidecar to recover yet", async () => {
+    it("keeps the host's peers across the open", async () => {
         const ticket = await hostWithTicket();
         const joined = await joinRound({
             ticket,
@@ -226,5 +234,43 @@ describe("what a joined round remembers", () => {
         });
         const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
         expect(await recoverReplica(round, serializeFlow(round))).toEqual(["alex"]);
+    });
+
+    it("adopts the host's document, so their rows do not arrive twice", async () => {
+        // Every cell here was created during the host's own session, so none of
+        // them is keyed the way seeding from a file would key it.
+        shared.sheets.find((s) => s.kind !== "cx")!.data = [];
+        const sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
+        const hostSide = side(shared);
+        const host = (await startCollabSession({
+            createLink: net.create("alex"),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            doc: hostSide.doc,
+            apply: hostSide.apply,
+        }))!;
+        hostSide.edit(sheetId, 0, 0, "perm do both");
+        hostSide.edit(sheetId, 0, 1, "then the CP");
+
+        const joined = await joinRound({
+            ticket: encodeTicket(host.share("partner")),
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
+        // The open path's order: the store loads and seeds, then the sidecar
+        // upgrades what the seed guessed.
+        useFlowStore.getState().loadRound(round);
+        await recoverReplica(round, serializeFlow(round));
+
+        // The host sending its whole state again is what a reconnect does.
+        applyRemoteDoc(round, hostSide.doc());
+        expect(
+            useFlowStore
+                .getState()
+                .round!.sheets.find((s) => s.id === sheetId)!
+                .data.map((r) => r[0]),
+        ).toEqual(["perm do both", "then the CP"]);
     });
 });

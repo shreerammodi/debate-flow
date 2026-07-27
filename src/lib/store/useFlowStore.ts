@@ -154,6 +154,12 @@ export interface FlowActions {
         data: (string | null)[][],
         meta: Record<string, CellMeta>,
     ): void;
+    /**
+     * The round a partner's change produced. Written whole rather than sheet
+     * by sheet: a partner can add, retitle, and delete sheets as well as type
+     * in one, and the replica's projection already describes all of it.
+     */
+    applyRemoteRound(next: FlowRound): void;
     setScouting(patch: Partial<Scouting>): void;
     setKeymapOverride(commandId: CommandId, chord: string): void;
     clearKeymapOverride(commandId: CommandId): void;
@@ -684,6 +690,23 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
                 ...round,
                 sheets: round.sheets.map((s) => (s.id === sheetId ? { ...s, data, meta } : s)),
             }),
+        });
+    },
+
+    applyRemoteRound(next) {
+        const { round, activeSheetId, splitSheetId, focusedPane } = get();
+        if (!round || round.id !== next.id) return;
+        const alive = (id: string | null) =>
+            id !== null && next.sheets.some((s) => s.id === id) ? id : null;
+        // A partner deleting the sheet under the cursor leaves the pane
+        // pointing at nothing, so the view falls back the way a local delete
+        // does rather than rendering an empty grid.
+        const split = alive(splitSheetId);
+        set({
+            round: touch(next),
+            activeSheetId: alive(activeSheetId) ?? firstFlowSheetId(next),
+            splitSheetId: split,
+            focusedPane: split === null ? 1 : focusedPane,
         });
     },
 

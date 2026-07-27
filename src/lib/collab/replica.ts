@@ -14,6 +14,7 @@
 
 import type { FlowRound, FlowSheet } from "@/lib/model/flow";
 
+import { vectorOf } from "./delta";
 import { projectSheet, seedDoc, seedSheet } from "./doc";
 import { sheetDigest } from "./hash";
 import { applyOp, type CollabOp } from "./ops";
@@ -60,6 +61,32 @@ export function clearReplica(): void {
     live = null;
 }
 
+/**
+ * Told after every local write, so a live session can push it out. A bridge
+ * rather than a direct call because the runtime owns the session and already
+ * reads this module; the dependency only ever runs one way.
+ */
+let onLocalChange: (() => void) | null = null;
+
+export function setLocalChangeListener(fn: (() => void) | null): void {
+    onLocalChange = fn;
+}
+
+/**
+ * Takes the document a merge produced. The clock and the identity survive: a
+ * fresh clock could repeat a stamp this machine has already written inside the
+ * same millisecond, and last-writer-wins would then keep whichever of the two
+ * writes it saw first.
+ *
+ * The incoming stamps raise the clock, so a peer whose wall clock runs ahead
+ * cannot win every later tie by sitting in the future.
+ */
+export function replaceReplicaDoc(doc: CollabDoc): void {
+    if (!live) return;
+    for (const stamp of Object.values(vectorOf(doc))) live.clock.observe(stamp);
+    live = { ...live, doc };
+}
+
 export function getReplica(): CollabDoc | null {
     return live?.doc ?? null;
 }
@@ -77,6 +104,7 @@ export function replicaRoundId(): string | null {
 export function recordOp(op: CollabOp): void {
     if (!live) return;
     live.doc = applyOp(live.doc, op, { actor: live.actor, clock: live.clock });
+    onLocalChange?.();
 }
 
 /**
@@ -96,6 +124,7 @@ export function resyncSheet(sheet: FlowSheet): void {
         ...live.doc,
         sheets: { ...live.doc.sheets, [sheet.id]: seedSheet(sheet, ORIGIN_STAMP) },
     };
+    onLocalChange?.();
 }
 
 function digestOf(sheet: CollabSheet): string {

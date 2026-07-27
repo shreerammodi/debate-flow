@@ -20,6 +20,7 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
 import { addContact, contactName, type Contact } from "./contacts";
+import { projectDoc } from "./doc";
 import { collabSettings } from "./enabled";
 import { announceInvite } from "./inbox";
 import type { InviteNotice } from "./invite";
@@ -31,9 +32,11 @@ import { createPeerLinkFor } from "./peerLink";
 import {
     adoptReplicaActor,
     getReplica,
+    replaceReplicaDoc,
     replicaActor,
     replicaRoundId,
     seedReplica,
+    setLocalChangeListener,
 } from "./replica";
 import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
@@ -90,22 +93,29 @@ function publish(peers: CollabPeer[]): void {
 
 /**
  * Everything that happens to a remote document on the way in: merge it, keep
- * the replica, move the grid under the apply rules, and tell the user about
- * anything the merge buried.
+ * the replica, write the round it now describes, move the grid under the apply
+ * rules, and tell the user about anything the merge buried.
  *
- * The replica is correct the instant the merge lands. What reaches the grid is
- * governed by the apply rules, which is a separate question from what the
+ * The store holds the projection of the replica, so this is what puts a
+ * partner's text in front of the user, into the autosave, and into every
+ * export. The grid follows separately because what may be painted over is
+ * governed by the apply rules, which is a different question from what the
  * document says.
  */
 export function applyRemoteDoc(round: FlowRound, incoming: CollabDoc): DroppedCell[] {
     const before = getReplica();
     if (!before) return [];
     const result = merge(before, incoming);
-    seedReplica(round, replicaActor(), result.doc);
+    replaceReplicaDoc(result.doc);
+    const store = useFlowStore.getState();
+    // The round on screen, not the one the session opened with: createdAt and
+    // updatedAt belong to this file and no partner ever sends them.
+    const base = store.round?.id === result.doc.roundId ? store.round : round;
+    store.applyRemoteRound(projectDoc(result.doc, base));
     applyRemote(before, result.doc);
     // A delete leaves no mark on the grid, so this is the only place the user
     // learns their text is gone.
-    const loss = lossMessage(useFlowStore.getState().contacts, result.dropped, replicaActor());
+    const loss = lossMessage(store.contacts, result.dropped, replicaActor());
     if (loss) toast.warning(loss, { duration: 10_000 });
     return result.dropped;
 }
@@ -177,6 +187,9 @@ export async function startForRound(
     // cell it inserts can never collide with one a peer inserts at the same
     // position.
     adoptReplicaActor(session.endpointId);
+    // Push, not poll: every op the grid and the store record is offered to the
+    // peers the moment it lands, coalesced a frame later by the sync.
+    setLocalChangeListener(notifyLocalChange);
     return session;
 }
 
@@ -198,6 +211,7 @@ export function notifyLocalChange(): void {
 export async function endSession(): Promise<void> {
     const held = session;
     session = null;
+    setLocalChangeListener(null);
     offered.clear();
     useCollabStore.getState().reset();
     await held?.stop();

@@ -16,6 +16,7 @@ import {
     rowOpFromHook,
     textOpsFromChanges,
 } from "@/lib/collab/gridOps";
+import { gridPatchFor, type GridPatch } from "@/lib/collab/gridPatch";
 import { planRemoteApply } from "@/lib/collab/remoteApply";
 import { recordOp } from "@/lib/collab/replica";
 import { replaceSpanOps } from "@/lib/collab/spanOps";
@@ -46,7 +47,7 @@ import {
     revertMove,
 } from "@/lib/grid/moveSession";
 import { setRemoteApply, type RemoteApplyHandler } from "@/lib/grid/remoteBridge";
-import { breakEmptiedLinks, type GridChange } from "@/lib/grid/staleSource";
+import { breakEmptiedLinks, REMOTE_WRITE, type GridChange } from "@/lib/grid/staleSource";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { resolveCommand } from "@/lib/keymap/resolve";
 import type { CellMeta, CellSource, FlowSheet } from "@/lib/model/flow";
@@ -192,6 +193,29 @@ export function applyMeta(
 }
 
 /**
+ * Puts a partner's cells on the grid without disturbing anything else.
+ *
+ * The pane is padded to MIN_ROWS and grows with the debater's own typing, so a
+ * partner writing past the bottom is the one case that has to add rows first;
+ * appending them below the last row shifts nothing that is already there.
+ */
+function writeRemotePatch(hot: Handsontable, patch: GridPatch): void {
+    if (patch.writes.length === 0 && patch.meta.length === 0) return;
+    hot.batch(() => {
+        const short = patch.height - hot.countRows();
+        if (short > 0) hot.alter("insert_row_below", hot.countRows() - 1, short, REMOTE_WRITE);
+        for (const { row, col, meta } of patch.meta) {
+            hot.setCellMeta(row, col, "className", meta ? metaToClassName(meta) : "");
+            hot.setCellMeta(row, col, "source", meta?.source);
+        }
+        hot.setDataAtCell(
+            patch.writes.map(({ row, col, text }) => [row, col, text] as const),
+            REMOTE_WRITE,
+        );
+    });
+}
+
+/**
  * One grid instance for one pane. In split mode two instances coexist, one
  * per pane; the focused pane owns the shared active-grid singleton so
  * commands (undo, bold, row insert) reach the right one. `data` and
@@ -271,10 +295,13 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 activeSheetId: sid,
             });
 
-            // The grid reloads from the store, which the projection already
-            // wrote; the deferred cells are simply left for the editor to
-            // finish before the next snapshot picks them up.
-            if (plan.writeCells) snapshot();
+            // A partner's text goes on cell by cell. Reloading the pane would
+            // be simpler and would reset the scroll position and destroy the
+            // open editor, which is exactly what a remote apply may not do.
+            const target = after.sheets[sid];
+            if (plan.writeCells && target && !plan.leftSheet) {
+                writeRemotePatch(hot, gridPatchFor(before.sheets[sid], target, plan.deferredCells));
+            }
 
             // A stale index would make an undo write into a row the debater
             // never touched, so correct the two stacks together or drop both.
@@ -295,7 +322,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         };
         setRemoteApply(onRemote);
         return () => setRemoteApply(null);
-    }, [snapshot]);
+    }, []);
 
     // A peer claiming or releasing a cell has to show up without waiting for
     // an unrelated render, so the table's own change drives the repaint. Only
@@ -525,12 +552,17 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // changes is null on loadData/updateSettings passes; snapshotting those
     // loops setState -> render -> afterChange forever.
     //
+    // A partner's write is already in the replica and in the store, so it
+    // leaves through neither: recording it would bounce their own text back at
+    // them, and snapshotting it would push the grid over the projection that
+    // wrote it, taking a deferred cell's remote text with it.
+    //
     // "edit" is a cell the user typed, emptied, or cut: every structured write
     // names itself instead, and carries its own meta bookkeeping. So this is
     // the one path that can strand provenance on a cell it no longer describes.
     const afterChange = useCallback(
         (changes: unknown, source: unknown) => {
-            if (!changes) return;
+            if (!changes || source === REMOTE_WRITE) return;
             const hot = hotRef.current?.hotInstance;
             if (hot && source === "edit" && breakEmptiedLinks(hot, changes as GridChange[])) {
                 hot.render();
@@ -546,6 +578,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     const afterCreateRow = useCallback(
         (index: number, amount: number, source?: string) => {
+            if (source === REMOTE_WRITE) return;
             const sid = currentSheetIdRef.current;
             if (sid)
                 for (const op of rowOpFromHook("insert", sid, index, amount, source)) recordOp(op);
@@ -556,6 +589,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     const afterRemoveRow = useCallback(
         (index: number, amount: number, _physicalRows: number[], source?: string) => {
+            if (source === REMOTE_WRITE) return;
             const sid = currentSheetIdRef.current;
             if (sid)
                 for (const op of rowOpFromHook("remove", sid, index, amount, source)) recordOp(op);

@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { projectDoc, seedDoc } from "@/lib/collab/doc";
+import { applyOp, type OpContext } from "@/lib/collab/ops";
 import {
     clearReplica,
     driftedSheetIds,
     getReplica,
     healReplica,
     recordOp,
+    replaceReplicaDoc,
+    replicaActor,
     replicaRoundId,
     resyncSheet,
     seedReplica,
+    setLocalChangeListener,
 } from "@/lib/collab/replica";
+import { compareStamps, createClock } from "@/lib/collab/stamp";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 function round(): FlowRound {
@@ -165,5 +170,70 @@ describe("self-heal", () => {
     it("heals nothing and reports nothing with no round open", () => {
         expect(driftedSheetIds(round())).toEqual([]);
         expect(healReplica(round())).toEqual([]);
+    });
+});
+
+describe("the local-change bridge", () => {
+    it("tells the listener about every write a session has to push", () => {
+        const r = round();
+        seedReplica(r);
+        let told = 0;
+        setLocalChangeListener(() => told++);
+
+        recordOp({ kind: "cellText", sheetId: r.sheets[0].id, col: 0, row: 0, text: "typed" });
+        expect(told).toBe(1);
+        resyncSheet(r.sheets[0]);
+        expect(told).toBe(2);
+
+        setLocalChangeListener(null);
+        recordOp({ kind: "cellText", sheetId: r.sheets[0].id, col: 0, row: 0, text: "after" });
+        expect(told).toBe(2);
+    });
+
+    it("stays quiet for a write with no round open", () => {
+        let told = 0;
+        setLocalChangeListener(() => told++);
+        recordOp({ kind: "cellText", sheetId: "gone", col: 0, row: 0, text: "typed" });
+        setLocalChangeListener(null);
+        expect(told).toBe(0);
+    });
+});
+
+describe("replaceReplicaDoc", () => {
+    it("keeps this machine's identity and clock across a merge", () => {
+        const r = round();
+        seedReplica(r, "alex");
+        const sheetId = r.sheets.find((s) => s.kind !== "cx")!.id;
+        recordOp({ kind: "cellText", sheetId, col: 0, row: 0, text: "mine" });
+        const first = getReplica()!.sheets[sheetId].cells;
+        const stampBefore = Object.values(first).find((c) => c.text === "mine")!.textStamp;
+
+        replaceReplicaDoc(getReplica()!);
+        expect(replicaActor()).toBe("alex");
+
+        recordOp({ kind: "cellText", sheetId, col: 0, row: 0, text: "mine again" });
+        const stampAfter = Object.values(getReplica()!.sheets[sheetId].cells).find(
+            (c) => c.text === "mine again",
+        )!.textStamp;
+        expect(compareStamps(stampAfter, stampBefore)).toBeGreaterThan(0);
+    });
+
+    it("raises the clock past a peer sitting in the future", () => {
+        const r = round();
+        seedReplica(r, "alex");
+        const sheetId = r.sheets.find((s) => s.kind !== "cx")!.id;
+        const ahead: OpContext = {
+            actor: "sam",
+            clock: createClock("sam", () => Date.now() + 60_000),
+        };
+        replaceReplicaDoc(
+            applyOp(getReplica()!, { kind: "cellText", sheetId, col: 0, row: 0, text: "" }, ahead),
+        );
+
+        recordOp({ kind: "cellText", sheetId, col: 1, row: 0, text: "mine" });
+        const mine = Object.values(getReplica()!.sheets[sheetId].cells).find(
+            (c) => c.text === "mine",
+        )!;
+        expect(mine.textStamp.ms).toBeGreaterThanOrEqual(Date.now() + 60_000);
     });
 });

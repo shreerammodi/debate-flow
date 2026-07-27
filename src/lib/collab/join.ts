@@ -22,6 +22,7 @@ import { projectDoc } from "./doc";
 import { collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
+import { adoptJoinedDoc } from "./persist";
 import { rememberRoundPeers } from "./roundPeers";
 import { parseTicket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -133,7 +134,12 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
             };
 
         const dir = await resolveFlowsDir(io);
-        const path = await io.createFlow(dir, suggestFilename(round), serializeFlow(round));
+        const text = serializeFlow(round);
+        const path = await io.createFlow(dir, suggestFilename(round), text);
+        // The file is the host's document flattened, and flattening loses which
+        // peer created each row. Keeping the document itself is what makes the
+        // guest's first merge with the host a merge rather than a duplication.
+        await adoptJoinedDoc(doc, text, [host.endpointId]);
         return { roundId: doc.roundId, hostEndpointId: host.endpointId, path, created: true };
     } finally {
         // The round's own session owns the peer from here.

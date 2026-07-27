@@ -20,6 +20,7 @@ import { getReplica, healReplica, replicaRoundId, seedReplica } from "./replica"
 import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { parseSidecar, serializeSidecar } from "./sidecar";
 import { getSidecarFs } from "./sidecarFs";
+import type { CollabDoc } from "./types";
 
 /**
  * Seeds the replica for a round that is being opened, and answers with the
@@ -42,6 +43,34 @@ export async function recoverReplica(round: FlowRound, flowText: string): Promis
     // its host before any sidecar for it exists.
     rememberRoundPeers(round.id, recovered?.peers ?? []);
     return knownRoundPeers(round.id);
+}
+
+/**
+ * Keeps the document a join received, beside the file it just wrote.
+ *
+ * Without it the new file opens by seeding, which re-derives every rank from a
+ * row's position. A cell the host created during its own session is keyed by
+ * the rank and the author that made it instead, so the two sets of keys never
+ * meet and the first state the host sends back arrives as a second copy of
+ * every such row.
+ *
+ * Best-effort like every other sidecar write: a failure costs the guest a
+ * re-seed, which is where it started.
+ */
+export async function adoptJoinedDoc(
+    doc: CollabDoc,
+    flowText: string,
+    peers: string[],
+): Promise<void> {
+    try {
+        const fs = await getSidecarFs();
+        await fs.write(
+            doc.roundId,
+            serializeSidecar({ roundId: doc.roundId, flowHash: hashText(flowText), peers, doc }),
+        );
+    } catch {
+        // The round is on disk; only the head start on its replica is lost.
+    }
 }
 
 /** Repairs any drift, then makes the replica durable beside the saved file. */

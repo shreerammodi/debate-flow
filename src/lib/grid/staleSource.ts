@@ -27,6 +27,16 @@ import { attachMetaUndo, snapshotClasses } from "./metaUndo";
  */
 export const STRUCTURED_WRITE = "ebb.structured";
 
+/**
+ * The change source a partner's write carries onto the grid.
+ *
+ * It is already in the replica and already in the store, so every hook that
+ * mirrors a local edit outward has to let it past: recording it as an op would
+ * bounce a peer's own text back at them, and snapshotting it would push the
+ * grid over the projection that just produced it.
+ */
+export const REMOTE_WRITE = "ebb.remote";
+
 /** One entry of Handsontable's `afterChange` payload. */
 export type GridChange = [row: number, prop: string | number, oldValue: unknown, newValue: unknown];
 
