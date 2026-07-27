@@ -17,20 +17,20 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 function deps(over: Partial<CollabCommandDeps> = {}): CollabCommandDeps & {
     notices: string[];
     failures: string[];
-    copied: string[];
+    shown: string[];
 } {
     const notices: string[] = [];
     const failures: string[] = [];
-    const copied: string[] = [];
+    const shown: string[] = [];
     return {
         notices,
         failures,
-        copied,
+        shown,
         notify: (m) => notices.push(m),
         fail: (m) => failures.push(m),
         askForTicket: async () => null,
-        copy: async (t) => {
-            copied.push(t);
+        presentTicket: (t) => {
+            shown.push(t);
         },
         openFlow: vi.fn(),
         ...over,
@@ -58,10 +58,10 @@ describe("the commands are palette-only", () => {
 });
 
 describe("share", () => {
-    it("refuses while the master switch is off, and copies nothing", async () => {
+    it("refuses while the master switch is off, and mints nothing", async () => {
         const d = deps();
         await runShare(d);
-        expect(d.copied).toEqual([]);
+        expect(d.shown).toEqual([]);
         expect(d.failures[0]).toMatch(/Settings/);
     });
 
@@ -108,7 +108,7 @@ describe("end", () => {
     });
 });
 
-describe("the ticket a share would copy", () => {
+describe("the ticket a share would hand over", () => {
     it("round-trips through the parser the join side uses", () => {
         const round = makeFlowRound({});
         expect(parseTicket("nonsense")).toBeNull();

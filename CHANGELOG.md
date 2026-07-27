@@ -70,15 +70,16 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 ### Added
 
 - **Shared editing**, off by default under Settings > Collaboration. On, that
-  pane grows a Session row: Share this round copies a one-time invite, Invite
-  a partner dials a saved one, and Join from clipboard takes an invite someone
-  handed you. The same four actions are in the command palette. The two of you
-  flow one round together: every cell each of you writes reaches the other, the
-  cell someone has an editor open on is marked so nobody types over it, and
-  each of you keeps a real `.ebb` of your own, so a dead laptop or a dead
-  network costs nothing. A coach can be given a view-only link instead. Off,
-  the app binds no endpoint, dials no peer, publishes no discovery record, and
-  contacts no relay, which is a tested invariant rather than a promise.
+  pane grows a Session row: Share this round puts a one-time invite on screen
+  to send however you already talk, Invite a partner dials a saved one, and
+  Join with an invite takes one you were handed. The same four actions are in
+  the command palette. The two of you flow one round together: every cell each
+  of you writes reaches the other, the cell someone has an editor open on is
+  marked so nobody types over it, and each of you keeps a real `.ebb` of your
+  own, so a dead laptop or a dead network costs nothing. A coach can be given
+  a view-only link instead. Off, the app binds no endpoint, dials no peer,
+  publishes no discovery record, and contacts no relay, which is a tested
+  invariant rather than a promise.
 - **Contacts.** After a session, one click saves that partner, and inviting
   them again needs no link at all: pick them from Invite a saved partner and
   they get a corner message offering the round, with a Join that is theirs to

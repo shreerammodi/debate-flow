@@ -26,6 +26,7 @@ import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
 import { chooseContact } from "@/lib/store/useContactPicker";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
+import { askForTicket, showTicket } from "@/lib/store/useTicketDialog";
 
 import { runEnd, runInvite, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
 import {
@@ -151,20 +152,19 @@ function startMove(): void {
 }
 
 /**
- * How the collaboration commands reach the user: corner messages, a ticket
- * that travels by clipboard rather than by prompt, and one dialog, the contact
- * picker, because choosing who to dial is a decision and not a notice.
+ * How the collaboration commands reach the user: corner messages, and two
+ * dialogs. The ticket goes through one of them because the webview grants
+ * `navigator.clipboard` only inside the task a click started, and a share has
+ * to bind an endpoint before it has a ticket to write. The contact picker is
+ * the other, because choosing who to dial is a decision and not a notice.
  */
 function collabDeps(): CollabCommandDeps {
     return {
         chooseContact,
         notify: (message) => toast.success(message),
         fail: (message) => toast.error(message),
-        async askForTicket() {
-            const text = await navigator.clipboard.readText().catch(() => "");
-            return text.trim() ? text : null;
-        },
-        copy: (text) => navigator.clipboard.writeText(text),
+        askForTicket,
+        presentTicket: showTicket,
         openFlow: (path) => navigateToFlow(path),
     };
 }

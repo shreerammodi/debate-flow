@@ -11,9 +11,9 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
  * palette. Every button runs the same command the palette does, so there is
  * still one route to a session and the master switch still guards it.
  *
- * A ticket is minted, not exchanged with a service: sharing copies one to the
- * clipboard and joining reads one back, which is why the two buttons are
- * asymmetric.
+ * A ticket is minted, not exchanged with a service: sharing puts one on screen
+ * to send however the two of you already talk, and joining takes one back,
+ * which is why the two buttons are asymmetric.
  */
 export default function SessionControls() {
     const status = useCollabStore((s) => s.status);
@@ -28,8 +28,8 @@ export default function SessionControls() {
             title="Session"
             description={
                 live
-                    ? "A session is running. Copying the invite again mints a fresh one."
-                    : "Sharing starts a session and copies an invite. It works once, and it carries this round only."
+                    ? "A session is running. Showing the invite again mints a fresh one."
+                    : "Sharing starts a session and mints an invite. It works once, and it carries this round only."
             }
         >
             <div className="flex flex-wrap gap-2" data-testid="session-controls">
@@ -40,7 +40,7 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.share")}
                     data-testid="session-share"
                 >
-                    {live ? "Copy invite" : "Share this round"}
+                    {live ? "Show invite" : "Share this round"}
                 </Button>
                 <Button
                     type="button"
@@ -59,7 +59,7 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.join")}
                     data-testid="session-join"
                 >
-                    Join from clipboard
+                    Join with an invite
                 </Button>
                 {live && (
                     <Button

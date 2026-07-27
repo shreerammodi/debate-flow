@@ -32,7 +32,7 @@ describe("ContactList", () => {
         render(<ContactList />);
         const empty = screen.getByTestId("contact-list-empty");
         expect(empty).toHaveTextContent("No partners saved yet");
-        expect(empty).toHaveTextContent("click on the toast");
+        expect(empty).toHaveTextContent("after a shared flow session");
     });
 
     it("renames one contact and leaves the other alone", async () => {

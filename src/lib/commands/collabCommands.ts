@@ -21,16 +21,17 @@ export interface CollabCommandDeps {
     /** Corner messages. Nothing here blocks the grid or takes focus. */
     notify(message: string): void;
     fail(message: string): void;
-    /** Reads the pasted ticket. Returns null when the user backs out. */
+    /** Reads the ticket a guest was handed. Returns null when they back out. */
     askForTicket(): Promise<string | null>;
-    copy(text: string): Promise<void>;
+    /** Hands the minted ticket to the user, to send however they like. */
+    presentTicket(ticket: string): void;
     /** Routes to a flow file, for a join that landed. */
     openFlow(path: string): void;
 }
 
 /**
- * Mints a ticket for the open round and puts it on the clipboard, starting a
- * session first when none is running.
+ * Mints a ticket for the open round and puts it in front of the user, starting
+ * a session first when none is running.
  */
 export async function runShare(deps: CollabCommandDeps): Promise<void> {
     if (!collabLive()) {
@@ -48,8 +49,7 @@ export async function runShare(deps: CollabCommandDeps): Promise<void> {
             deps.fail("Could not start a session");
             return;
         }
-        await deps.copy(encodeTicket(session.share("partner")));
-        deps.notify("Invite copied. It works once.");
+        deps.presentTicket(encodeTicket(session.share("partner")));
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not share this round");
     }
