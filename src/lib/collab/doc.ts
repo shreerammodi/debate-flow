@@ -102,7 +102,7 @@ export function seedDoc(round: FlowRound): CollabDoc {
     return { roundId: round.id, round: roundRegisters, sheets };
 }
 
-function projectSheet(sheet: CollabSheet): FlowSheet {
+export function projectSheet(sheet: CollabSheet): FlowSheet {
     const shape: Record<string, unknown> = {};
     for (const [path, reg] of Object.entries(sheet.fields)) setPath(shape, path, reg.value);
 
