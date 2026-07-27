@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { recoverReplica } from "@/lib/collab/persist";
 import { flowRouteFor } from "@/lib/commands/flowNav";
 import { errorMessage } from "@/lib/errorMessage";
 import { applyFlowFont } from "@/lib/fonts/applyFlowFont";
+import { serializeFlow } from "@/lib/persistence/flowFile";
 import { basename } from "@/lib/persistence/flowPaths";
 import { attachFlowAutosave, noteOpened, readFlowAt } from "@/lib/persistence/flowSession";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -79,6 +81,11 @@ export default function AppRoot() {
                 }
                 const newFlow = params.get("new") != null;
                 useFlowStore.getState().loadRound(r, { docPath: path, newFlow });
+                // loadRound already seeded the replica from the file, which is
+                // the fallback; this upgrades it to the sidecar when one still
+                // matches. Anything typed in the gap is repaired by the drift
+                // check that runs before the next sidecar write.
+                void recoverReplica(r, serializeFlow(r));
                 // The round just came off disk, so it is already saved.
                 autosave.prime();
                 void noteOpened(path);

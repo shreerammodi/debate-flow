@@ -14,6 +14,7 @@
 
 import type { StoreApi } from "zustand";
 
+import { persistReplica } from "@/lib/collab/persist";
 import type { FlowRound } from "@/lib/model/flow";
 
 import { parseFlowFile, parseLegacyExport, serializeFlow } from "./flowFile";
@@ -100,8 +101,10 @@ export async function readFlowAt(path: string, fs?: FlowFs): Promise<FlowRound |
 export async function createFlowFile(round: FlowRound, fs?: FlowFs): Promise<string> {
     const io = fs ?? (await getFlowFs());
     const dir = await resolveFlowsDir(io);
-    const path = await io.createFlow(dir, suggestFilename(round), serializeFlow(round));
+    const text = serializeFlow(round);
+    const path = await io.createFlow(dir, suggestFilename(round), text);
     await noteOpened(path, io);
+    void persistReplica(round, text);
     return path;
 }
 
@@ -150,9 +153,11 @@ export async function saveFlowAs(round: FlowRound, fs?: FlowFs): Promise<string 
     const io = fs ?? (await getFlowFs());
     const path = await io.pickSavePath(suggestFilename(round));
     if (!path) return null;
+    const text = serializeFlow(round);
     // A path the user just chose is theirs to claim, so the write is forced.
-    remember(path, await io.writeFlow(path, serializeFlow(round), null));
+    remember(path, await io.writeFlow(path, text, null));
     await noteOpened(path, io);
+    void persistReplica(round, text);
     return path;
 }
 
@@ -193,8 +198,10 @@ async function write(
     onStatus?.("saving");
     try {
         const io = await getFlowFs();
-        remember(path, await io.writeFlow(path, serializeFlow(round), expectedMtimeMs));
+        const text = serializeFlow(round);
+        remember(path, await io.writeFlow(path, text, expectedMtimeMs));
         onStatus?.("saved");
+        void persistReplica(round, text);
         return true;
     } catch (err) {
         onStatus?.(isConflict(err) ? "conflict" : "error");
@@ -237,13 +244,18 @@ export function attachFlowAutosave(
 
     function doSave(job: { path: string; round: FlowRound }) {
         const seq = ++saveSeq;
+        const text = serializeFlow(job.round);
         onStatus?.("saving");
         getFlowFs()
-            .then((io) => io.writeFlow(job.path, serializeFlow(job.round), stampFor(job.path)))
+            .then((io) => io.writeFlow(job.path, text, stampFor(job.path)))
             .then(
                 (mtimeMs) => {
                     remember(job.path, mtimeMs);
                     if (seq === saveSeq) onStatus?.("saved");
+                    // Beside each autosave, and only once the flow itself
+                    // landed: a sidecar that outran the file it stamps would
+                    // be discarded on the next open anyway.
+                    void persistReplica(job.round, text);
                 },
                 (err: unknown) => {
                     if (seq === saveSeq) onStatus?.(isConflict(err) ? "conflict" : "error");
