@@ -5,6 +5,7 @@
 //! creation, the native menu, lifecycle guards, and (later) the updater.
 
 mod bridge;
+mod collab;
 mod config;
 mod flowfile;
 mod menu;
@@ -43,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(flowfile::PendingOpen::default())
+        .manage(collab::CollabState::default())
         .setup(|app| {
             // Signed updater + relaunch (desktop only). Policy (when to
             // download, install only on user confirmation) lives in the JS
@@ -85,6 +87,11 @@ pub fn run() {
             bridge::cardmirror_insert,
             bridge::cardmirror_jump,
             bridge::cardmirror_status,
+            collab::collab_close,
+            collab::collab_dial,
+            collab::collab_send,
+            collab::collab_start,
+            collab::collab_stop,
             config::read_config,
             config::write_config,
             flowfile::create_flow_file,

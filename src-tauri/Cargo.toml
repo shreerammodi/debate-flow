@@ -5,7 +5,8 @@ description = "ebb - keyboard-first debate flow"
 authors = ["Shreeram Modi <smodi@smodi.net>"]
 license = "MPL-2.0"
 edition = "2021"
-rust-version = "1.77.2"
+# iroh 1.0 sets this floor; nothing else in the tree needs more than 1.77.
+rust-version = "1.91"
 
 # The library is what Tauri runs; main.rs is a thin entrypoint that calls into
 # it. This split keeps a single `run()` shared between desktop and (future)
@@ -39,6 +40,16 @@ ureq = { version = "2", default-features = false }
 rand = "0.8"
 subtle = "2"
 parking_lot = "0.12"
+# Shared editing. iroh dials a peer by public key and hole punches to it, which
+# is the only design that reaches two homes behind NAT. mDNS is a separate
+# crate so the same-room case needs no internet at all; the DNS and DHT lookup
+# crates are deliberately not dependencies, so that code is not in the binary
+# and an idle ebb cannot publish itself anywhere.
+iroh = "1"
+iroh-mdns-address-lookup = "0.4"
+# iroh is async, so the collab module owns one runtime. The rest of the shell
+# stays synchronous, the way tiny_http does on its own thread.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync"] }
 
 # Signed auto-updates. The updater verifies the Ed25519 signature internally and
 # discards anything it can't verify; `process` provides the relaunch used to
