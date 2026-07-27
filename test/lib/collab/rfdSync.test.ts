@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { seedDoc } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
-import { incomingDoc, LOCAL_RFD_PATH, outgoingDoc, peerNotePath } from "@/lib/collab/rfdSync";
+import {
+    dropSelfNote,
+    incomingDoc,
+    LOCAL_RFD_PATH,
+    outgoingDoc,
+    peerNotePath,
+} from "@/lib/collab/rfdSync";
 import { createClock } from "@/lib/collab/stamp";
 import type { CollabDoc } from "@/lib/collab/types";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
@@ -65,7 +71,7 @@ describe("incomingDoc", () => {
             { kind: "roundField", path: LOCAL_RFD_PATH, value: "their private notes" },
             { actor: THEM, clock: createClock(THEM, () => 5_000) },
         );
-        expect(incomingDoc(theirs).round[LOCAL_RFD_PATH]).toBeUndefined();
+        expect(incomingDoc(theirs, ME).round[LOCAL_RFD_PATH]).toBeUndefined();
     });
 
     it("keeps their note under their own id", () => {
@@ -74,11 +80,49 @@ describe("incomingDoc", () => {
             { kind: "roundField", path: peerNotePath(THEM), value: "voting neg" },
             ctx,
         );
-        expect(incomingDoc(theirs).round[peerNotePath(THEM)].value).toBe("voting neg");
+        expect(incomingDoc(theirs, ME).round[peerNotePath(THEM)].value).toBe("voting neg");
+    });
+
+    // Every peer holds my note under my id, because that is how I sent it. It
+    // must not come home: beside my own rfd it reads as a partner's reasoning,
+    // and nothing on this machine ever updates it again.
+    it("drops my own note echoed back under my own id", () => {
+        const echoed = applyOp(
+            doc,
+            { kind: "roundField", path: peerNotePath(ME), value: "what they last saw me write" },
+            { actor: THEM, clock: createClock(THEM, () => 5_000) },
+        );
+        expect(incomingDoc(echoed, ME).round[peerNotePath(ME)]).toBeUndefined();
     });
 
     it("is unchanged for a document carrying no notes", () => {
-        expect(incomingDoc(doc)).toEqual(doc);
+        expect(incomingDoc(doc, ME)).toEqual(doc);
+    });
+});
+
+describe("dropSelfNote", () => {
+    it("takes my own note back out of my own document", () => {
+        const poisoned = applyOp(
+            doc,
+            { kind: "roundField", path: peerNotePath(ME), value: "stale copy of mine" },
+            ctx,
+        );
+        expect(dropSelfNote(poisoned, ME).round[peerNotePath(ME)]).toBeUndefined();
+    });
+
+    it("leaves my own rfd and a real peer's note alone", () => {
+        const both = applyOp(
+            withMyNotes("mine"),
+            { kind: "roundField", path: peerNotePath(THEM), value: "theirs" },
+            ctx,
+        );
+        const clean = dropSelfNote(both, ME);
+        expect(clean.round[LOCAL_RFD_PATH].value).toBe("mine");
+        expect(clean.round[peerNotePath(THEM)].value).toBe("theirs");
+    });
+
+    it("hands back the same document when there is nothing to drop", () => {
+        expect(dropSelfNote(doc, ME)).toBe(doc);
     });
 });
 
@@ -92,7 +136,7 @@ describe("the two together", () => {
         );
 
         // Their document reaches me the way the sync layer delivers it.
-        const merged = merge(mine, incomingDoc(outgoingDoc(theirs, THEM))).doc;
+        const merged = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
 
         expect(merged.round[LOCAL_RFD_PATH].value).toBe("mine, written first");
         expect(merged.round[peerNotePath(THEM)].value).toBe("theirs, written later");
@@ -106,12 +150,24 @@ describe("the two together", () => {
             { actor: THEM, clock: createClock(THEM, () => 9_000) },
         );
 
-        const onMyDisk = merge(mine, incomingDoc(outgoingDoc(theirs, THEM))).doc;
-        const onTheirDisk = merge(theirs, incomingDoc(outgoingDoc(mine, ME))).doc;
+        const onMyDisk = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
+        const onTheirDisk = merge(theirs, incomingDoc(outgoingDoc(mine, ME), THEM)).doc;
 
         expect(onMyDisk.round[LOCAL_RFD_PATH].value).toBe("mine");
         expect(onMyDisk.round[peerNotePath(THEM)].value).toBe("theirs");
         expect(onTheirDisk.round[LOCAL_RFD_PATH].value).toBe("theirs");
         expect(onTheirDisk.round[peerNotePath(ME)].value).toBe("mine");
+    });
+
+    // The round trip that put a debater's own words on screen as a partner's:
+    // I send, they hold it under my id, they send their whole state back.
+    it("leaves nothing of mine behind when my own document comes home", () => {
+        const mine = withMyNotes("123123");
+        const theirs = merge(seedDoc(round), outgoingDoc(mine, ME)).doc;
+        expect(theirs.round[peerNotePath(ME)].value).toBe("123123");
+
+        const back = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
+        expect(back.round[peerNotePath(ME)]).toBeUndefined();
+        expect(back.round[LOCAL_RFD_PATH].value).toBe("123123");
     });
 });

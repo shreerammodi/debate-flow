@@ -37,7 +37,8 @@ vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
 
 import { seedDoc } from "@/lib/collab/doc";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
-import { clearReplica } from "@/lib/collab/replica";
+import { clearReplica, getReplica } from "@/lib/collab/replica";
+import { peerNotePath } from "@/lib/collab/rfdSync";
 import { endSession, startForRound, syncInviteWatch } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
@@ -189,6 +190,36 @@ describe("a session opened for a round", () => {
         await expect(endSession()).resolves.toBeUndefined();
         expect(useCollabStore.getState().status).toBe("off");
         transport.link = net.create("me");
+    });
+
+    // An earlier session left this machine's own note in the file under this
+    // machine's own id, where the RFD drawer read it back as a partner's.
+    it("sheds this machine's own note from the round it opens", async () => {
+        const mine = peerNotePath("me");
+        round.scouting.decision = { rfd: "123123", peerNotes: { me: "blah blah blah" } };
+        useFlowStore.getState().loadRound(round);
+        expect(getReplica()!.round[mine]).toBeDefined();
+
+        await startForRound(round);
+
+        expect(getReplica()!.round[mine]).toBeUndefined();
+        const decision = useFlowStore.getState().round!.scouting.decision;
+        expect(decision?.peerNotes?.me).toBeUndefined();
+        expect(decision?.rfd).toBe("123123");
+    });
+
+    it("keeps a real partner's note when it sheds its own", async () => {
+        round.scouting.decision = {
+            rfd: "mine",
+            peerNotes: { me: "echo of mine", sam: "voting neg" },
+        };
+        useFlowStore.getState().loadRound(round);
+
+        await startForRound(round);
+
+        expect(useFlowStore.getState().round!.scouting.decision?.peerNotes).toEqual({
+            sam: "voting neg",
+        });
     });
 });
 

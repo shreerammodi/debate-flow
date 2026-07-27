@@ -38,6 +38,7 @@ import {
     seedReplica,
     setLocalChangeListener,
 } from "./replica";
+import { dropSelfNote } from "./rfdSync";
 import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
 import type { CollabDoc } from "./types";
@@ -191,6 +192,15 @@ export async function startForRound(
     // cell it inserts can never collide with one a peer inserts at the same
     // position.
     adoptReplicaActor(session.endpointId);
+    // An earlier session may have left this machine's own note in the file
+    // under this machine's id, where the drawer reads it as a partner's. This
+    // is the first moment the id is known, so it is where that is undone.
+    const held = getReplica();
+    const clean = held && dropSelfNote(held, session.endpointId);
+    if (clean && clean !== held) {
+        replaceReplicaDoc(clean);
+        useFlowStore.getState().applyRemoteRound(projectDoc(clean, round));
+    }
     // Push, not poll: every op the grid and the store record is offered to the
     // peers the moment it lands, coalesced a frame later by the sync.
     setLocalChangeListener(notifyLocalChange);

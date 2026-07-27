@@ -33,12 +33,32 @@ export function outgoingDoc(doc: CollabDoc, myEndpointId: string): CollabDoc {
 }
 
 /**
- * The document as it may be applied here. A peer sending a local `rfd` is
- * either an older build or a modified client; either way those are their notes
- * and they do not belong in this editor.
+ * This machine's own reasoning has one home, `rfd`. A copy of it under this
+ * machine's own EndpointId is a peer's bookkeeping that came back, and it has
+ * no business in the document it came from.
  */
-export function incomingDoc(doc: CollabDoc): CollabDoc {
-    if (!(LOCAL_RFD_PATH in doc.round)) return doc;
-    const { [LOCAL_RFD_PATH]: _theirs, ...rest } = doc.round;
+export function dropSelfNote(doc: CollabDoc, myEndpointId: string): CollabDoc {
+    const mine = peerNotePath(myEndpointId);
+    if (!(mine in doc.round)) return doc;
+    const { [mine]: _echo, ...rest } = doc.round;
     return { ...doc, round: rest };
+}
+
+/**
+ * The document as it may be applied here, which refuses two things.
+ *
+ * A peer sending a local `rfd` is either an older build or a modified client;
+ * either way those are their notes and they do not belong in this editor.
+ *
+ * And every peer holds this machine's own note under this machine's id,
+ * because that is how it was sent to them. Echoed back it would land beside
+ * the `rfd` it was written in, be shown to its own author as a partner's
+ * reasoning, and never move again: the author edits `rfd`, and nothing on this
+ * machine writes the copy.
+ */
+export function incomingDoc(doc: CollabDoc, myEndpointId: string): CollabDoc {
+    const theirs = dropSelfNote(doc, myEndpointId);
+    if (!(LOCAL_RFD_PATH in theirs.round)) return theirs;
+    const { [LOCAL_RFD_PATH]: _local, ...rest } = theirs.round;
+    return { ...theirs, round: rest };
 }

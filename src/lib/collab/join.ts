@@ -23,6 +23,7 @@ import { collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
 import { adoptJoinedDoc } from "./persist";
+import { incomingDoc } from "./rfdSync";
 import { rememberRoundPeers } from "./roundPeers";
 import { parseTicket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -87,7 +88,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         const endpointId = await link.endpointId();
         const conn = await link.dial(host.endpointId, deps.ticket);
 
-        const doc = await new Promise<CollabDoc>((resolve, reject) => {
+        const raw = await new Promise<CollabDoc>((resolve, reject) => {
             conn.onMessage((msg: WireMessage) => {
                 if (msg.type === "helloAck" && !msg.ok) {
                     reject(new Error(msg.reason));
@@ -108,6 +109,10 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
             );
         });
 
+        // The same rule every later message goes through: the host's own
+        // reasoning is theirs, and a note this install left with them on an
+        // earlier round is not a partner's.
+        const doc = incomingDoc(raw, endpointId);
         const io = deps.fs ?? (await getFlowFs());
         const existing = await findExisting(io, doc.roundId);
 

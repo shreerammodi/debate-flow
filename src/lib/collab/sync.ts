@@ -111,14 +111,14 @@ export function attachSync(deps: SyncDeps): PeerSync {
             switch (msg.type) {
                 case "delta":
                     if (deps.readOnly) return;
-                    deps.apply(incomingDoc(msg.doc));
+                    deps.apply(incomingDoc(msg.doc, deps.endpointId));
                     return;
                 case "state": {
                     if (deps.readOnly) return;
                     // What the sender holds is what it has seen, so the reply
                     // is everything above that.
                     const theirs = vectorOf(msg.doc);
-                    deps.apply(incomingDoc(msg.doc));
+                    deps.apply(incomingDoc(msg.doc, deps.endpointId));
                     sendDelta(theirs);
                     return;
                 }
