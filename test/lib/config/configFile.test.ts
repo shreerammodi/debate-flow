@@ -18,6 +18,8 @@ const sample: AppConfig = {
     tooltips: false,
     cardmirrorEnabled: false,
     cardmirrorTextType: "tag",
+    collabEnabled: false,
+    collabRelayEnabled: true,
     theme: "dark",
     affColor: "#1d4ed8",
     negColor: null,
@@ -46,7 +48,6 @@ describe("configFromState -> toAppConfig round-trip", () => {
         );
         expect(toAppConfig({ cardmirror_text_type: "body" }).cardmirrorTextType).toBe("body");
     });
-
     it("keeps every CardMirror heading level the file can name", () => {
         for (const type of ["pocket", "hat", "block", "tag", "analytic"]) {
             expect(toAppConfig({ cardmirror_text_type: type }).cardmirrorTextType).toBe(type);
@@ -115,5 +116,26 @@ describe("toAppConfig validation", () => {
         expect(cfg.theme).toBe("system");
         expect(cfg.keymapOverrides).toEqual({});
         expect(cfg.updateConfig).toEqual({ autoCheckEnabled: false });
+    });
+});
+
+describe("collaboration settings", () => {
+    it("writes both switches to the file", () => {
+        expect(
+            configFromState({ ...sample, collabEnabled: true, collabRelayEnabled: false }),
+        ).toMatchObject({ collab_enabled: true, collab_relay: false });
+    });
+
+    it("defaults shared editing off and the relay on", () => {
+        const parsed = toAppConfig({});
+        expect(parsed.collabEnabled).toBe(false);
+        expect(parsed.collabRelayEnabled).toBe(true);
+    });
+
+    it("reads a hand-edited switch back", () => {
+        expect(toAppConfig({ collab_enabled: true, collab_relay: false })).toMatchObject({
+            collabEnabled: true,
+            collabRelayEnabled: false,
+        });
     });
 });

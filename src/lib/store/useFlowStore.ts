@@ -95,6 +95,10 @@ export interface FlowState {
     cardmirrorEnabled: boolean;
     /** How CardMirror types text sent to it from a cell. */
     cardmirrorTextType: CardMirrorTextType;
+    /** Master switch for shared editing; off leaves every route dead. */
+    collabEnabled: boolean;
+    /** Whether a session may fall back to a relay when a direct link fails. */
+    collabRelayEnabled: boolean;
     renamingSheetId: string | null;
 }
 
@@ -150,6 +154,8 @@ export interface FlowActions {
     setTooltips(on: boolean): void;
     setCardmirrorEnabled(on: boolean): void;
     setCardmirrorTextType(type: CardMirrorTextType): void;
+    setCollabEnabled(on: boolean): void;
+    setCollabRelayEnabled(on: boolean): void;
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
     setSideColor(side: Side, color: string | null): void;
@@ -194,6 +200,8 @@ export interface AppConfig {
     tooltips: boolean;
     cardmirrorEnabled: boolean;
     cardmirrorTextType: CardMirrorTextType;
+    collabEnabled: boolean;
+    collabRelayEnabled: boolean;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -256,6 +264,8 @@ interface DisplaySettings {
     tooltips: boolean;
     cardmirrorEnabled: boolean;
     cardmirrorTextType: CardMirrorTextType;
+    collabEnabled: boolean;
+    collabRelayEnabled: boolean;
     theme: ThemeMode;
     affColor: string | null;
     negColor: string | null;
@@ -280,6 +290,8 @@ function loadDisplaySettings(): DisplaySettings {
         cardmirrorEnabled: true,
         cardmirrorTextType: "analytic",
         theme: "system",
+        collabEnabled: false,
+        collabRelayEnabled: true,
         affColor: null,
         negColor: null,
         flowsDir: null,
@@ -302,6 +314,9 @@ function loadDisplaySettings(): DisplaySettings {
                 typeof p.cardmirrorEnabled === "boolean" ? p.cardmirrorEnabled : true,
             cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
             theme: resolveThemeMode(p.theme),
+            collabEnabled: typeof p.collabEnabled === "boolean" ? p.collabEnabled : false,
+            collabRelayEnabled:
+                typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
             affColor: resolveColor(p.affColor),
             negColor: resolveColor(p.negColor),
@@ -334,6 +349,8 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         cardmirrorEnabled: s.cardmirrorEnabled,
         cardmirrorTextType: s.cardmirrorTextType,
         theme: s.theme,
+        collabEnabled: s.collabEnabled,
+        collabRelayEnabled: s.collabRelayEnabled,
         flowsDir: s.flowsDir,
         affColor: s.affColor,
         negColor: s.negColor,
@@ -405,6 +422,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     tooltips: initialDisplaySettings.tooltips,
     cardmirrorEnabled: initialDisplaySettings.cardmirrorEnabled,
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
+    collabEnabled: initialDisplaySettings.collabEnabled,
+    collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
     renamingSheetId: null,
 
     loadRound(round, opts) {
@@ -688,6 +707,16 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCardmirrorTextType(type) {
         saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorTextType: type });
         set({ cardmirrorTextType: type });
+    },
+
+    setCollabEnabled(on) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), collabEnabled: on });
+        set({ collabEnabled: on });
+    },
+
+    setCollabRelayEnabled(on) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), collabRelayEnabled: on });
+        set({ collabRelayEnabled: on });
     },
 
     setTheme(mode) {

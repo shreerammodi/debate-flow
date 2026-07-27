@@ -38,6 +38,10 @@ export interface ConfigFileShape {
     /** How CardMirror types text a cell sends it: one of its heading levels
      *  (pocket, hat, block, tag, analytic) or body. */
     cardmirror_text_type: string;
+    /** Master switch for shared editing. Off by default. */
+    collab_enabled: boolean;
+    /** Whether a session may fall back to a relay. */
+    collab_relay: boolean;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
@@ -117,6 +121,8 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         tooltips: s.tooltips,
         cardmirror_enabled: s.cardmirrorEnabled,
         cardmirror_text_type: s.cardmirrorTextType,
+        collab_enabled: s.collabEnabled,
+        collab_relay: s.collabRelayEnabled,
         flows_dir: s.flowsDir,
         aff_color: s.affColor,
         neg_color: s.negColor,
@@ -160,6 +166,8 @@ export function toAppConfig(raw: unknown): AppConfig {
         tooltips: bool(o.tooltips, true),
         cardmirrorEnabled: bool(o.cardmirror_enabled, true),
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
+        collabEnabled: bool(o.collab_enabled, false),
+        collabRelayEnabled: bool(o.collab_relay, true),
         theme: resolveThemeMode(o.theme),
         flowsDir: typeof o.flows_dir === "string" && o.flows_dir.trim() ? o.flows_dir.trim() : null,
         affColor: resolveColor(o.aff_color),
