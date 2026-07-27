@@ -14,6 +14,7 @@ import type { CommandId } from "@/lib/commands/registry";
 import { type FontId, DEFAULT_FONT_ID, resolveFontId } from "@/lib/fonts/registry";
 import { getEvent } from "@/lib/format/events";
 import {
+    compareSheets,
     firstFlowSheetId,
     makeFlowSheet,
     sortedSheets,
@@ -524,9 +525,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
 
         let nextActive = activeSheetId;
         if (wasActive) {
-            const flows = remaining
-                .filter((s) => s.kind !== "cx")
-                .sort((a, b) => a.order - b.order);
+            const flows = remaining.filter((s) => s.kind !== "cx").sort(compareSheets);
             const below = flows.filter((s) => s.order < sheet.order).pop();
             nextActive = (below ?? flows[0])?.id ?? null;
         }

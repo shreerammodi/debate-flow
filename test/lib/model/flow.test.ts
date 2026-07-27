@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { EVENTS } from "@/lib/format/events";
 import {
+    compareSheets,
     firstFlowSheetId,
     makeCxFlowSheet,
     makeFlowRound,
@@ -98,6 +99,20 @@ describe("sheet ordering", () => {
         expect(sortedSheets(round).map((s) => s.title)).toEqual(["CX", "1.", "DA"]);
         expect(firstFlowSheetId(round)).toBe(r.sheets.find((s) => s.kind !== "cx")!.id);
         expect(firstFlowSheetId({ ...round, sheets: [makeCxFlowSheet()] })).not.toBeNull();
+    });
+
+    it("breaks an order tie on the sheet id, so two peers agree", () => {
+        const a = { ...makeFlowSheet({ title: "A", group: "aff", order: 2 }), id: "sheet-b" };
+        const b = { ...makeFlowSheet({ title: "B", group: "neg", order: 2 }), id: "sheet-a" };
+        expect(compareSheets(a, b)).toBeGreaterThan(0);
+        expect(sortedSheets({ ...makeFlowRound({}), sheets: [a, b] }).map((s) => s.id)).toEqual([
+            "sheet-a",
+            "sheet-b",
+        ]);
+        expect(sortedSheets({ ...makeFlowRound({}), sheets: [b, a] }).map((s) => s.id)).toEqual([
+            "sheet-a",
+            "sheet-b",
+        ]);
     });
 
     it("firstFlowSheetId is null for an empty sheet list", () => {

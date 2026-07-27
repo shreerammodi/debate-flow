@@ -8,7 +8,13 @@
  * makes the first merge correct instead of a duplication.
  */
 
-import { emptyScouting, type CellMeta, type FlowRound, type FlowSheet } from "@/lib/model/flow";
+import {
+    compareSheets,
+    emptyScouting,
+    type CellMeta,
+    type FlowRound,
+    type FlowSheet,
+} from "@/lib/model/flow";
 import type { Scouting } from "@/lib/model/types";
 
 import { seedRank } from "./rank";
@@ -135,7 +141,7 @@ export function projectDoc(doc: CollabDoc, base: FlowRound): FlowRound {
     const sheets = Object.values(doc.sheets)
         .filter((s) => s.deleted === null)
         .map(projectSheet)
-        .sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        .sort(compareSheets);
     return {
         ...(shape as Omit<FlowRound, "id" | "createdAt" | "updatedAt" | "scouting" | "sheets">),
         id: doc.roundId,

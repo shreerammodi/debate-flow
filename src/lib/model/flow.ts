@@ -143,9 +143,20 @@ export function normalizeFlow(raw: FlowRound): FlowRound {
     return r;
 }
 
+/**
+ * Total order on sheets. `reorderSheets` renumbers to contiguous integers, so
+ * two peers reordering at once can produce one order value twice; resolving
+ * that tie by array position would differ per peer and the two sidebars would
+ * visibly disagree.
+ */
+export function compareSheets(a: FlowSheet, b: FlowSheet): number {
+    if (a.order !== b.order) return a.order - b.order;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 /** Sheets sorted ascending by order (CX first at order -1). */
 export function sortedSheets(round: FlowRound): FlowSheet[] {
-    return round.sheets.slice().sort((a, b) => a.order - b.order);
+    return round.sheets.slice().sort(compareSheets);
 }
 
 /** First flow (non-CX) sheet id by order, else the first sheet, else null. */

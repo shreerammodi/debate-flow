@@ -9,7 +9,7 @@ import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
-import type { FlowSheet } from "@/lib/model/flow";
+import { compareSheets, type FlowSheet } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
 import { cn } from "@/lib/utils";
 
@@ -78,7 +78,7 @@ export default function Sidebar() {
         );
     }
 
-    const flowSheets = sheets.filter((s) => s.kind !== "cx").sort((a, b) => a.order - b.order);
+    const flowSheets = sheets.filter((s) => s.kind !== "cx").sort(compareSheets);
 
     return (
         <nav
