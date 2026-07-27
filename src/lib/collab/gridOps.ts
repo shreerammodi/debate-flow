@@ -1,0 +1,102 @@
+/**
+ * Turning a grid hook payload into ops.
+ *
+ * Handsontable reports which cells changed, never why, and every structured
+ * write in this app collapses into one large diff under a single source
+ * string. So the source is the only thing that separates a write this module
+ * may replay cell by cell from one that has to describe itself precisely at
+ * its own call site.
+ */
+
+import { getActiveSheetId } from "@/lib/grid/hotInstance";
+import { STRUCTURED_WRITE, type GridChange } from "@/lib/grid/staleSource";
+import { useFlowStore } from "@/lib/store/useFlowStore";
+
+import type { CollabOp } from "./ops";
+import { resyncSheet } from "./replica";
+
+/**
+ * Writes that change text and move no cell, so a per-cell replay is exact.
+ *
+ * `populateFromArray` is an insert-mode paste: the copy-paste plugin drops its
+ * own source when it recurses to perform the shifted write, so the paste
+ * arrives under Handsontable's default label rather than `CopyPaste.paste`.
+ *
+ * `STRUCTURED_WRITE` is absent on purpose. A single-column insert rewrites the
+ * whole column below the insertion point, and replaying that as text writes
+ * would reassign text across ranks instead of opening one new rank, which
+ * reads as a partner's work being overwritten from rows they never touched.
+ */
+const REPLAYED_SOURCES: Record<string, true> = {
+    edit: true,
+    "CopyPaste.paste": true,
+    "CopyPaste.cut": true,
+    "UndoRedo.undo": true,
+    "UndoRedo.redo": true,
+    populateFromArray: true,
+};
+
+export function isReplicatedSource(source: unknown): boolean {
+    if (typeof source !== "string" || source === STRUCTURED_WRITE) return false;
+    return REPLAYED_SOURCES[source] === true;
+}
+
+export function textOpsFromChanges(sheetId: string, changes: readonly GridChange[]): CollabOp[] {
+    const ops: CollabOp[] = [];
+    for (const [row, prop, oldValue, newValue] of changes) {
+        // A flow sheet holds array rows, so Handsontable's prop is the column.
+        if (typeof prop !== "number") continue;
+        if (oldValue === newValue) continue;
+        ops.push({
+            kind: "cellText",
+            sheetId,
+            col: prop,
+            row,
+            text: typeof newValue === "string" ? newValue : null,
+        });
+    }
+    return ops;
+}
+
+/**
+ * Row inserts and removals, one op per row.
+ *
+ * `auto` is Handsontable growing its own spare row when the debater types near
+ * the bottom of the sheet. It looks exactly like a row insert and fires before
+ * the keystroke's own change, so replaying it would splice a blank rank into
+ * every column of the sheet for no user action at all.
+ */
+export function rowOpFromHook(
+    kind: "insert" | "remove",
+    sheetId: string,
+    index: number,
+    amount: number,
+    source: unknown,
+): CollabOp[] {
+    if (source === "auto") return [];
+    const ops: CollabOp[] = [];
+    for (let i = 0; i < amount; i++) {
+        // Each removal closes the gap, so the index does not advance.
+        ops.push(
+            kind === "insert"
+                ? { kind: "insertRow", sheetId, row: index + i }
+                : { kind: "removeRow", sheetId, row: index },
+        );
+    }
+    return ops;
+}
+
+/**
+ * Re-derives the active sheet's replica from the store's current copy.
+ *
+ * The coarse writes use this: an insert-mode paste, a committed block move,
+ * and a CardMirror send all rearrange a column in ways the op union cannot
+ * describe. Call it after the grid has snapshotted, so the store already
+ * holds the result.
+ */
+export function resyncActiveSheet(): void {
+    const sheetId = getActiveSheetId();
+    if (!sheetId) return;
+    const sheet = useFlowStore.getState().round?.sheets.find((s) => s.id === sheetId);
+    if (sheet) resyncSheet(sheet);
+}

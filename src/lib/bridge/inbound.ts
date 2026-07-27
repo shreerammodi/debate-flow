@@ -8,6 +8,7 @@
  * than hanging until the host's deadline.
  */
 
+import { resyncActiveSheet } from "@/lib/collab/gridOps";
 import type { CellChange } from "@/lib/grid/cellShift";
 import { shiftSpan } from "@/lib/grid/cellShift";
 import { metaToClassName } from "@/lib/grid/codec";
@@ -68,6 +69,9 @@ function applyFlow(req: FlowRequest): BridgeReply {
     hot.selectCell(Math.min(row + cells.length, hot.countRows() - 1), col);
     hot.render();
     notifyGridMutated();
+    // The send rearranges a column, which the op union cannot describe, so the
+    // sheet's replica is re-derived from the snapshot that just landed.
+    resyncActiveSheet();
     return {
         status: 200,
         // The empty separator cells are not items, so they do not count.

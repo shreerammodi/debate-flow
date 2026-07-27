@@ -9,6 +9,13 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import "handsontable/styles/handsontable.min.css";
 import "handsontable/styles/ht-theme-main.min.css";
 
+import {
+    isReplicatedSource,
+    resyncActiveSheet,
+    rowOpFromHook,
+    textOpsFromChanges,
+} from "@/lib/collab/gridOps";
+import { recordOp } from "@/lib/collab/replica";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
 import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "@/lib/grid/codec";
@@ -257,7 +264,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             return;
         }
         const hot = hotRef.current?.hotInstance ?? null;
-        setActiveHot(hot, snapshot);
+        setActiveHot(hot, snapshot, currentSheetIdRef.current);
         const gainedFocus = !wasFocusedRef.current;
         wasFocusedRef.current = true;
         // A keyboard focus switch (Alt+h/l) moves the accent and command
@@ -322,7 +329,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     // Clicking or arrowing into a pane focuses it (so keystrokes route here).
     const afterSelectionEnd = useCallback(() => {
-        setActiveHot(hotRef.current?.hotInstance ?? null, snapshot);
+        setActiveHot(hotRef.current?.hotInstance ?? null, snapshot, currentSheetIdRef.current);
         const { splitSheetId, focusedPane, focusPane } = useFlowStore.getState();
         if (splitSheetId != null && focusedPane !== pane) focusPane(pane);
     }, [pane, snapshot]);
@@ -433,6 +440,30 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             if (hot && source === "edit" && breakEmptiedLinks(hot, changes as GridChange[])) {
                 hot.render();
             }
+            const sid = currentSheetIdRef.current;
+            if (sid && isReplicatedSource(source)) {
+                for (const op of textOpsFromChanges(sid, changes as GridChange[])) recordOp(op);
+            }
+            snapshot();
+        },
+        [snapshot],
+    );
+
+    const afterCreateRow = useCallback(
+        (index: number, amount: number, source?: string) => {
+            const sid = currentSheetIdRef.current;
+            if (sid)
+                for (const op of rowOpFromHook("insert", sid, index, amount, source)) recordOp(op);
+            snapshot();
+        },
+        [snapshot],
+    );
+
+    const afterRemoveRow = useCallback(
+        (index: number, amount: number, _physicalRows: number[], source?: string) => {
+            const sid = currentSheetIdRef.current;
+            if (sid)
+                for (const op of rowOpFromHook("remove", sid, index, amount, source)) recordOp(op);
             snapshot();
         },
         [snapshot],
@@ -481,8 +512,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             after: snapshotClasses(hot, cols),
         });
         hot.render();
-        // afterChange already snapshotted the shifted text with the old meta.
+        // afterChange snapshotted the shifted text while the meta was still
+        // the old layout, so the store needs the settled state, and the
+        // replica needs it too.
         snapshot();
+        resyncActiveSheet();
     }, [snapshot]);
 
     // Returning false is Handsontable's documented way to cancel an undo push.
@@ -524,12 +558,18 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 if (e.key === "Escape") {
+                    // The session's nudges never reached the replica, and the
+                    // revert puts the grid back where the replica still has
+                    // it, so there is nothing to reconcile.
                     revertMove();
                     hot.render();
                 } else if (e.key === "Enter") {
                     hot.batch(() => commitMove());
                     hot.render();
                     snapshot();
+                    // A move rearranges a column, which the op union cannot
+                    // describe, so the sheet is re-derived from the snapshot.
+                    resyncActiveSheet();
                 } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                     const dr = e.key === "ArrowDown" ? 1 : -1;
                     const block = movingBlock()!;
@@ -643,8 +683,8 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     afterRedoStackChange={onRedoStackChange}
                     afterUndo={afterUndo}
                     afterRedo={afterRedo}
-                    afterCreateRow={snapshot}
-                    afterRemoveRow={snapshot}
+                    afterCreateRow={afterCreateRow}
+                    afterRemoveRow={afterRemoveRow}
                     afterSelectionEnd={afterSelectionEnd}
                     beforeKeyDown={beforeKeyDown}
                     licenseKey="non-commercial-and-evaluation"

@@ -8,15 +8,26 @@ import type Handsontable from "handsontable";
 
 let active: Handsontable | null = null;
 let onMutated: (() => void) | null = null;
+let activeSheetId: string | null = null;
 
 /** HotGrid registers its instance (and snapshot callback) on mount, null on unmount. */
-export function setActiveHot(hot: Handsontable | null, mutated?: (() => void) | null): void {
+export function setActiveHot(
+    hot: Handsontable | null,
+    mutated?: (() => void) | null,
+    sheetId?: string | null,
+): void {
     active = hot;
     onMutated = mutated ?? null;
+    activeSheetId = sheetId ?? null;
 }
 
 export function getActiveHot(): Handsontable | null {
     return active;
+}
+
+/** The sheet the registered grid is showing, so a command can name it. */
+export function getActiveSheetId(): string | null {
+    return activeSheetId;
 }
 
 /** Commands call this after writing cell meta so the snapshot/autosave runs. */

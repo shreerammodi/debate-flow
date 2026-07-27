@@ -8,6 +8,7 @@
  */
 
 import { runJumpToSource, runSendToDoc } from "@/lib/bridge/commands";
+import { recordOp } from "@/lib/collab/replica";
 import { insertCell as insertCellChanges } from "@/lib/grid/cellShift";
 import {
     BOLD_CLASS,
@@ -16,7 +17,7 @@ import {
     HIGHLIGHT_CLASS,
     toggleClassToken,
 } from "@/lib/grid/codec";
-import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
+import { getActiveHot, getActiveSheetId, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
@@ -57,6 +58,7 @@ function toggleDecoration(
     const firstCls = (hot.getCellMeta(first.row ?? 0, first.col ?? 0).className ?? "") as string;
     const adding = !firstCls.split(/\s+/).includes(token);
 
+    const flipped: [row: number, col: number][] = [];
     for (const range of ranges) {
         const tl = range.getTopLeftCorner();
         const br = range.getBottomRightCorner();
@@ -66,11 +68,29 @@ function toggleDecoration(
                 const has = cls.split(/\s+/).includes(token);
                 if (has === adding) continue;
                 hot.setCellMeta(r, c, "className", toggleClassToken(cls, token));
+                flipped.push([r, c]);
             }
         }
     }
     hot.render();
     notifyGridMutated();
+
+    // A decoration reaches no afterChange hook, so the replica hears about it
+    // here or not at all. The snapshot above already put the new meta in the
+    // store, which is what each op reports.
+    const sheetId = getActiveSheetId();
+    const sheet = useFlowStore.getState().round?.sheets.find((s) => s.id === sheetId);
+    if (sheetId && sheet) {
+        for (const [row, col] of flipped) {
+            recordOp({
+                kind: "cellMeta",
+                sheetId,
+                col,
+                row,
+                meta: sheet.meta[`${row},${col}`] ?? {},
+            });
+        }
+    }
 }
 
 /** Insert or remove a row at the current selection. */
@@ -101,6 +121,12 @@ function runInsertCell(where: "at" | "below"): void {
     attachMetaUndo({ cols: [col], before, after: snapshotClasses(hot, [col]) });
     hot.render();
     notifyGridMutated();
+
+    // A structured write is refused by the afterChange seam precisely so this
+    // op can describe the shift, rather than the whole column arriving as a
+    // few hundred unrelated text writes.
+    const sheetId = getActiveSheetId();
+    if (sheetId) recordOp({ kind: "insertCell", sheetId, col, row });
 }
 
 /**
