@@ -50,6 +50,15 @@ struct ClosedEvent {
     conn_id: String,
 }
 
+/// What a dial hands back. The connection type rides along rather than
+/// arriving as an event, so the caller never has to correlate the two.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DialResult {
+    conn_id: String,
+    connection_type: String,
+}
+
 struct Live {
     runtime: tokio::runtime::Runtime,
     endpoint: Endpoint,
@@ -232,7 +241,7 @@ pub fn collab_dial(
     app: AppHandle,
     state: State<'_, CollabState>,
     endpoint_id: String,
-) -> Result<String, String> {
+) -> Result<DialResult, String> {
     let held = state.live.lock();
     let live = held.as_ref().ok_or("No collaboration session is running")?;
 
@@ -256,20 +265,19 @@ pub fn collab_dial(
     let kind = live
         .runtime
         .block_on(async { connection_type(&live.endpoint, remote).await });
-    let _ = app.emit(
-        "collab:peer",
-        PeerEvent {
-            conn_id: conn_id.clone(),
-            endpoint_id: endpoint_id.clone(),
-            connection_type: kind,
-        },
-    );
+    // No collab:peer event here. The dialler already holds this connection,
+    // and announcing it would race the return of this very call: the webview
+    // could see the event before it learns the id and mistake its own dial
+    // for an inbound peer.
     let conns = live.conns.clone();
     let handle = app.clone();
     let id = conn_id.clone();
     live.runtime
         .spawn(async move { spawn_conn(handle, conns, id, conn, send, recv) });
-    Ok(conn_id)
+    Ok(DialResult {
+        conn_id,
+        connection_type: kind,
+    })
 }
 
 #[tauri::command]

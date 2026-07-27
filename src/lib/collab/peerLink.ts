@@ -8,6 +8,8 @@
  * flowFsMemory.
  */
 
+import { isDesktop } from "@/lib/update/adapter";
+
 import type { Stamp } from "./stamp";
 import type { CollabDoc, Role } from "./types";
 
@@ -65,3 +67,19 @@ export interface PeerLink {
 
 /** Anything that can hand back a link for a configuration. */
 export type PeerLinkFactory = (config: PeerLinkConfig) => Promise<PeerLink>;
+
+/**
+ * The transport for this runtime: iroh in the desktop shell, an in-process map
+ * everywhere else. Resolved per call rather than cached, because a session
+ * binds an endpoint and stopping it must actually release it.
+ */
+export async function createPeerLinkFor(config: PeerLinkConfig): Promise<PeerLink> {
+    // Dynamic on both branches so the browser bundle never pulls in Tauri's JS
+    // API, matching how every other desktop touchpoint is gated.
+    if (isDesktop()) {
+        const mod = await import("./peerLinkTauri");
+        return mod.createPeerLink(config);
+    }
+    const mod = await import("./peerLinkMemory");
+    return mod.createMemoryNet().create("browser")(config);
+}
