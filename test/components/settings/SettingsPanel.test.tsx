@@ -364,7 +364,7 @@ describe("SettingsPanel", () => {
         it("hides the relay row until shared editing is switched on", async () => {
             const user = userEvent.setup();
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
 
             const toggle = screen.getByTestId("collab-enabled-toggle");
             expect(toggle).not.toBeChecked();
@@ -380,7 +380,7 @@ describe("SettingsPanel", () => {
             const user = userEvent.setup();
             useFlowStore.setState({ collabEnabled: true });
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
             expect(screen.getByTestId("collab-relay-toggle")).toBeTruthy();
 
             await user.click(screen.getByTestId("collab-enabled-toggle"));
@@ -392,7 +392,7 @@ describe("SettingsPanel", () => {
             const user = userEvent.setup();
             useFlowStore.setState({ collabEnabled: true });
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
 
             const toggle = screen.getByTestId("collab-relay-toggle");
             expect(toggle).toBeChecked();
@@ -404,7 +404,7 @@ describe("SettingsPanel", () => {
         it("hides the shadow mode row until shared editing is switched on", async () => {
             const user = userEvent.setup();
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
             expect(screen.queryByTestId("shadow-mode-toggle")).toBeNull();
 
             await user.click(screen.getByTestId("collab-enabled-toggle"));
@@ -415,7 +415,7 @@ describe("SettingsPanel", () => {
             const user = userEvent.setup();
             useFlowStore.setState({ collabEnabled: true });
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
             expect(screen.queryByTestId("shadow-log")).toBeNull();
 
             await user.click(screen.getByTestId("shadow-mode-toggle"));
@@ -427,7 +427,7 @@ describe("SettingsPanel", () => {
             const user = userEvent.setup();
             useFlowStore.setState({ contacts: { alex: { name: "Alex", role: "partner" } } });
             renderSettingsPanel();
-            await user.click(screen.getByTestId("settings-nav-editor"));
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
             expect(screen.queryByTestId("contact-row-alex")).toBeNull();
 
             await user.click(screen.getByTestId("collab-enabled-toggle"));

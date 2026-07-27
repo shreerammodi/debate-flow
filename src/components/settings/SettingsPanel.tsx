@@ -6,11 +6,13 @@ import {
     Keyboard,
     Palette,
     PencilSimpleLine,
+    UsersThree,
     X,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
 import ContactList from "@/components/collab/ContactList";
+import SessionControls from "@/components/collab/SessionControls";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -83,7 +85,7 @@ function isReservedChord(chord: string): boolean {
     return [`${mod}+a`, `${mod}+c`, `${mod}+v`, `${mod}+x`, `${mod}+q`].includes(chord);
 }
 
-type Category = "display" | "editor" | "keyboard" | "updates";
+type Category = "display" | "editor" | "keyboard" | "collaboration" | "updates";
 
 const BASE_CATEGORIES: { id: Category; label: string; icon: Icon }[] = [
     { id: "display", label: "Display", icon: Palette },
@@ -91,9 +93,14 @@ const BASE_CATEGORIES: { id: Category; label: string; icon: Icon }[] = [
     { id: "keyboard", label: "Keyboard", icon: Keyboard },
 ];
 
-// The Updates category is desktop-only; the web build never has an updater.
+// Both trailing categories are desktop-only: the web build has no updater, and
+// shared editing runs on an endpoint only the desktop app can bind.
 const CATEGORIES: { id: Category; label: string; icon: Icon }[] = isDesktop()
-    ? [...BASE_CATEGORIES, { id: "updates", label: "Updates", icon: ArrowsClockwise }]
+    ? [
+          ...BASE_CATEGORIES,
+          { id: "collaboration", label: "Collaboration", icon: UsersThree },
+          { id: "updates", label: "Updates", icon: ArrowsClockwise },
+      ]
     : BASE_CATEGORIES;
 
 function chordForCommand(bindings: Record<string, CommandId>): Record<string, string> {
@@ -591,60 +598,52 @@ export default function SettingsPanel() {
                                         )}
                                     </section>
                                 )}
-                                {isDesktop() && (
-                                    <section
-                                        className="mt-4 flex flex-col"
-                                        data-testid="collab-section"
-                                    >
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <h3 className="text-muted-foreground text-[11px] font-bold tracking-widest uppercase">
-                                                Collaboration
-                                            </h3>
-                                            <span className="bg-border/60 h-px flex-1" />
-                                        </div>
+                            </div>
+                        )}
+                        {category === "collaboration" && (
+                            <div className="flex flex-col" data-testid="collab-section">
+                                <SettingRow
+                                    title="Shared editing"
+                                    description="Off by default. On, it opens the routes a session needs; a session is still always started by hand."
+                                    control={
+                                        <Switch
+                                            checked={collabEnabled}
+                                            onCheckedChange={setCollabEnabled}
+                                            data-testid="collab-enabled-toggle"
+                                            aria-label="Shared editing"
+                                        />
+                                    }
+                                />
+                                {collabEnabled && (
+                                    <>
+                                        <SessionControls />
                                         <SettingRow
-                                            title="Shared editing"
-                                            description="Off by default. On, it opens the routes a session needs; a session is still always started by hand."
+                                            title="Allow relay"
+                                            description="Off restricts a session to direct connections."
                                             control={
                                                 <Switch
-                                                    checked={collabEnabled}
-                                                    onCheckedChange={setCollabEnabled}
-                                                    data-testid="collab-enabled-toggle"
-                                                    aria-label="Shared editing"
+                                                    checked={collabRelayEnabled}
+                                                    onCheckedChange={setCollabRelayEnabled}
+                                                    data-testid="collab-relay-toggle"
+                                                    aria-label="Allow relay"
                                                 />
                                             }
                                         />
-                                        {collabEnabled && (
-                                            <>
-                                                <SettingRow
-                                                    title="Allow relay"
-                                                    description="Off restricts a session to direct connections."
-                                                    control={
-                                                        <Switch
-                                                            checked={collabRelayEnabled}
-                                                            onCheckedChange={setCollabRelayEnabled}
-                                                            data-testid="collab-relay-toggle"
-                                                            aria-label="Allow relay"
-                                                        />
-                                                    }
+                                        <SettingRow
+                                            title="Shadow mode"
+                                            description="A partner's changes are recorded and shown to you instead of being applied to your flow."
+                                            control={
+                                                <Switch
+                                                    checked={shadowMode}
+                                                    onCheckedChange={setShadowMode}
+                                                    data-testid="shadow-mode-toggle"
+                                                    aria-label="Shadow mode"
                                                 />
-                                                <SettingRow
-                                                    title="Shadow mode"
-                                                    description="A partner's changes are recorded and shown to you instead of being applied to your flow."
-                                                    control={
-                                                        <Switch
-                                                            checked={shadowMode}
-                                                            onCheckedChange={setShadowMode}
-                                                            data-testid="shadow-mode-toggle"
-                                                            aria-label="Shadow mode"
-                                                        />
-                                                    }
-                                                />
-                                                <ShadowLog />
-                                                <ContactList />
-                                            </>
-                                        )}
-                                    </section>
+                                            }
+                                        />
+                                        <ShadowLog />
+                                        <ContactList />
+                                    </>
                                 )}
                             </div>
                         )}
