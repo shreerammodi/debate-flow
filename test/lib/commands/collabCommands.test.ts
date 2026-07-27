@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { endSession } from "@/lib/collab/runtime";
 import { parseTicket } from "@/lib/collab/ticket";
-import { runEnd, runJoin, runShare, type CollabCommandDeps } from "@/lib/commands/collabCommands";
+import {
+    runEnd,
+    runInvite,
+    runJoin,
+    runShare,
+    type CollabCommandDeps,
+} from "@/lib/commands/collabCommands";
 import { COLLAB_COMMANDS, COMMANDS } from "@/lib/commands/registry";
 import { getPresetKeymap } from "@/lib/keymap/presets";
 import { makeFlowRound } from "@/lib/model/flow";
@@ -107,5 +113,38 @@ describe("the ticket a share would copy", () => {
         const round = makeFlowRound({});
         expect(parseTicket("nonsense")).toBeNull();
         expect(round.id).toBeTruthy();
+    });
+});
+
+describe("invite", () => {
+    const ALEX = "k51qzi5uqu5dlalex";
+
+    it("refuses while the master switch is off, and never picks a contact", async () => {
+        const chooseContact = vi.fn(async () => ALEX);
+        await runInvite(deps({ chooseContact }));
+        expect(chooseContact).not.toHaveBeenCalled();
+    });
+
+    it("says so when nothing has been saved yet", async () => {
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        useFlowStore.setState({ collabEnabled: true, round: makeFlowRound({}), contacts: {} });
+        const chooseContact = vi.fn(async () => ALEX);
+        const d = deps({ chooseContact });
+        await runInvite(d);
+        expect(d.failures[0]).toMatch(/No saved partners/);
+        expect(chooseContact).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when the user backs out of the picker", async () => {
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        useFlowStore.setState({
+            collabEnabled: true,
+            round: makeFlowRound({}),
+            contacts: { [ALEX]: { name: "Alex", role: "partner" } },
+        });
+        const d = deps({ chooseContact: async () => null });
+        await runInvite(d);
+        expect(d.failures).toEqual([]);
+        expect(d.notices).toEqual([]);
     });
 });

@@ -6,15 +6,18 @@
  * the debater is standing on.
  */
 
+import { contactName, type Contacts } from "@/lib/collab/contacts";
 import { collabLive } from "@/lib/collab/enabled";
 import { joinRound } from "@/lib/collab/join";
 import { createPeerLinkFor } from "@/lib/collab/peerLink";
-import { currentSession, endSession, startForRound } from "@/lib/collab/runtime";
+import { currentSession, endSession, inviteContact, startForRound } from "@/lib/collab/runtime";
 import { encodeTicket } from "@/lib/collab/ticket";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
 export interface CollabCommandDeps {
+    /** Picks a saved contact to invite, or null when the user backs out. */
+    chooseContact?(contacts: Contacts): Promise<string | null>;
     /** Corner messages. Nothing here blocks the grid or takes focus. */
     notify(message: string): void;
     fail(message: string): void;
@@ -85,4 +88,30 @@ export async function runEnd(deps: CollabCommandDeps): Promise<void> {
     }
     await endSession();
     deps.notify("Session ended. The flow is still yours.");
+}
+
+/** Dials a saved contact. No ticket: their EndpointId already authorizes. */
+export async function runInvite(deps: CollabCommandDeps): Promise<void> {
+    if (!collabLive()) {
+        deps.fail("Turn on shared editing in Settings first");
+        return;
+    }
+    const round = useFlowStore.getState().round;
+    if (!round) {
+        deps.fail("Open a flow to share it");
+        return;
+    }
+    const contacts = useFlowStore.getState().contacts;
+    if (Object.keys(contacts).length === 0) {
+        deps.fail("No saved partners yet. Share a round once to save one.");
+        return;
+    }
+    const endpointId = await deps.chooseContact?.(contacts);
+    if (!endpointId) return;
+    try {
+        await inviteContact(round, endpointId);
+        deps.notify(`Invited ${contactName(contacts, endpointId)}`);
+    } catch (err) {
+        deps.fail(err instanceof Error ? err.message : "Could not reach that partner");
+    }
 }

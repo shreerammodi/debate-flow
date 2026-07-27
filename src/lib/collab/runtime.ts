@@ -13,8 +13,10 @@
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore";
+import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
+import { addContact, type Contact } from "./contacts";
 import { collabSettings } from "./enabled";
 import { merge, type DroppedCell } from "./merge";
 import { createPeerLinkFor } from "./peerLink";
@@ -102,4 +104,28 @@ export async function disconnectPeer(endpointId: string): Promise<void> {
     if (!held) return;
     const peers = held.peers().filter((p) => p.endpointId !== endpointId);
     publish(peers);
+}
+
+/**
+ * Dials a contact directly, with no ticket: their EndpointId already
+ * authorizes, which is what a contact is for.
+ */
+export async function inviteContact(round: FlowRound, endpointId: string): Promise<void> {
+    const held = session ?? (await startForRound(round, [endpointId]));
+    if (!held) throw new Error("Turn on shared editing in Settings first");
+    if (held.peers().some((p) => p.endpointId === endpointId)) return;
+    // A session was already up, so the contact is dialled onto it.
+    await held.invite(endpointId);
+}
+
+/** Saves a peer so the next round needs no ticket. Only ever from one click. */
+export function saveContact(endpointId: string, contact: Contact): void {
+    const store = useFlowStore.getState();
+    store.setContacts(addContact(store.contacts, endpointId, contact));
+}
+
+/** Connected peers that are not saved yet, which is who the chip can offer. */
+export function unsavedPeers(): string[] {
+    const contacts = useFlowStore.getState().contacts;
+    return (session?.peers() ?? []).map((p) => p.endpointId).filter((id) => !(id in contacts));
 }

@@ -37,6 +37,8 @@ export interface CollabSession {
     peers(): CollabPeer[];
     /** Mints the ticket the next peer presents. Replaces any unspent one. */
     share(role: Role): Ticket;
+    /** Dials a peer this round already trusts, with no ticket. */
+    invite(endpointId: string): Promise<void>;
     /** Tells every peer about a local edit. */
     notifyLocalChange(): void;
     /**
@@ -284,6 +286,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             });
             policy.pendingSecret = ticket.secret;
             return ticket;
+        },
+
+        async invite(target) {
+            // A contact is admitted by EndpointId, so it joins the known list
+            // before the dial rather than presenting a secret.
+            if (!policy.knownPeers.includes(target)) policy.knownPeers.push(target);
+            await dialPeer(target);
         },
 
         notifyLocalChange() {

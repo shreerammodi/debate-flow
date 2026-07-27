@@ -60,6 +60,7 @@ export type CommandId =
     | "theme.system"
     | "collab.share"
     | "collab.join"
+    | "collab.invite"
     | "collab.end";
 
 export interface CommandDef {
@@ -129,6 +130,7 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.system": { id: "theme.system", label: "Theme: System" },
     "collab.share": { id: "collab.share", label: "Share this round" },
     "collab.join": { id: "collab.join", label: "Join a shared round" },
+    "collab.invite": { id: "collab.invite", label: "Invite a saved partner" },
     "collab.end": { id: "collab.end", label: "End shared session" },
 };
 

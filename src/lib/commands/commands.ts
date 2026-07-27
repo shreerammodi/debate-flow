@@ -26,7 +26,7 @@ import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
-import { runEnd, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
+import { runEnd, runInvite, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
 import {
     closeOpenFlow,
     openFlowFromPicker,
@@ -342,6 +342,9 @@ export function executeCommand(id: CommandId): void {
             return;
         case "collab.join":
             void runJoin(collabDeps());
+            return;
+        case "collab.invite":
+            void runInvite(collabDeps());
             return;
         case "collab.end":
             void runEnd(collabDeps());
