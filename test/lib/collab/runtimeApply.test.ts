@@ -40,7 +40,7 @@ let sheetId: string;
 
 beforeEach(async () => {
     await endSession();
-    useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true, shadowMode: false });
+    useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
     open = round();
     sheetId = open.sheets.find((s) => s.kind !== "cx")!.id;
     useFlowStore.getState().loadRound(open);

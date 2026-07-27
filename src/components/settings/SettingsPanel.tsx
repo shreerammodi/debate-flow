@@ -49,7 +49,6 @@ import { cn } from "@/lib/utils";
 
 import FlowsFolderControl from "./FlowsFolderControl";
 import SettingRow from "./SettingRow";
-import ShadowLog from "./ShadowLog";
 import UpdateSettings from "./UpdateSettings";
 
 const THEME_OPTIONS: { id: ThemeMode; label: string }[] = [
@@ -141,8 +140,6 @@ export default function SettingsPanel() {
     const setCollabEnabled = useFlowStore((s) => s.setCollabEnabled);
     const collabRelayEnabled = useFlowStore((s) => s.collabRelayEnabled);
     const setCollabRelayEnabled = useFlowStore((s) => s.setCollabRelayEnabled);
-    const shadowMode = useFlowStore((s) => s.shadowMode);
-    const setShadowMode = useFlowStore((s) => s.setShadowMode);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -631,19 +628,6 @@ export default function SettingsPanel() {
                                                 />
                                             }
                                         />
-                                        <SettingRow
-                                            title="Shadow mode"
-                                            description="A partner's changes are recorded and shown to you instead of being applied to your flow."
-                                            control={
-                                                <Switch
-                                                    checked={shadowMode}
-                                                    onCheckedChange={setShadowMode}
-                                                    data-testid="shadow-mode-toggle"
-                                                    aria-label="Shadow mode"
-                                                />
-                                            }
-                                        />
-                                        <ShadowLog />
                                         <DisplayNameRow />
                                         <MyEndpointId />
                                         <ContactList />

@@ -63,7 +63,6 @@ beforeEach(async () => {
     useFlowStore.setState({
         collabEnabled: true,
         collabRelayEnabled: true,
-        shadowMode: false,
         contacts: {},
         docPath: "/flows/round-3-harvard.ebb",
     });

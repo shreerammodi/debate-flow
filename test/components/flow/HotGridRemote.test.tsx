@@ -53,7 +53,7 @@ beforeEach(() => {
         ["cap bad", "turn"],
     ];
     sheetId = sheet.id;
-    useFlowStore.setState({ collabEnabled: true, shadowMode: false });
+    useFlowStore.setState({ collabEnabled: true });
     useFlowStore.getState().loadRound(round, { activeSheetId: sheetId });
 });
 

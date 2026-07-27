@@ -21,7 +21,6 @@ const sample: AppConfig = {
     collabEnabled: false,
     collabRelayEnabled: true,
     collabName: "Rin",
-    shadowMode: false,
     contacts: {},
     theme: "dark",
     affColor: "#1d4ed8",
@@ -140,17 +139,6 @@ describe("collaboration settings", () => {
             collabEnabled: true,
             collabRelayEnabled: false,
         });
-    });
-
-    it("writes shadow mode to the file and reads a hand-edited one back", () => {
-        expect(configFromState({ ...sample, shadowMode: true })).toMatchObject({
-            shadow_mode: true,
-        });
-        expect(toAppConfig({ shadow_mode: true }).shadowMode).toBe(true);
-    });
-
-    it("defaults shadow mode off", () => {
-        expect(toAppConfig({}).shadowMode).toBe(false);
     });
 });
 

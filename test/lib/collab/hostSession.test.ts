@@ -5,7 +5,6 @@ import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { startCollabSession, type CollabSession } from "@/lib/collab/session";
-import { createShadow, type ShadowEntry } from "@/lib/collab/shadow";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
@@ -362,50 +361,5 @@ describe("presence across a session", () => {
         await guest.stop();
         await settle();
         expect(getLocks()).toEqual([]);
-    });
-});
-
-describe("shadow mode", () => {
-    it("records a partner's change instead of letting it touch the round", async () => {
-        const recorded: ShadowEntry[] = [];
-        const hostSide = replicaFor(shared, "alex");
-        const before = structuredClone(hostSide.doc());
-
-        const host = await startCollabSession({
-            createLink: net.create("alex"),
-            roundId: shared.id,
-            appVersion: "0.11.0",
-            doc: hostSide.doc,
-            apply: hostSide.apply,
-            shadow: createShadow({ doc: hostSide.doc, base: () => shared }),
-            onShadow: (e) => recorded.push(e),
-            schedule: clock.schedule,
-        });
-
-        const guestSide = replicaFor(shared, "sam");
-        const guest = await startCollabSession({
-            createLink: net.create("sam"),
-            roundId: shared.id,
-            appVersion: "0.11.0",
-            doc: guestSide.doc,
-            apply: guestSide.apply,
-            ticket: encodeTicket(host.share("partner")),
-            dial: ["alex"],
-            schedule: clock.schedule,
-        });
-        await settle();
-
-        guestSide.edit(sheetId, 0, 0, "the partner typed this");
-        guest.notifyLocalChange();
-        await settle();
-
-        // The log saw it, and the host's own replica did not move.
-        expect(recorded.flatMap((e) => e.diffs).map((d) => d.theirs)).toContain(
-            "the partner typed this",
-        );
-        expect(hostSide.doc()).toEqual(before);
-
-        await host.stop();
-        await guest.stop();
     });
 });

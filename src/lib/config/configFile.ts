@@ -49,8 +49,6 @@ export interface ConfigFileShape {
      * syncs between machines and would follow one laptop's name onto another.
      */
     collab_name: string;
-    /** Whether a peer's changes are recorded and shown instead of applied. */
-    shadow_mode: boolean;
     /**
      * Peers shared with before, as one table per EndpointId. Nested objects
      * become TOML tables and stale keys under them are pruned, so removing a
@@ -139,7 +137,6 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         collab_enabled: s.collabEnabled,
         collab_relay: s.collabRelayEnabled,
         collab_name: s.collabName,
-        shadow_mode: s.shadowMode,
         contacts: s.contacts,
         flows_dir: s.flowsDir,
         aff_color: s.affColor,
@@ -187,7 +184,6 @@ export function toAppConfig(raw: unknown): AppConfig {
         collabEnabled: bool(o.collab_enabled, false),
         collabRelayEnabled: bool(o.collab_relay, true),
         collabName: typeof o.collab_name === "string" ? o.collab_name : "",
-        shadowMode: bool(o.shadow_mode, false),
         contacts: resolveContacts(o.contacts),
         theme: resolveThemeMode(o.theme),
         flowsDir: typeof o.flows_dir === "string" && o.flows_dir.trim() ? o.flows_dir.trim() : null,

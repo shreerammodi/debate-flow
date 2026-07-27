@@ -40,7 +40,6 @@ import {
 } from "./replica";
 import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
-import { createShadow } from "./shadow";
 import type { CollabDoc } from "./types";
 
 let session: CollabSession | null = null;
@@ -157,12 +156,6 @@ export async function startForRound(
     try {
         session = await startCollabSession({
             createLink: createPeerLinkFor,
-            // Shadow mode is read once, at session start. Flipping it mid-round
-            // would leave the two sides disagreeing about what has been applied.
-            shadow: store.shadowMode
-                ? createShadow({ doc: () => getReplica() as CollabDoc, base: () => round })
-                : undefined,
-            onShadow: (entry) => useCollabStore.getState().pushShadow(entry),
             roundId: round.id,
             // The filename is what a debater calls this round everywhere else,
             // so it is what an invite names.

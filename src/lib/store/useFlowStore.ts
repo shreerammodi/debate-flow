@@ -108,11 +108,6 @@ export interface FlowState {
      * the config file syncs between machines.
      */
     collabName: string;
-    /**
-     * A partner's changes are recorded and shown rather than applied. Only
-     * meaningful while shared editing is on.
-     */
-    shadowMode: boolean;
     /** Peers shared with before, keyed by EndpointId. */
     contacts: Contacts;
     renamingSheetId: string | null;
@@ -179,7 +174,6 @@ export interface FlowActions {
     setCollabEnabled(on: boolean): void;
     setCollabRelayEnabled(on: boolean): void;
     setCollabName(name: string): void;
-    setShadowMode(on: boolean): void;
     setContacts(contacts: Contacts): void;
     setTheme(mode: ThemeMode): void;
     /** Sets one side's custom ink; null resets it to the theme default. */
@@ -228,7 +222,6 @@ export interface AppConfig {
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
     collabName: string;
-    shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
     affColor: string | null;
@@ -295,7 +288,6 @@ interface DisplaySettings {
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
     collabName: string;
-    shadowMode: boolean;
     contacts: Contacts;
     theme: ThemeMode;
     affColor: string | null;
@@ -324,7 +316,6 @@ function loadDisplaySettings(): DisplaySettings {
         collabEnabled: false,
         collabRelayEnabled: true,
         collabName: "",
-        shadowMode: false,
         contacts: {},
         affColor: null,
         negColor: null,
@@ -352,7 +343,6 @@ function loadDisplaySettings(): DisplaySettings {
             collabRelayEnabled:
                 typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
             collabName: typeof p.collabName === "string" ? p.collabName : "",
-            shadowMode: typeof p.shadowMode === "boolean" ? p.shadowMode : false,
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
             affColor: resolveColor(p.affColor),
@@ -389,7 +379,6 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         collabEnabled: s.collabEnabled,
         collabRelayEnabled: s.collabRelayEnabled,
         collabName: s.collabName,
-        shadowMode: s.shadowMode,
         contacts: s.contacts,
         flowsDir: s.flowsDir,
         affColor: s.affColor,
@@ -465,7 +454,6 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     collabEnabled: initialDisplaySettings.collabEnabled,
     collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
     collabName: initialDisplaySettings.collabName,
-    shadowMode: initialDisplaySettings.shadowMode,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
 
@@ -805,11 +793,6 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCollabName(name) {
         saveDisplaySettings({ ...displaySettingsOf(get()), collabName: name });
         set({ collabName: name });
-    },
-
-    setShadowMode(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), shadowMode: on });
-        set({ shadowMode: on });
     },
 
     setTheme(mode) {
