@@ -10,6 +10,7 @@
 import { create } from "zustand";
 
 import { resolveCardMirrorTextType, type CardMirrorTextType } from "@/lib/bridge/cardmirror";
+import { clearReplica, seedReplica } from "@/lib/collab/replica";
 import type { CommandId } from "@/lib/commands/registry";
 import { type FontId, DEFAULT_FONT_ID, resolveFontId } from "@/lib/fonts/registry";
 import { getEvent } from "@/lib/format/events";
@@ -427,6 +428,9 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     renamingSheetId: null,
 
     loadRound(round, opts) {
+        // Unconditional: opening one flow straight over another never closes
+        // the first, so this is the only point that always sees the switch.
+        seedReplica(round);
         set({
             round,
             docPath: opts?.docPath ?? null,
@@ -444,6 +448,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     },
 
     closeRound() {
+        clearReplica();
         set({
             round: null,
             docPath: null,
