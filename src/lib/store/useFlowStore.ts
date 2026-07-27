@@ -10,7 +10,8 @@
 import { create } from "zustand";
 
 import { resolveCardMirrorTextType, type CardMirrorTextType } from "@/lib/bridge/cardmirror";
-import { clearReplica, seedReplica } from "@/lib/collab/replica";
+import { clearReplica, recordOp, seedReplica } from "@/lib/collab/replica";
+import { flattenLeaves, type Json } from "@/lib/collab/types";
 import type { CommandId } from "@/lib/commands/registry";
 import { type FontId, DEFAULT_FONT_ID, resolveFontId } from "@/lib/fonts/registry";
 import { getEvent } from "@/lib/format/events";
@@ -472,6 +473,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             round: touch({ ...round, sheets: [...round.sheets, sheet] }),
             activeSheetId: sheet.id,
         });
+        recordOp({ kind: "addSheet", sheet });
         return sheet.id;
     },
 
@@ -493,6 +495,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             round: touch({ ...round, sheets: [...round.sheets, ...created] }),
             activeSheetId: created[0].id,
         });
+        // One op per sheet: the op union has no batch member.
+        for (const sheet of created) recordOp({ kind: "addSheet", sheet });
         return created.map((s) => s.id);
     },
 
@@ -505,17 +509,15 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
                 sheets: round.sheets.map((s) => (s.id === sheetId ? { ...s, title } : s)),
             }),
         });
+        recordOp({ kind: "sheetField", sheetId, path: "title", value: title });
     },
 
     swapSpeakingOrder() {
         const { round } = get();
         if (!round || !getEvent(round.event).variableOrder) return;
-        set({
-            round: touch({
-                ...round,
-                firstSide: (round.firstSide ?? "aff") === "aff" ? "neg" : "aff",
-            }),
-        });
+        const firstSide = (round.firstSide ?? "aff") === "aff" ? "neg" : "aff";
+        set({ round: touch({ ...round, firstSide }) });
+        recordOp({ kind: "roundField", path: "firstSide", value: firstSide });
     },
 
     removeSheet(sheetId) {
@@ -527,6 +529,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         const wasActive = activeSheetId === sheetId;
         const remaining = round.sheets.filter((s) => s.id !== sheetId);
         const nextRound = touch({ ...round, sheets: remaining });
+        recordOp({ kind: "removeSheet", sheetId });
 
         // Deleting a sheet that a split pane is showing collapses the split:
         // the surviving pane keeps its sheet, so the two panes never end up
@@ -564,6 +567,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             round: touch({ ...round, sheets: [...round.sheets, removed.sheet] }),
             ...(removed.wasActive ? { activeSheetId: removed.sheet.id } : {}),
         });
+        recordOp({ kind: "addSheet", sheet: removed.sheet });
     },
 
     reorderSheets(orderedFlowSheetIds) {
@@ -578,6 +582,10 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
                 ),
             }),
         });
+        // A renumber touches every sheet it names, so each one reports its own.
+        for (const [sheetId, order] of orderById) {
+            recordOp({ kind: "sheetField", sheetId, path: "order", value: order });
+        }
     },
 
     setActiveSheet(sheetId) {
@@ -648,6 +656,13 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         const { round } = get();
         if (!round) return;
         set({ round: touch({ ...round, scouting: { ...round.scouting, ...patch } }) });
+        // Flattened, so a nested patch lands as scouting.decision.vote rather
+        // than as one register holding the whole decision object.
+        const leaves: Record<string, Json> = {};
+        flattenLeaves(patch, "scouting", leaves);
+        for (const [path, value] of Object.entries(leaves)) {
+            recordOp({ kind: "roundField", path, value });
+        }
     },
 
     setKeymapOverride(commandId, chord) {
