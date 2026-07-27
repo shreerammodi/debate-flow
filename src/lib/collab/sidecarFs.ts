@@ -2,9 +2,14 @@
  * Where the sidecar is kept.
  *
  * One port, two adapters, in the shape `FlowFs` already uses: Tauri on the
- * desktop and an in-memory map for the browser and the suite. The port takes a
- * round id and never a path, so the webview cannot steer where this writes;
- * the shell resolves the location itself.
+ * desktop, and an in-memory map everywhere else. The port takes a round id and
+ * never a path, so the webview cannot steer where this writes; the shell
+ * resolves the location itself.
+ *
+ * A sidecar only exists for a round that is shared, and sharing is desktop
+ * only, so the in-memory adapter is reached by the suite and by nothing a
+ * debater runs. It stays because the suite needs somewhere for a sidecar to
+ * land, not because the browser has any use for one.
  */
 
 import { isDesktop } from "@/lib/update/adapter";

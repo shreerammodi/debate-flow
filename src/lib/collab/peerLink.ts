@@ -214,17 +214,20 @@ export interface PeerLink {
 export type PeerLinkFactory = (config: PeerLinkConfig) => Promise<PeerLink>;
 
 /**
- * The transport for this runtime: iroh in the desktop shell, an in-process map
- * everywhere else. Resolved per call rather than cached, because a session
- * binds an endpoint and stopping it must actually release it.
+ * The transport for a session: iroh, in the desktop shell, and nowhere else.
+ * Resolved per call rather than cached, because a session binds an endpoint
+ * and stopping it must actually release it.
+ *
+ * There is no web answer to this and there should not be one. Shared editing
+ * is an iroh endpoint, which a browser cannot bind; a stand-in that satisfied
+ * the port would mint tickets nobody can redeem and report a session to a
+ * debater who has none. `collabLive()` is what keeps this from being called
+ * off the desktop, and the throw is what says so if that ever slips.
  */
 export async function createPeerLinkFor(config: PeerLinkConfig): Promise<PeerLink> {
-    // Dynamic on both branches so the browser bundle never pulls in Tauri's JS
-    // API, matching how every other desktop touchpoint is gated.
-    if (isDesktop()) {
-        const mod = await import("./peerLinkTauri");
-        return mod.createPeerLink(config);
-    }
-    const mod = await import("./peerLinkMemory");
-    return mod.createMemoryNet().create("browser")(config);
+    if (!isDesktop()) throw new Error("Shared editing needs the desktop app");
+    // Dynamic so the web bundle never pulls in Tauri's JS API, matching how
+    // every other desktop touchpoint is gated.
+    const mod = await import("./peerLinkTauri");
+    return mod.createPeerLink(config);
 }

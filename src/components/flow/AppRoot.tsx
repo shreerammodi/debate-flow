@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { collabLive } from "@/lib/collab/enabled";
 import { recoverReplica } from "@/lib/collab/persist";
 import { resumeSession } from "@/lib/collab/runtime";
 import { flowRouteFor } from "@/lib/commands/flowNav";
@@ -85,11 +86,15 @@ export default function AppRoot() {
                 // loadRound already seeded the replica from the file, which is
                 // the fallback; this upgrades it to the sidecar when one still
                 // matches. Anything typed in the gap is repaired by the drift
-                // check that runs before the next sidecar write. The peers it
-                // recovers are the ones this round was shared with, which a
-                // session re-dials with no ticket and no interaction.
+                // check that runs before the next sidecar write.
+                //
+                // The session is desktop-only, like every other effect in this
+                // app that needs the shell: shared editing is an iroh endpoint
+                // and a browser cannot bind one. The peers it would re-dial are
+                // the ones this round was shared with, which cost no ticket and
+                // no interaction.
                 void recoverReplica(r, serializeFlow(r))
-                    .then(() => resumeSession(r))
+                    .then(() => (collabLive() ? resumeSession(r) : null))
                     .catch((err: unknown) => {
                         // A round nobody can be reached about is still a round
                         // to flow, so this reports and stops rather than taking

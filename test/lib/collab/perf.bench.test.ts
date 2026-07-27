@@ -68,6 +68,27 @@ function timeMedian(runs: number, fn: () => void): number {
     return seen[Math.floor(seen.length / 2)];
 }
 
+/**
+ * The fastest of `runs`, after a warmup.
+ *
+ * For a ratio between two sizes, the floor is the honest statistic: it is the
+ * run the scheduler left alone, so it describes the algorithm rather than what
+ * else the suite was doing on the other eleven threads. A median is fine for a
+ * budget, where the question is what the work usually costs, and wrong here,
+ * where two medians taken under different load produce a ratio that is mostly
+ * about the load.
+ */
+function timeFastest(runs: number, fn: () => void): number {
+    for (let i = 0; i < 30; i++) fn();
+    let best = Infinity;
+    for (let i = 0; i < runs; i++) {
+        const at = performance.now();
+        fn();
+        best = Math.min(best, performance.now() - at);
+    }
+    return best;
+}
+
 const report: string[] = [];
 function record(label: string, ms: number, budget: number): number {
     report.push(`${label.padEnd(52)} ${ms.toFixed(3).padStart(9)} ms   (budget ${budget})`);
@@ -243,10 +264,10 @@ describe("cost as a round grows", () => {
             const sheetId = r.sheets[1].id;
             return {
                 cells: cellCount(d),
-                delta: timeMedian(30, () => deltaSince(d, seen)),
-                merge: timeMedian(30, () => merge(d, d)),
-                project: timeMedian(30, () => projectDoc(d, r)),
-                write: timeMedian(50, () =>
+                delta: timeFastest(30, () => deltaSince(d, seen)),
+                merge: timeFastest(30, () => merge(d, d)),
+                project: timeFastest(30, () => projectDoc(d, r)),
+                write: timeFastest(50, () =>
                     applyOp(d, { kind: "cellText", sheetId, col: 3, row: 10, text: "x" }, alex),
                 ),
             };

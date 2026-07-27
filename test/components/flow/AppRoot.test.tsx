@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateProvider } from "@/components/update/UpdateProvider";
+import { forgetRoundPeers, rememberRoundPeers } from "@/lib/collab/roundPeers";
+import { currentSession } from "@/lib/collab/runtime";
 import { makeFlowRound } from "@/lib/model/flow";
 import { serializeFlow } from "@/lib/persistence/flowFile";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import { installFakeFlowFs, type FakeFlowFs } from "../../support/fakeFlowFs";
@@ -109,5 +112,28 @@ describe("AppRoot", () => {
 
         await waitFor(() => expect(screen.getByTestId("workspace")).toBeInTheDocument());
         expect(replace).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * Shared editing is an iroh endpoint and the browser cannot bind one, so
+ * opening a round on the web reaches for no session at all - not one that
+ * fails, and not one held by a stand-in transport.
+ */
+describe("opening a round outside the desktop shell", () => {
+    it("does not reach for a session, even for a round with peers", async () => {
+        const round = makeFlowRound({});
+        fs.files.set("/shared.ebb", serializeFlow(round));
+        rememberRoundPeers(round.id, ["a".repeat(64)]);
+        useFlowStore.setState({ collabEnabled: true });
+        mockSearch = route("/shared.ebb");
+
+        mount();
+
+        await waitFor(() => expect(screen.getByTestId("workspace")).toBeInTheDocument());
+        expect(currentSession()).toBeNull();
+        // Nothing was attempted, so nothing failed and nothing was reported.
+        expect(useCollabStore.getState().status).toBe("off");
+        forgetRoundPeers();
     });
 });

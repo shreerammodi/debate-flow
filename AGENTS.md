@@ -36,6 +36,16 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       `docs/superpowers/specs/2026-07-26-shared-editing-design.md`. It sits behind
       a master switch, `collabEnabled`, that is off by default, and off leaves
       every route dead.
+    - **Shared editing is desktop only, and that is not a gate to relax.** A
+      session is an iroh endpoint, which a browser cannot bind. There is no web
+      adapter for `PeerLink` and there should never be one: a stand-in that
+      satisfied the port would mint tickets nobody can redeem and tell a
+      debater they are connected to a peer that cannot exist. `collabLive()`
+      answers "is this offered here", build and switch together, and every
+      route that can start a session asks it; `createPeerLinkFor` throws off
+      the desktop as the backstop. `collabSettings()` is the switch alone, for
+      code that has already been handed a transport, which is what lets the
+      suite drive the whole protocol against `peerLinkMemory`.
     - **The opt-in is an invariant, so it is test-proven, not asserted.** With the
       switch off, the app binds no endpoint, dials no peer, publishes no
       discovery record, and contacts no relay. `test/lib/collab/optIn.test.ts`

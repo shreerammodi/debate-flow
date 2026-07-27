@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PeerLink, PeerLinkConfig } from "@/lib/collab/peerLink";
+
 const warnings: string[] = [];
 
 vi.mock("sonner", () => ({
@@ -11,12 +13,30 @@ vi.mock("sonner", () => ({
     }),
 }));
 
+/**
+ * The runtime resolves its own transport, and off the desktop there is none:
+ * shared editing is an iroh endpoint a browser cannot bind. The suite supplies
+ * one, which is the same thing the desktop does with a real endpoint.
+ */
+const transport = vi.hoisted(() => ({
+    link: null as ((config: PeerLinkConfig) => Promise<PeerLink>) | null,
+}));
+
+vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/lib/collab/peerLink")>()),
+    createPeerLinkFor: (config: PeerLinkConfig) => transport.link!(config),
+}));
+
 import { applyOp } from "@/lib/collab/ops";
+import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { getReplica, replicaActor, seedReplica } from "@/lib/collab/replica";
 import { applyRemoteDoc, endSession, startForRound } from "@/lib/collab/runtime";
 import { createClock } from "@/lib/collab/stamp";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+
+const net = createMemoryNet();
+transport.link = net.create("me");
 
 function round(): FlowRound {
     const r = makeFlowRound({});

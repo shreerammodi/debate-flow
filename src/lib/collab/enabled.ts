@@ -6,6 +6,14 @@
  * off the app binds no endpoint, dials no peer, publishes no discovery record,
  * and contacts no relay. Both halves of the feature ask here rather than
  * testing the conditions apart.
+ *
+ * Two questions, because they have different answers. `collabLive` is whether
+ * this build and this debater have the feature at all, and the build half of
+ * that is permanent: a session is an iroh endpoint, which only the desktop
+ * shell can bind. `collabSettings` is what the switch says, asked by code that
+ * has already been handed a transport and has no business re-deciding where it
+ * came from - which is what lets the suite drive the whole protocol against an
+ * in-process one.
  */
 
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -16,12 +24,15 @@ export interface CollabSettings {
     relay: boolean;
 }
 
-/** What the desktop UI asks before offering a collaboration action. */
+/**
+ * Whether shared editing is offered here at all: the desktop shell, and the
+ * switch on. Every route that can start one asks this before it begins.
+ */
 export function collabLive(): boolean {
     return isDesktop() && useFlowStore.getState().collabEnabled;
 }
 
-/** What the session asks. The transport it is handed decides the runtime. */
+/** What the switch says, for code already holding a transport. */
 export function collabSettings(): CollabSettings {
     const state = useFlowStore.getState();
     return { enabled: state.collabEnabled, relay: state.collabRelayEnabled };
