@@ -248,12 +248,21 @@ describe("collaboration under a full round", () => {
 
 describe("cost as a round grows", () => {
     /**
-     * Doubling the cells must not quadruple the work on any hot path.
+     * Quadrupling the cells must not square the work on any hot path.
      *
      * Both points are large on purpose. A small round projects in tens of
      * microseconds, where scheduling jitter is a large fraction of the
      * measurement and the ratio against it says more about the timer than
      * about the algorithm.
+     *
+     * The spread is x4 rather than x2 because the ratio is wall time, and wall
+     * time is not purely algorithmic: the same linear walk costs more per cell
+     * once the working set stops fitting in cache, which is a property of the
+     * machine and not of the code. At x2 that distortion is the same size as
+     * the gap between linear (x2) and quadratic (x4), and a shared CI runner
+     * lands inside it. At x4 the two predictions are x4 and x16, so a bound
+     * halfway between absorbs a doubled constant factor and still fails loudly
+     * on a real regression.
      */
     it("stays linear in the number of cells", () => {
         const scale = (rows: number) => {
@@ -274,7 +283,7 @@ describe("cost as a round grows", () => {
         };
 
         const small = scale(120);
-        const large = scale(240);
+        const large = scale(480);
         const growth = large.cells / small.cells;
         const lines = [`\ncells ${small.cells} -> ${large.cells} (x${growth})`];
         const factors: Record<string, number> = {};
@@ -285,10 +294,10 @@ describe("cost as a round grows", () => {
             );
         }
         console.log(`${lines.join("\n")}\n`);
-        // Linear is x2. Quadratic would be x4, and that is the thing to catch.
+        // Linear is x4. Quadratic would be x16, and that is the thing to catch.
         for (const [key, factor] of Object.entries(factors)) {
             expect(factor, `${key} grew x${factor.toFixed(2)} for x${growth} cells`).toBeLessThan(
-                3.5,
+                8,
             );
         }
     });
