@@ -73,10 +73,17 @@ trait Events: Send + Sync + 'static {
 
 impl Events for AppHandle {
     fn emit(&self, event: Event) {
-        let _ = match event {
-            Event::Peer(e) => Emitter::emit(self, "collab:peer", e),
-            Event::Message(e) => Emitter::emit(self, "collab:message", e),
-            Event::Closed(e) => Emitter::emit(self, "collab:closed", e),
+        // A round is shared from one specific window; targeting the one the
+        // user last focused keeps another open window from seeing traffic
+        // for a session it has nothing to do with.
+        let target = crate::windows::target_window(self);
+        let _ = match (&target, event) {
+            (Some(w), Event::Peer(e)) => Emitter::emit(w, "collab:peer", e),
+            (Some(w), Event::Message(e)) => Emitter::emit(w, "collab:message", e),
+            (Some(w), Event::Closed(e)) => Emitter::emit(w, "collab:closed", e),
+            (None, Event::Peer(e)) => Emitter::emit(self, "collab:peer", e),
+            (None, Event::Message(e)) => Emitter::emit(self, "collab:message", e),
+            (None, Event::Closed(e)) => Emitter::emit(self, "collab:closed", e),
         };
     }
 }
@@ -508,7 +515,8 @@ pub fn collab_dial(
     let held = state.live.lock();
     let live = held.as_ref().ok_or("No collaboration session is running")?;
 
-    let remote = EndpointId::from_str(&endpoint_id).map_err(|_| "Not an endpoint id".to_string())?;
+    let remote =
+        EndpointId::from_str(&endpoint_id).map_err(|_| "Not an endpoint id".to_string())?;
     let endpoint = live.endpoint.clone();
     let conn = live
         .runtime
@@ -674,7 +682,10 @@ mod tests {
 
         let over = format!("{}\n", "x".repeat(11));
         let mut over = BufReader::new(over.as_bytes());
-        assert!(matches!(read_capped_line(&mut over, 10).await, Line::Refused));
+        assert!(matches!(
+            read_capped_line(&mut over, 10).await,
+            Line::Refused
+        ));
 
         // What is left of the stream is the proof: the cap stopped the read
         // rather than the end of the bytes.
@@ -758,7 +769,10 @@ mod identity {
             ("empty", ""),
             ("short", "abcd"),
             ("prose", "not a key"),
-            ("nonhex", "zz23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+            (
+                "nonhex",
+                "zz23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
         ] {
             let path = scratch(tag);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -787,7 +801,11 @@ mod identity {
     #[test]
     fn a_config_directory_that_cannot_be_written_is_not_fatal() {
         let blocked = scratch("blocked");
-        std::fs::write(blocked.parent().unwrap(), "a file where a directory would go").unwrap();
+        std::fs::write(
+            blocked.parent().unwrap(),
+            "a file where a directory would go",
+        )
+        .unwrap();
 
         assert!(secret_key_at(&blocked).is_none());
     }
@@ -870,7 +888,10 @@ mod preset_guard {
             if code.starts_with("//") || code.contains("concat!") {
                 continue;
             }
-            assert!(!code.contains(banned), "that preset publishes to DNS: {line}");
+            assert!(
+                !code.contains(banned),
+                "that preset publishes to DNS: {line}"
+            );
         }
         assert!(source.contains("presets::Minimal"));
     }

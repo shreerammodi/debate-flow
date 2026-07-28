@@ -40,6 +40,7 @@ import {
 } from "./fileCommands";
 import { navigateToFlow } from "./flowNav";
 import { EDITS_ROUND, type CommandId } from "./registry";
+import { openNewWindow } from "./windowCommands";
 
 /** Jumps to the Nth (1-indexed, order-sorted) flow sheet, no-op if out of range. */
 function jumpToSheet(n: number): void {
@@ -294,6 +295,11 @@ export function executeCommand(id: CommandId): void {
             jumpToSheet(Number(id.slice("sheet.jump".length)));
             return;
         }
+
+        // --- Window -------------------------------------------------------------
+        case "window.new":
+            void openNewWindow();
+            return;
 
         // --- Flow files ---------------------------------------------------------
         // These are the only asynchronous commands. Each reports its own

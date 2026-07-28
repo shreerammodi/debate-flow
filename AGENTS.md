@@ -140,5 +140,21 @@ edge case; otherwise leave the code bare.
   carries no editor chord and no menu accelerator; the start screen binds a
   bare `o` instead. Check `presets.ts` and `reserved.ts` before claiming a
   chord - flowing owns most of the letter space.
+- **`Meta+N` is New Window, not New Flow.** `flow.new` carries no editor
+  chord and no menu accelerator, for the same reason `flow.open` does not -
+  the start screen binds a bare `n` instead, and the command palette or the
+  File menu still reach it by click.
+- **Every window is a fully independent app instance; there is no "main"
+  window.** `src-tauri/src/windows.rs` builds every window at runtime
+  (`tauri.conf.json`'s `app.windows` is deliberately empty) with a unique
+  `win-N` label; opening a `.ebb` from the file manager always creates a new
+  window rather than steering an existing one. `windows::target_window`
+  resolves "the window the user is looking at" for the handful of things
+  that must reach exactly one window - a native menu action, the CardMirror
+  bridge, a shared-editing session - since Tauri's own `emit` broadcasts to
+  every open webview by default. `shutdown.rs` generalizes the flush-before-
+  exit handshake the same way: closing one window flushes and closes only
+  it; quitting (Cmd+Q, or closing the last window) flushes every open window
+  and exits only once all of them confirm.
 - Prefer `git rebase` over `git merge` when integrating changes to maintain a
   linear history.

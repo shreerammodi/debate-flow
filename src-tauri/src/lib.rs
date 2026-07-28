@@ -11,6 +11,7 @@ mod flowfile;
 mod menu;
 mod shutdown;
 mod sidecar;
+mod windows;
 
 use tauri::{Emitter, Manager};
 
@@ -22,28 +23,43 @@ fn system_info() -> [&'static str; 2] {
     [std::env::consts::OS, std::env::consts::ARCH]
 }
 
+/// Opens one window per requested flow path, or - if none were requested -
+/// focuses whatever window is already frontmost, falling back to a fresh
+/// dashboard if none exists. Shared by a second launch's forwarded argv and
+/// macOS's `RunEvent::Opened`.
+fn handle_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<String>) {
+    if paths.is_empty() {
+        match windows::target_window(app) {
+            Some(w) => {
+                let _ = w.set_focus();
+            }
+            None => {
+                let _ = windows::open_dashboard(app);
+            }
+        }
+        return;
+    }
+    for path in paths {
+        windows::adopt_or_open(app, &path);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
 
-    // Must precede every other plugin. A second launch - a double-clicked .ebb
-    // on Windows or Linux - hands its argv to the running process and focuses
-    // the existing window, instead of starting a rival copy that would autosave
-    // over the same files.
+    // Must precede every other plugin. A double-clicked .ebb on Windows or
+    // Linux launches a second process; this hands its argv to the running
+    // one so two copies never autosave over the same file. Every requested
+    // path opens its own new window, same as macOS's RunEvent::Opened below.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.set_focus();
-        }
-        for path in flowfile::flow_paths_in(&argv) {
-            flowfile::request_open(app, path);
-        }
+        handle_open(app, flowfile::flow_paths_in(&argv));
     }));
 
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(flowfile::PendingOpen::default())
         .manage(collab::CollabState::default())
         .setup(|app| {
             // Signed updater + relaunch (desktop only). Policy (when to
@@ -74,11 +90,21 @@ pub fn run() {
             let app_menu = menu::build(handle, &std::collections::HashMap::new())?;
             app.set_menu(app_menu)?;
 
-            // A .ebb opened from the file manager at launch. macOS delivers it
-            // as RunEvent::Opened instead; both routes buffer until the
-            // frontend drains them.
-            for path in flowfile::flow_paths_in(&std::env::args().collect::<Vec<_>>()) {
-                flowfile::request_open(handle, path);
+            // A cold launch with a .ebb argument (a double-click, or "Open
+            // With") opens straight onto that flow instead of the dashboard.
+            // macOS delivers the same case as RunEvent::Opened below, which
+            // can only be observed once the run loop starts - after this
+            // decision already has to be made - so a plain launch's
+            // dashboard is marked adoptable in case that turns out to be
+            // exactly what it was.
+            let paths = flowfile::flow_paths_in(&std::env::args().collect::<Vec<_>>());
+            if paths.is_empty() {
+                let dashboard = windows::open_dashboard(handle)?;
+                windows::mark_bootstrap(dashboard.label());
+            } else {
+                for path in paths {
+                    windows::open_flow(handle, &path)?;
+                }
             }
             Ok(())
         })
@@ -96,62 +122,72 @@ pub fn run() {
             config::read_config,
             config::write_config,
             flowfile::create_flow_file,
-            flowfile::drain_pending_open,
             flowfile::flow_paths,
             flowfile::read_flow_file,
             flowfile::read_recents,
             flowfile::write_flow_file,
             flowfile::write_recents,
             menu::rebuild_menu,
+            windows::drain_boot_open,
             sidecar::read_sidecar,
             sidecar::write_sidecar,
             shutdown::finish_quit,
-            system_info
+            system_info,
+            windows::new_window
         ])
-        // Quit and the window's close control both run through the flush
-        // handshake in shutdown.rs rather than exiting on the spot, so a
-        // debounced edit is never left behind in memory. Every other menu item
-        // carries a JS CommandId, which we hand to the frontend to run.
+        // Quit and every window's close control both run through the flush
+        // handshake in shutdown.rs rather than exiting or closing on the
+        // spot, so a debounced edit is never left behind in memory. Every
+        // other menu item carries a JS CommandId, which we hand to the
+        // window the user is looking at to run.
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
             if id == menu::QUIT_ID {
-                shutdown::request(app);
-            } else {
-                let _ = app.emit("menu:command", id.to_string());
+                shutdown::request_all(app);
+            } else if let Some(window) = windows::target_window(app) {
+                let _ = window.emit("menu:command", id.to_string());
             }
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Once the flush has been asked for, the follow-up exit must
-                // be allowed through or the window could never close.
-                if shutdown::in_progress() {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => windows::note_focus(window),
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let label = window.label();
+                // Once a flush has been asked for, the follow-up close/exit
+                // must be allowed through or the window could never close.
+                if shutdown::in_progress(label) {
                     return;
                 }
                 api.prevent_close();
-                shutdown::request(window.app_handle());
+                let app = window.app_handle();
+                // The last open window closing is a quit: every other close
+                // just closes that one window and leaves the rest alone.
+                if app.webview_windows().len() <= 1 {
+                    shutdown::request_all(app);
+                } else if let Some(w) = app.get_webview_window(label) {
+                    shutdown::request_window(app, &w);
+                }
             }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while running Ebb")
         // The session handshake advertises a port that dies with the process,
         // so it has to go on the way out; the identity file stays.
-        .run(|app, event| {
-            // Only the macOS arm below reads the handle.
-            #[cfg(not(target_os = "macos"))]
-            let _ = app;
-            match event {
-                tauri::RunEvent::Exit => bridge::remove_session(),
-                // macOS "Open With" and double-click, at launch and while
-                // already running.
-                #[cfg(target_os = "macos")]
-                tauri::RunEvent::Opened { urls } => {
-                    for url in urls {
-                        if let Ok(path) = url.to_file_path() {
-                            flowfile::request_open(app, path.to_string_lossy().into_owned());
-                        }
-                    }
-                }
-                _ => {}
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => bridge::remove_session(),
+            // macOS "Open With" and double-click, at launch and while
+            // already running. Cold launch is instead handled in setup()
+            // above, since macOS delivers a launch argument here too, after
+            // the window array (now empty) would otherwise have been built.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                let paths = urls
+                    .into_iter()
+                    .filter_map(|url| url.to_file_path().ok())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                handle_open(app, paths);
             }
+            _ => {}
         });
 }

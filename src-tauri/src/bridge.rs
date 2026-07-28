@@ -327,10 +327,17 @@ fn call_renderer(app: &AppHandle, route: &str, body: Json) -> Reply {
     let (tx, rx) = mpsc::channel();
     let state = app.state::<BridgeState>();
     state.pending.lock().insert(id.clone(), tx);
-    let sent = app.emit(
-        "bridge:request",
-        json!({ "id": id, "route": route, "body": body }),
-    );
+    // CardMirror pairs with whichever flow is in front, not every open one.
+    let sent = match crate::windows::target_window(app) {
+        Some(window) => window.emit(
+            "bridge:request",
+            json!({ "id": id, "route": route, "body": body }),
+        ),
+        None => app.emit(
+            "bridge:request",
+            json!({ "id": id, "route": route, "body": body }),
+        ),
+    };
     let reply = if sent.is_ok() {
         await_reply(&rx, RENDERER_TIMEOUT)
     } else {

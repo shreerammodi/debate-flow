@@ -95,11 +95,13 @@ pub fn build<R: Runtime>(
     // app-menu item owns the accelerator (two items with the same
     // key-equivalent would race).
     //
-    // Open carries no accelerator: CmdOrCtrl+O is Insert Cell in the editor,
-    // which a debater uses mid-speech, so the start screen binds a bare "o"
-    // for opening instead.
+    // Open and New Flow both carry no accelerator: CmdOrCtrl+O is Insert
+    // Cell in the editor, and CmdOrCtrl+N is New Window (see the Window
+    // submenu below) - both are commands a debater uses mid-speech or
+    // reaches for reflexively, so they outrank a between-rounds action. The
+    // start screen binds bare "o" and "n" instead.
     let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&cmd("flow.new", "New Flow", "CmdOrCtrl+N")?)
+        .item(&cmd("flow.new", "New Flow", "")?)
         .item(&cmd("flow.open", "Open Flow...", "")?)
         .separator()
         .item(&cmd("flow.save", "Save", "CmdOrCtrl+S")?)
@@ -112,7 +114,11 @@ pub fn build<R: Runtime>(
         .item(&cmd("sheet.rename", "Rename Sheet", "CmdOrCtrl+R")?)
         .separator()
         .item(&cmd("info.open", "Round Info", "")?)
-        .item(&MenuItemBuilder::new("Settings").id("settings.open").build(app)?)
+        .item(
+            &MenuItemBuilder::new("Settings")
+                .id("settings.open")
+                .build(app)?,
+        )
         .build()?;
 
     // Edit: Undo/Redo/Delete Row are focus-dependent and re-dispatched in JS
@@ -127,7 +133,11 @@ pub fn build<R: Runtime>(
         .item(&cmd(SELECT_ALL_ID, "Select All", "CmdOrCtrl+A")?)
         .separator()
         .item(&cmd("format.toggleBold", "Bold", "CmdOrCtrl+B")?)
-        .item(&cmd("format.toggleHighlight", "Highlight", "CmdOrCtrl+Shift+H")?)
+        .item(&cmd(
+            "format.toggleHighlight",
+            "Highlight",
+            "CmdOrCtrl+Shift+H",
+        )?)
         .item(&cmd("format.toggleCard", "Card", "CmdOrCtrl+T")?)
         .item(&cmd("format.toggleGroup", "Group", "CmdOrCtrl+G")?)
         .item(&cmd("format.toggleKicked", "Kicked", "CmdOrCtrl+K")?)
@@ -144,14 +154,25 @@ pub fn build<R: Runtime>(
         .item(&cmd("sheet.prev", "Previous Sheet", "")?)
         .separator()
         .item(&cmd("sheet.quickSwitch", "Search Cells", "CmdOrCtrl+P")?)
-        .item(&cmd("palette.open", "Command Palette", "CmdOrCtrl+Shift+P")?)
+        .item(&cmd(
+            "palette.open",
+            "Command Palette",
+            "CmdOrCtrl+Shift+P",
+        )?)
         .separator()
-        .item(&cmd("sidebar.toggle", "Toggle Sidebar", "CmdOrCtrl+Backslash")?)
+        .item(&cmd(
+            "sidebar.toggle",
+            "Toggle Sidebar",
+            "CmdOrCtrl+Backslash",
+        )?)
         .item(&cmd("rfd.toggle", "Toggle RFD", "CmdOrCtrl+J")?)
         .build()?;
 
-    // Window: the native window commands, whose accelerators the OS owns.
+    // Window: New Window first, matching the platform convention; the rest
+    // are native window commands whose accelerators the OS owns.
     let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&cmd("window.new", "New Window", "CmdOrCtrl+N")?)
+        .separator()
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .build()?;
 
@@ -178,15 +199,13 @@ pub fn build<R: Runtime>(
 #[tauri::command]
 pub fn rebuild_menu<R: Runtime>(app: AppHandle<R>, accels: HashMap<String, String>) {
     let handle = app.clone();
-    let result = app.run_on_main_thread(move || {
-        match build(&handle, &accels) {
-            Ok(menu) => {
-                if let Err(e) = handle.set_menu(menu) {
-                    eprintln!("rebuild_menu: set_menu failed: {e}");
-                }
+    let result = app.run_on_main_thread(move || match build(&handle, &accels) {
+        Ok(menu) => {
+            if let Err(e) = handle.set_menu(menu) {
+                eprintln!("rebuild_menu: set_menu failed: {e}");
             }
-            Err(e) => eprintln!("rebuild_menu: build failed: {e}"),
         }
+        Err(e) => eprintln!("rebuild_menu: build failed: {e}"),
     });
     if let Err(e) = result {
         eprintln!("rebuild_menu: main-thread dispatch failed: {e}");

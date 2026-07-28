@@ -10,7 +10,9 @@ import { acceptInvite } from "@/lib/collab/inbox";
 import { inviteToastFor } from "@/lib/collab/invite";
 import { openFlowFromPicker } from "@/lib/commands/fileCommands";
 import { flowRouteFor } from "@/lib/commands/flowNav";
+import { openNewWindow } from "@/lib/commands/windowCommands";
 import { openExternal } from "@/lib/openExternal";
+import { noteOpened } from "@/lib/persistence/flowSession";
 import { relativeTime } from "@/lib/start/format";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -57,6 +59,29 @@ export default function StartScreen() {
 
     const open = useCallback((path: string) => router.push(flowRouteFor(path)), [router]);
 
+    // A cold launch with a .ebb argument reaches Rust before this component
+    // exists; on macOS it can only be observed after this dashboard window
+    // has already been created (see windows.rs's bootstrap comment), so it
+    // asks here, once, whether this exact window turned out to be that
+    // launch after all. Every other open (already running, a second launch,
+    // Mod+N) creates its own new window instead and never reaches this.
+    useEffect(() => {
+        if (!isDesktop()) return;
+        let cancelled = false;
+        void (async () => {
+            // Platform-only module: a static import would pull Tauri's IPC
+            // bridge into the web bundle, which has no window manager to ask.
+            const { invoke } = await import("@tauri-apps/api/core");
+            const path = await invoke<string | null>("drain_boot_open").catch(() => null);
+            if (!path || cancelled) return;
+            void noteOpened(path);
+            open(path);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [open]);
+
     // An invitation leads, because it is the one row that expires: the partner
     // who sent it is already flowing. Every invite is its own row, and the key
     // takes the first, which is the one that has been waiting longest.
@@ -92,7 +117,7 @@ export default function StartScreen() {
             if (e.metaKey || e.ctrlKey) {
                 if (e.key === "n") {
                     e.preventDefault();
-                    setNewFlowOpen(true);
+                    void openNewWindow();
                 } else if (e.key === "o") {
                     e.preventDefault();
                     void openFlowFromPicker();

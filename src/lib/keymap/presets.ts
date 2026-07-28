@@ -15,10 +15,12 @@ import type { Chord, Keymap } from "./types";
 const LETTER_BINDINGS: Record<Chord, CommandId> = (() => {
     const mod = isMacPlatform() ? "Meta" : "Ctrl";
     return {
-        // Document chords. Open is deliberately absent: Meta+o and Meta+O are
-        // both insert commands a debater uses mid-speech, and flowing outranks
-        // a between-rounds action. The start screen binds a bare "o" instead.
-        [`${mod}+n`]: "flow.new",
+        // Document chords. Open and New Flow are deliberately absent: Meta+o
+        // and Meta+O are both insert commands a debater uses mid-speech, and
+        // Meta+n is New Window (below) - flowing and a fresh window both
+        // outrank a between-rounds action. The start screen binds bare "o"
+        // and "n" instead.
+        [`${mod}+n`]: "window.new",
         [`${mod}+s`]: "flow.save",
         [`${mod}+S`]: "flow.saveAs",
         [`${mod}+z`]: "edit.undo",

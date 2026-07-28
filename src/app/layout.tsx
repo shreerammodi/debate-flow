@@ -13,7 +13,6 @@ import NavigatorHost from "@/components/NavigatorHost";
 import QuitGuard from "@/components/QuitGuard";
 import SettingsPanel from "@/components/settings/SettingsPanel";
 import NewFlowDialog from "@/components/start/NewFlowDialog";
-import OpenWithHost from "@/components/start/OpenWithHost";
 import ThemeSync from "@/components/ThemeSync";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import UpdateChip from "@/components/update/UpdateChip";
@@ -339,7 +338,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <BridgeHost />
                 <NavigatorHost />
                 <QuitGuard />
-                <OpenWithHost />
                 <ThemeSync />
                 <ConfigFileSync />
                 <InviteWatch />

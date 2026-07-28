@@ -17,8 +17,9 @@ import { isMacPlatform } from "@/lib/platform";
  * Derived from the chords FLAT_KEYMAP actually binds.
  */
 const RESERVED_KEYS = [
+    // -- Window ---------------------------------------------------------------
+    "n", // new window (also suppresses the browser's new window)
     // -- Flow files ----------------------------------------------------------
-    "n", // new flow (also suppresses the browser's new window)
     "s", // save (suppresses browser save-page)
     "S", // save as (Shift encoded in uppercase key)
     // -- Sheets ------------------------------------------------------------

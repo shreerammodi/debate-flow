@@ -8,6 +8,7 @@
  */
 
 export type CommandId =
+    | "window.new"
     | "flow.new"
     | "flow.open"
     | "flow.save"
@@ -76,6 +77,7 @@ export interface CommandDef {
 }
 
 export const COMMANDS: Record<CommandId, CommandDef> = {
+    "window.new": { id: "window.new", label: "New window" },
     "flow.new": { id: "flow.new", label: "New flow" },
     "flow.open": { id: "flow.open", label: "Open flow" },
     "flow.save": { id: "flow.save", label: "Save flow" },

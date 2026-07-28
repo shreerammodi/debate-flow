@@ -2,9 +2,9 @@
 //!
 //! A flow is a `.ebb` file the user owns, opens, and backs up with the rest of
 //! their filesystem. This module is the byte layer for those files: it resolves
-//! the default flows directory, reads and writes flow text, keeps the
-//! recent-flows list beside the config file, and buffers paths the OS asks us to
-//! open. It knows nothing about the format - the frontend parses and validates.
+//! the default flows directory, reads and writes flow text, and keeps the
+//! recent-flows list beside the config file. It knows nothing about the format
+//! - the frontend parses and validates.
 //!
 //! The filesystem plugin is deliberately not used. Its scope model cannot
 //! express "whatever path the user picked, remembered across restarts" without
@@ -17,9 +17,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use parking_lot::Mutex;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
 
 const EXT: &str = "ebb";
 
@@ -93,14 +91,21 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
 /// Modification time in epoch milliseconds. The frontend carries this back on
 /// the next write so we can tell whether anything else touched the file.
 fn mtime_ms(path: &Path) -> Result<f64, String> {
-    let meta =
-        fs::metadata(path).map_err(|e| format!("Could not stat {}: {e}", path.display()))?;
-    let modified = meta
-        .modified()
-        .map_err(|e| format!("Could not read the modified time of {}: {e}", path.display()))?;
+    let meta = fs::metadata(path).map_err(|e| format!("Could not stat {}: {e}", path.display()))?;
+    let modified = meta.modified().map_err(|e| {
+        format!(
+            "Could not read the modified time of {}: {e}",
+            path.display()
+        )
+    })?;
     Ok(modified
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("{} has a modified time before the epoch: {e}", path.display()))?
+        .map_err(|e| {
+            format!(
+                "{} has a modified time before the epoch: {e}",
+                path.display()
+            )
+        })?
         .as_secs_f64()
         * 1000.0)
 }
@@ -229,39 +234,6 @@ pub fn write_recents(contents: String) -> Result<(), String> {
 
 // --- Open-with ---------------------------------------------------------------------
 
-#[derive(Default)]
-struct PendingState {
-    queue: Vec<String>,
-    drained: bool,
-}
-
-/// Paths the OS handed us before the frontend was listening. macOS delivers
-/// these as `RunEvent::Opened`, Windows and Linux as argv; either way they can
-/// arrive before the webview exists, so they wait here until it drains them.
-#[derive(Default)]
-pub struct PendingOpen(Mutex<PendingState>);
-
-/// Route an OS-requested path to the frontend: buffered before the first drain,
-/// emitted live after it. Both sides of the decision are made under one lock so
-/// a path arriving mid-drain cannot fall between them and be lost.
-pub fn request_open(app: &AppHandle, path: String) {
-    let state = app.state::<PendingOpen>();
-    let mut pending = state.0.lock();
-    if pending.drained {
-        drop(pending);
-        let _ = app.emit("file:open", path);
-    } else {
-        pending.queue.push(path);
-    }
-}
-
-#[tauri::command]
-pub fn drain_pending_open(state: State<'_, PendingOpen>) -> Vec<String> {
-    let mut pending = state.0.lock();
-    pending.drained = true;
-    std::mem::take(&mut pending.queue)
-}
-
 /// The openable file paths in a command line, ignoring the executable and any
 /// flags. Used for the launch argv and again for a second instance's argv.
 pub fn flow_paths_in(args: &[String]) -> Vec<String> {
@@ -331,7 +303,8 @@ mod tests {
         let dir = tmpdir("create");
         let d = dir.to_string_lossy().into_owned();
 
-        let first = create_flow_file(d.clone(), "policy-2026-07-25.ebb".into(), "a".into()).unwrap();
+        let first =
+            create_flow_file(d.clone(), "policy-2026-07-25.ebb".into(), "a".into()).unwrap();
         let second =
             create_flow_file(d.clone(), "policy-2026-07-25.ebb".into(), "b".into()).unwrap();
 
