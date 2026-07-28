@@ -46,7 +46,14 @@ describe("multi-event round fields", () => {
         const round = makeFlowRound({ event: "pf", firstSide: "neg" });
         expect(round.event).toBe("pf");
         expect(round.firstSide).toBe("neg");
-        expect(round.sheets.find((s) => s.kind === "cx")?.title).toBe(EVENTS.pf.crossEx.title);
+        expect(round.sheets.find((s) => s.kind === "cx")?.title).toBe(EVENTS.pf.crossEx?.title);
+    });
+
+    it("gives a parli round no cross-ex sheet, and never backfills one", () => {
+        const round = makeFlowRound({ event: "parli" });
+        expect(round.sheets).toHaveLength(1);
+        expect(round.sheets[0].kind).toBe("flow");
+        expect(normalizeFlow(round).sheets.filter((s) => s.kind === "cx")).toHaveLength(0);
     });
 
     it("normalizeFlow backfills event and firstSide on legacy rounds", () => {

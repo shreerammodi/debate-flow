@@ -7,7 +7,13 @@
 
 import type Handsontable from "handsontable";
 
-import { getEvent, speechOrder, type EventDef, type SpeechDef } from "@/lib/format/events";
+import {
+    getEvent,
+    sideLabels,
+    speechOrder,
+    type EventDef,
+    type SpeechDef,
+} from "@/lib/format/events";
 import type { FlowRound, FlowSheet } from "@/lib/model/flow";
 import type { Side } from "@/lib/model/types";
 
@@ -17,30 +23,31 @@ export interface SpeechCol extends SpeechDef {
 }
 
 const other = (side: Side): Side => (side === "aff" ? "neg" : "aff");
-const sideLabel = (side: Side): string => (side === "aff" ? "Aff" : "Neg");
 
 /**
  * A pair of columns per cross-ex period. Directional CX (Policy) labels them
  * Question/Response, the question side being the questioner; shared crossfire
- * (PF) labels each column by its side.
+ * (PF) labels each column by its side. An event with no cross-examination
+ * (Parliamentary) has no periods and so no columns.
  */
 export function crossExColumns(event: EventDef, firstSide: Side): SpeechCol[] {
-    return event.crossEx.periods.flatMap((p, i) => {
+    const sides = sideLabels(event.id);
+    return (event.crossEx?.periods ?? []).flatMap((p, i) => {
         const qSide = p.q === "first" ? firstSide : other(firstSide);
         const rSide = other(qSide);
-        if (event.crossEx.shared) {
+        if (event.crossEx?.shared) {
             return [
                 {
                     id: `cx-${i}-q`,
-                    name: sideLabel(qSide),
-                    short: sideLabel(qSide),
+                    name: sides[qSide].label,
+                    short: sides[qSide].label,
                     side: qSide,
                     group: p.label,
                 },
                 {
                     id: `cx-${i}-r`,
-                    name: sideLabel(rSide),
-                    short: sideLabel(rSide),
+                    name: sides[rSide].label,
+                    short: sides[rSide].label,
                     side: rSide,
                     group: p.label,
                 },

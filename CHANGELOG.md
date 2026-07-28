@@ -69,6 +69,14 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Added
 
+- **A Parliamentary flow template**, on `r` in the New flow menu. Five columns
+  carry the six speeches - PM, LOC, MGC, Block, PMR - because the MOC and the
+  LOR run back to back, so they share one column the way Policy's 2NC and 1NR
+  do. A Parliamentary round is Gov and Opp throughout: the sidebar adds Gov and
+  Opp sheets, the round header and the ballot read Gov and Opp, and the debater
+  slots are PM, MG, LO, and MO, in the round and in an exported workbook. It
+  opens with no cross-examination sheet, since a point of information
+  interrupts a speech rather than taking a period of its own.
 - **Shared editing**, off by default under Settings > Collaboration. On, that
   pane grows a Session row: Share this round puts a one-time invite on screen
   to send however you already talk, Invite a partner dials a saved one, and

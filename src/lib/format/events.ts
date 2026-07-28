@@ -8,7 +8,7 @@
 
 import type { Side } from "@/lib/model/types";
 
-export type EventId = "policy" | "pf" | "ld";
+export type EventId = "policy" | "pf" | "ld" | "parli";
 
 export interface SpeechDef {
     id: string;
@@ -24,6 +24,14 @@ export interface CrossExPeriod {
     q: "first" | "second";
 }
 
+/** What an event calls one of its sides, and who debates on it. */
+export interface SideLabel {
+    /** Short side name, as headers, buttons, and exports print it. */
+    label: string;
+    /** The side's debater slots, in the order they speak. */
+    speakers: [string, string];
+}
+
 export interface EventDef {
     id: EventId;
     name: string;
@@ -33,9 +41,17 @@ export interface EventDef {
     /** The flip decides who speaks first (PF); false = always aff-first. */
     variableOrder: boolean;
     /** `shared`: both sides question each other (PF crossfire), so columns are
-     *  labelled by side rather than as questioner/responder. */
-    crossEx: { title: string; periods: CrossExPeriod[]; shared?: boolean };
+     *  labelled by side rather than as questioner/responder. Absent for events
+     *  with no cross-examination at all, which get no cross-ex sheet. */
+    crossEx?: { title: string; periods: CrossExPeriod[]; shared?: boolean };
+    /** Side naming, when the event does not call its sides aff and neg. */
+    sides?: Record<Side, SideLabel>;
 }
+
+const AFF_NEG_SIDES: Record<Side, SideLabel> = {
+    aff: { label: "Aff", speakers: ["1A", "2A"] },
+    neg: { label: "Neg", speakers: ["1N", "2N"] },
+};
 
 const speech = (id: string, name: string, short: string, side: Side): SpeechDef => ({
     id,
@@ -114,10 +130,40 @@ export const EVENTS: Record<EventId, EventDef> = {
             ],
         },
     },
+    parli: {
+        id: "parli",
+        name: "Parliamentary",
+        // The opening speech is the Prime Minister, not a "PMC"; only the
+        // speeches that have a rebuttal counterpart are named Constructive.
+        aff: [
+            speech("pm", "Prime Minister", "PM", "aff"),
+            speech("mgc", "Member of the Government Constructive", "MGC", "aff"),
+            speech("pmr", "Prime Minister Rebuttal", "PMR", "aff"),
+        ],
+        // The MOC and LOR run back to back, so they share one column the way
+        // Policy's 2NC and 1NR share the Block: strict alternation cannot
+        // express two consecutive speeches on the same side.
+        neg: [
+            speech("loc", "Leader of the Opposition Constructive", "LOC", "neg"),
+            speech("block", "Opposition Block", "Block", "neg"),
+        ],
+        variableOrder: false,
+        // Parliamentary has no cross-examination; a point of information
+        // interrupts a speech rather than occupying a period of its own.
+        sides: {
+            aff: { label: "Gov", speakers: ["PM", "MG"] },
+            neg: { label: "Opp", speakers: ["LO", "MO"] },
+        },
+    },
 };
 
 export function getEvent(id?: EventId): EventDef {
     return EVENTS[id ?? "policy"];
+}
+
+/** The event's side naming, falling back to the aff/neg the model stores. */
+export function sideLabels(id?: EventId): Record<Side, SideLabel> {
+    return getEvent(id).sides ?? AFF_NEG_SIDES;
 }
 
 /**

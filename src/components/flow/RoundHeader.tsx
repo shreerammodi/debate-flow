@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
+import { sideLabels } from "@/lib/format/events";
 import { teamCode } from "@/lib/model/teamCode";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -15,13 +16,16 @@ import ZoomControl from "./ZoomControl";
 
 export default function RoundHeader() {
     const scouting = useFlowStore((s) => s.round?.scouting);
+    const sides = sideLabels(useFlowStore((s) => s.round?.event));
 
     if (!scouting) return null;
 
     const affCode =
-        teamCode(scouting.affSchool ?? "", scouting.aff.first, scouting.aff.second) || "Aff";
+        teamCode(scouting.affSchool ?? "", scouting.aff.first, scouting.aff.second) ||
+        sides.aff.label;
     const negCode =
-        teamCode(scouting.negSchool ?? "", scouting.neg.first, scouting.neg.second) || "Neg";
+        teamCode(scouting.negSchool ?? "", scouting.neg.first, scouting.neg.second) ||
+        sides.neg.label;
     const participants = `${affCode} vs ${negCode}`;
 
     return (

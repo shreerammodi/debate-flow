@@ -108,6 +108,13 @@ edge case; otherwise leave the code bare.
   is fine for the visual dimension); **side** is aff/neg while **role** also
   includes judge. In export code, disambiguate the app's `Sheet` from Excel
   worksheets explicitly.
+- **A side is always aff/neg in the model, never in the UI.** The `Side` type
+  is aff/neg for every event, but what the user reads comes from
+  `sideLabels(event)`: Parliamentary calls the same two sides Gov and Opp and
+  its debater slots PM/MG and LO/MO, not 1A/2A and 1N/2N. Never hard-code
+  "Aff"/"Neg" into a surface that has the round in hand - the buttons, the
+  round header, the ballot, and the exported workbook all read the event's
+  labels. Settings is app-wide with no round to ask, so it stays aff/neg.
 - **Use plain text**. Never add symbols, glyphs, or other unicode characters.
   Only use standard ASCII characters, unless absolutely necessary. When
   representing keyboard modifiers, use standard terms Meta, Alt, Ctrl, Shift

@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 
 import KeybindingsCheatsheet from "@/components/palette/KeybindingsCheatsheet";
 import SearchPalette from "@/components/palette/SearchPalette";
+import { sideLabels } from "@/lib/format/events";
 import { useKeymap } from "@/lib/keymap/useKeymap";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -26,6 +27,7 @@ export default function Workspace() {
     const round = useFlowStore((s) => s.round);
     const rfdOpen = useFlowStore((s) => s.rfdOpen);
     const roundId = useFlowStore((s) => s.round?.id);
+    const sides = sideLabels(round?.event);
 
     const sheetOf = (id: string | null) => round?.sheets.find((s) => s.id === id);
     const titleOf = (id: string | null) => sheetOf(id)?.title ?? "";
@@ -87,8 +89,10 @@ export default function Workspace() {
                     ) : (
                         <div className="text-muted-foreground w-full p-6 text-[13px]">
                             No sheet selected. Choose one from the sidebar, or add a sheet with{" "}
-                            <span className="text-foreground font-medium">+ Aff</span> /{" "}
-                            <span className="text-foreground font-medium">+ Neg</span>.
+                            <span className="text-foreground font-medium">+ {sides.aff.label}</span>{" "}
+                            /{" "}
+                            <span className="text-foreground font-medium">+ {sides.neg.label}</span>
+                            .
                         </div>
                     )}
                 </main>

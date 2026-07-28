@@ -85,7 +85,7 @@ describe("parseFlowFile", () => {
         expect(() => parseFlowFile(withRound({ id: 7 }))).toThrow(
             "Invalid flow file: round.id is not a string",
         );
-        expect(() => parseFlowFile(withRound({ event: "parli" }))).toThrow(
+        expect(() => parseFlowFile(withRound({ event: "moot-court" }))).toThrow(
             /round\.event is not a known debate event/,
         );
         expect(() => parseFlowFile(withRound({ scouting: {} }))).toThrow(

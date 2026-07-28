@@ -11,6 +11,7 @@ import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { disconnectPeer, endSession } from "@/lib/collab/runtime";
+import { sideLabels } from "@/lib/format/events";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { compareSheets, type FlowSheet } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
@@ -20,6 +21,7 @@ const EMPTY_SHEETS: FlowSheet[] = [];
 
 export default function Sidebar() {
     const sheets = useFlowStore((s) => s.round?.sheets ?? EMPTY_SHEETS);
+    const sides = sideLabels(useFlowStore((s) => s.round?.event));
 
     // Highlight follows the focused pane's sheet, so in split view the marker
     // tracks Tab 1/Tab 2 focus rather than always sitting on pane 1.
@@ -110,7 +112,7 @@ export default function Sidebar() {
                         onClick={() => addGroup("aff")}
                         data-testid="add-aff"
                     >
-                        + Aff
+                        + {sides.aff.label}
                     </Button>
                 </Tip>
                 <Tip label="Bulk add sheets">
@@ -136,7 +138,7 @@ export default function Sidebar() {
                         onClick={() => addGroup("neg")}
                         data-testid="add-neg"
                     >
-                        + Neg
+                        + {sides.neg.label}
                     </Button>
                 </Tip>
                 <Tip label="Collapse sidebar" command="sidebar.toggle">
@@ -237,6 +239,7 @@ interface SheetRowProps {
 function SheetRow({ sheet, active, onSelect, isRenaming, onStartRename, onDelete }: SheetRowProps) {
     const renameSheet = useFlowStore((s) => s.renameSheet);
     const setRenamingSheet = useFlowStore((s) => s.setRenamingSheet);
+    const sides = sideLabels(useFlowStore((s) => s.round?.event));
     const inputRef = useRef<HTMLInputElement>(null);
     const [value, setValue] = useState(sheet.title);
 
@@ -346,7 +349,7 @@ function SheetRow({ sheet, active, onSelect, isRenaming, onStartRename, onDelete
                         sheet.group === "aff" ? "bg-aff" : "bg-neg",
                     )}
                 />
-                <span className="sr-only">{sheet.group === "aff" ? "Aff" : "Neg"}</span>
+                <span className="sr-only">{sides[sheet.group].label}</span>
                 {titleTruncated ? (
                     <Tip label={sheet.title}>
                         <span

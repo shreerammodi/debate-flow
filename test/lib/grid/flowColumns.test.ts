@@ -52,6 +52,29 @@ describe("columnsForFlowSheet", () => {
         expect(columnsForFlowSheet(round, sheet)[0].id).toBe("1nc");
     });
 
+    it("parli neg sheets start at the LOC and end on the PMR", () => {
+        const round = makeFlowRound({ event: "parli" });
+        expect(columnsForFlowSheet(round, flowSheet("aff")).map((c) => c.short)).toEqual([
+            "PM",
+            "LOC",
+            "MGC",
+            "Block",
+            "PMR",
+        ]);
+        expect(columnsForFlowSheet(round, flowSheet("neg")).map((c) => c.id)).toEqual([
+            "loc",
+            "mgc",
+            "block",
+            "pmr",
+        ]);
+    });
+
+    it("an event with no cross-examination derives no cross-ex columns", () => {
+        const round = makeFlowRound({ event: "parli" });
+        expect(crossExColumns(EVENTS.parli, "aff")).toEqual([]);
+        expect(columnsForFlowSheet(round, makeCxFlowSheet())).toEqual([]);
+    });
+
     it("cx sheets derive periods from the event", () => {
         const policy = makeFlowRound({});
         const policyCols = columnsForFlowSheet(policy, makeCxFlowSheet());

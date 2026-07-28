@@ -31,6 +31,23 @@ describe("applyInfoWorksheet", () => {
         expect(ws.getCell("B8").value).toBe("Ada L");
         expect(ws.getCell("B9").value).toBe("Ben M");
     });
+
+    it("labels the sides and speaker slots the way the event names them", () => {
+        const wb = new ExcelJS.Workbook();
+        const round = makeFlowRound({ event: "parli" });
+        round.scouting.decision = { vote: "neg" };
+        applyInfoWorksheet(wb, round);
+        const ws = wb.getWorksheet("Info")!;
+        expect([7, 8, 9, 11, 12, 13].map((r) => ws.getCell(r, 1).value)).toEqual([
+            "Gov School",
+            "PM",
+            "MG",
+            "Opp School",
+            "LO",
+            "MO",
+        ]);
+        expect(ws.getCell("B15").value).toBe("OPP");
+    });
 });
 
 describe("maybeAddRfdWorksheet", () => {

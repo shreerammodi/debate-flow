@@ -6,6 +6,7 @@
 import type ExcelJS from "exceljs";
 
 import type { Contacts } from "@/lib/collab/contacts";
+import { sideLabels } from "@/lib/format/events";
 import type { FlowRound } from "@/lib/model/flow";
 import type { Debater } from "@/lib/model/types";
 import { authoredPeerNotes } from "@/lib/rfd/peerNotes";
@@ -35,13 +36,15 @@ export function applyInfoWorksheet(workbook: ExcelJS.Workbook, round: FlowRound)
     );
     labeled(ws, 4, "Date", sc.date || isoDate(round.createdAt));
     labeled(ws, 5, "Judge", sc.judge);
-    labeled(ws, 7, "Aff School", sc.affSchool);
-    labeled(ws, 8, "1A", fullName(sc.aff.first));
-    labeled(ws, 9, "2A", fullName(sc.aff.second));
-    labeled(ws, 11, "Neg School", sc.negSchool);
-    labeled(ws, 12, "1N", fullName(sc.neg.first));
-    labeled(ws, 13, "2N", fullName(sc.neg.second));
-    labeled(ws, 15, "Decision", sc.decision?.vote?.toUpperCase());
+    const sides = sideLabels(round.event);
+    labeled(ws, 7, `${sides.aff.label} School`, sc.affSchool);
+    labeled(ws, 8, sides.aff.speakers[0], fullName(sc.aff.first));
+    labeled(ws, 9, sides.aff.speakers[1], fullName(sc.aff.second));
+    labeled(ws, 11, `${sides.neg.label} School`, sc.negSchool);
+    labeled(ws, 12, sides.neg.speakers[0], fullName(sc.neg.first));
+    labeled(ws, 13, sides.neg.speakers[1], fullName(sc.neg.second));
+    const vote = sc.decision?.vote;
+    labeled(ws, 15, "Decision", vote && sides[vote].label.toUpperCase());
 }
 
 /** Body cell holding an author's notes, wrapped and top-aligned. */
@@ -69,7 +72,9 @@ export function maybeAddRfdWorksheet(
     ws.getColumn(1).width = 100;
     ws.getCell("A1").value = "Decision";
     ws.getCell("A1").font = { bold: true };
-    if (decision?.vote) ws.getCell("B1").value = decision.vote.toUpperCase();
+    if (decision?.vote) {
+        ws.getCell("B1").value = sideLabels(round.event)[decision.vote].label.toUpperCase();
+    }
     if (rfd) notes(ws, 2, rfd);
     // Tracks the last written row so each author lands below the decision
     // block and below whichever author precedes them.

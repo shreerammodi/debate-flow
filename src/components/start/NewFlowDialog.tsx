@@ -20,15 +20,20 @@ interface Choice {
 
 /**
  * Everything a round needs before it exists. Speaking order is only a question
- * for Public Forum, where the flip decides it; Policy and LD fix the aff first,
- * so asking would be a step with one answer. Every other detail - schools,
- * debaters, tournament - is filled in later from inside the round.
+ * for Public Forum, where the flip decides it; Policy, LD, and Parliamentary
+ * fix the first speaker, so asking would be a step with one answer. Every
+ * other detail - schools, debaters, tournament - is filled in later from
+ * inside the round.
+ *
+ * Keys are matched against the whole list, so j and k stay free for cursor
+ * movement.
  */
 const CHOICES: Choice[] = [
     { key: "p", label: "Policy", event: "policy" },
     { key: "l", label: "Lincoln-Douglas", event: "ld" },
     { key: "a", label: "Public Forum, aff first", event: "pf", firstSide: "aff" },
     { key: "n", label: "Public Forum, neg first", event: "pf", firstSide: "neg" },
+    { key: "r", label: "Parliamentary", event: "parli" },
 ];
 
 export default function NewFlowDialog() {

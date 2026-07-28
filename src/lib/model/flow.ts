@@ -102,6 +102,7 @@ export function makeFlowRound(input: { event?: EventId; firstSide?: Side } = {})
     const now = Date.now();
     const event = input.event ?? "policy";
     const firstSide = input.firstSide ?? "aff";
+    const crossEx = getEvent(event).crossEx;
     return {
         id: uid("round"),
         createdAt: now,
@@ -110,7 +111,9 @@ export function makeFlowRound(input: { event?: EventId; firstSide?: Side } = {})
         firstSide,
         scouting: emptyScouting(),
         sheets: [
-            makeCxFlowSheet(getEvent(event).crossEx.title),
+            // Parliamentary has no cross-examination, so it opens with no
+            // cross-ex sheet to leave empty.
+            ...(crossEx ? [makeCxFlowSheet(crossEx.title)] : []),
             // The first sheet belongs to whoever speaks first, so the round
             // opens on the constructive that actually starts it.
             makeFlowSheet({ title: "1.", group: firstSide, order: 0 }),
@@ -137,8 +140,9 @@ export function normalizeFlow(raw: FlowRound): FlowRound {
             meta: s.meta ?? {},
         })),
     };
-    if (!r.sheets.some((s) => s.kind === "cx")) {
-        r.sheets = [makeCxFlowSheet(), ...r.sheets];
+    const crossEx = getEvent(r.event).crossEx;
+    if (crossEx && !r.sheets.some((s) => s.kind === "cx")) {
+        r.sheets = [makeCxFlowSheet(crossEx.title), ...r.sheets];
     }
     return r;
 }

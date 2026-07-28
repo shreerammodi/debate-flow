@@ -9,6 +9,7 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tip } from "@/components/ui/tooltip";
+import { sideLabels } from "@/lib/format/events";
 import { parsePairing, type PairingPatch } from "@/lib/model/parsePairing";
 import { teamCode } from "@/lib/model/teamCode";
 import type { Scouting } from "@/lib/model/types";
@@ -70,6 +71,7 @@ function InfoPanelInner() {
     if (!round) return null;
     const sc = round.scouting;
     const scoutDate = parseScoutDate(sc.date);
+    const sides = sideLabels(round.event);
 
     const affCode = teamCode(sc.affSchool ?? "", sc.aff.first, sc.aff.second);
     const negCode = teamCode(sc.negSchool ?? "", sc.neg.first, sc.neg.second);
@@ -150,16 +152,16 @@ function InfoPanelInner() {
                     <div className="grid grid-cols-2 gap-4 p-4">
                         <div className="flex flex-col gap-2">
                             <div className="text-aff font-mono text-[9px] font-bold tracking-widest uppercase">
-                                Aff — {affCode || "—"}
+                                {sides.aff.label} — {affCode || "—"}
                             </div>
                             <Input
                                 data-testid="scout-affSchool"
-                                placeholder="Aff school"
+                                placeholder={`${sides.aff.label} school`}
                                 value={sc.affSchool ?? ""}
                                 onChange={(e) => setScouting({ affSchool: e.target.value })}
                             />
                             <DebaterRow
-                                label="1A"
+                                label={sides.aff.speakers[0]}
                                 value={sc.aff.first}
                                 onChange={(d) =>
                                     setScouting({
@@ -169,7 +171,7 @@ function InfoPanelInner() {
                                 testid="scout-aff-1a"
                             />
                             <DebaterRow
-                                label="2A"
+                                label={sides.aff.speakers[1]}
                                 value={sc.aff.second}
                                 onChange={(d) =>
                                     setScouting({
@@ -181,16 +183,16 @@ function InfoPanelInner() {
                         </div>
                         <div className="flex flex-col gap-2">
                             <div className="text-neg font-mono text-[9px] font-bold tracking-widest uppercase">
-                                Neg — {negCode || "—"}
+                                {sides.neg.label} — {negCode || "—"}
                             </div>
                             <Input
                                 data-testid="scout-negSchool"
-                                placeholder="Neg school"
+                                placeholder={`${sides.neg.label} school`}
                                 value={sc.negSchool ?? ""}
                                 onChange={(e) => setScouting({ negSchool: e.target.value })}
                             />
                             <DebaterRow
-                                label="1N"
+                                label={sides.neg.speakers[0]}
                                 value={sc.neg.first}
                                 onChange={(d) =>
                                     setScouting({
@@ -200,7 +202,7 @@ function InfoPanelInner() {
                                 testid="scout-neg-1n"
                             />
                             <DebaterRow
-                                label="2N"
+                                label={sides.neg.speakers[1]}
                                 value={sc.neg.second}
                                 onChange={(d) =>
                                     setScouting({
@@ -302,7 +304,7 @@ function InfoPanelInner() {
                                                   : "border-input text-muted-foreground hover:bg-accent/50",
                                         )}
                                     >
-                                        {side === "aff" ? "Aff" : "Neg"}
+                                        {sides[side].label}
                                     </button>
                                 );
                             })}
