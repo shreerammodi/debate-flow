@@ -4,16 +4,21 @@
 //! is a fully independent window, built here rather than declared in
 //! tauri.conf.json (whose `app.windows` list is empty) so a cold launch, a
 //! second launch, and Mod+N can each decide how many windows to open and
-//! where each one starts. Opening a flow always creates a new window rather
-//! than steering an existing one, so a debater who pulls up a second flow
-//! keeps the first exactly as it was.
+//! where each one starts. Opening a flow already showing in some window
+//! focuses that window instead of duplicating it; opening one that isn't
+//! creates a new window rather than steering an existing one, so a debater
+//! who pulls up a second flow keeps the first exactly as it was.
 //!
-//! The one piece of state shared across windows is which one is currently
+//! Two pieces of state are shared across windows. Which one is currently
 //! focused: a menu accelerator and the CardMirror bridge both need "the
 //! window the user is looking at", and neither Tauri callback hands that to
-//! us directly.
+//! us directly. And which flow each window currently shows: the frontend
+//! reports it on every navigation, which is what lets a duplicate open
+//! resolve to a focus instead of a new window.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
 
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -35,12 +40,45 @@ pub fn note_focus<R: Runtime>(window: &tauri::Window<R>) {
 }
 
 /// Clears the focus record if it still points at `label`, so a destroyed
-/// window is never handed back as a stale target.
+/// window is never handed back as a stale target - and its recorded open
+/// flow, so a later open of the same path is never focused onto a window
+/// that no longer exists.
 pub fn note_close(label: &str) {
     let mut focused = FOCUSED.lock();
     if focused.as_deref() == Some(label) {
         *focused = None;
     }
+    OPEN_PATHS.lock().remove(label);
+}
+
+/// Which flow each window currently shows, keyed by label - reported by the
+/// frontend on every navigation, not just at window creation, since opening
+/// a different flow from within an already-open window changes it too.
+static OPEN_PATHS: LazyLock<Mutex<HashMap<String, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Records which flow `label` shows, or that it shows none.
+#[tauri::command]
+pub fn report_open_path<R: Runtime>(window: WebviewWindow<R>, path: Option<String>) {
+    let mut paths = OPEN_PATHS.lock();
+    match path {
+        Some(p) => {
+            paths.insert(window.label().to_string(), p);
+        }
+        None => {
+            paths.remove(window.label());
+        }
+    }
+}
+
+/// The window already showing `path`, if any.
+fn window_open_on<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<WebviewWindow<R>> {
+    let label = OPEN_PATHS
+        .lock()
+        .iter()
+        .find(|(_, p)| p.as_str() == path)
+        .map(|(l, _)| l.clone())?;
+    app.get_webview_window(&label)
 }
 
 /// The window to route a single-recipient action (a menu accelerator, a
@@ -70,8 +108,14 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWi
     build(app, WebviewUrl::App("index.html".into()))
 }
 
-/// Opens a new window on the given flow.
+/// Opens a new window on the given flow, or focuses the window already
+/// showing it - a debater who double-clicks the same round twice should
+/// land back on the one flow, not a duplicate beside it.
 pub fn open_flow<R: Runtime>(app: &AppHandle<R>, path: &str) -> tauri::Result<WebviewWindow<R>> {
+    if let Some(existing) = window_open_on(app, path) {
+        let _ = existing.set_focus();
+        return Ok(existing);
+    }
     // Reuses the `Url` query-pair encoder to match the percent-encoding
     // `encodeURIComponent` produces on the frontend (see flowNav.ts's
     // flowRouteFor); the scheme and host here are thrown away immediately.

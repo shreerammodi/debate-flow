@@ -9,6 +9,7 @@ import { collabLive } from "@/lib/collab/enabled";
 import { recoverReplica } from "@/lib/collab/persist";
 import { resumeSession } from "@/lib/collab/runtime";
 import { flowRouteFor } from "@/lib/commands/flowNav";
+import { reportOpenPath } from "@/lib/commands/windowCommands";
 import { errorMessage } from "@/lib/errorMessage";
 import { applyFlowFont } from "@/lib/fonts/applyFlowFont";
 import { serializeFlow } from "@/lib/persistence/flowFile";
@@ -55,6 +56,7 @@ export default function AppRoot() {
             mounted = false;
             autosave.detach();
             useSaveStatus.getState().reset();
+            void reportOpenPath(null);
         };
 
         if (!path) {
@@ -69,6 +71,7 @@ export default function AppRoot() {
         // the next edit looks like one and is skipped.
         if (useFlowStore.getState().docPath === path) {
             autosave.prime();
+            void reportOpenPath(path);
             setLoaded(true);
             return leave;
         }
@@ -104,6 +107,7 @@ export default function AppRoot() {
                 // The round just came off disk, so it is already saved.
                 autosave.prime();
                 void noteOpened(path);
+                void reportOpenPath(path);
                 // Drop the one-shot marker so a later refresh loads this flow
                 // as existing and restores the persisted RFD preference.
                 if (newFlow) router.replace(flowRouteFor(path));

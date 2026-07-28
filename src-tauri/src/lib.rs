@@ -133,7 +133,8 @@ pub fn run() {
             sidecar::write_sidecar,
             shutdown::finish_quit,
             system_info,
-            windows::new_window
+            windows::new_window,
+            windows::report_open_path
         ])
         // Quit and every window's close control both run through the flush
         // handshake in shutdown.rs rather than exiting or closing on the

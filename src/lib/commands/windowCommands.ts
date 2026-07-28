@@ -21,3 +21,21 @@ export async function openNewWindow(): Promise<void> {
         // is worth interrupting the user's current window over.
     }
 }
+
+/**
+ * Tells Rust which flow this window currently shows (`null` for none), so a
+ * later "Open With" for the same path focuses this window instead of
+ * opening a duplicate. A no-op on the web build.
+ */
+export async function reportOpenPath(path: string | null): Promise<void> {
+    if (!isDesktop()) return;
+    try {
+        // Platform-only module: a static import would pull Tauri's IPC
+        // bridge into the web bundle, which has no window manager to ask.
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("report_open_path", { path });
+    } catch {
+        // Best-effort bookkeeping: a window that fails to report its path is
+        // still open and working, just not focusable by a later duplicate.
+    }
+}
