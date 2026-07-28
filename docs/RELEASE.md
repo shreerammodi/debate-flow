@@ -74,15 +74,31 @@ themselves. The workflow gates on `npm test` + `npm run lint` against the exact
 commit it is about to bundle, then builds the same 3-way matrix as a real
 release and uploads into a single rolling prerelease tagged `nightly`.
 
-Two properties keep a nightly from being mistaken for a release:
+Three properties keep a nightly from being mistaken for a release:
 
+- **It does not claim a version.** Assets are named for their platform alone -
+  `ebb_universal.dmg`, `ebb_amd64.deb`, `ebb_x64-setup.exe` - because a rolling
+  build stamped `0.7.2` is a file that lies about itself the moment it is
+  downloaded. This is why the build does not use `tauri-action`: that action
+  owns the upload and names assets from the config version. The workflow runs
+  `tauri build` itself, strips the version from each bundle name, and uploads
+  to the release id `prepare` produced. It refuses to upload a name the version
+  was not found in, so a rename upstream fails the run instead of quietly
+  shipping `ebb_0.8.0_universal.dmg` off `main`. The side benefit is a download
+  URL under the `nightly` tag that never changes.
 - **It cannot update anyone.** `src-tauri/tauri.nightly.conf.json` overlays
   `createUpdaterArtifacts: false`, so the build emits no `.tar.gz`/`.sig` pair
   and no signing key is present to make one. There is no path by which a
-  nightly artifact becomes something the updater will install.
+  nightly artifact becomes something the updater will install. Owning the
+  upload also leaves the macOS `.app` on the runner rather than tarring it into
+  something shaped like an update bundle.
 - **It cannot become "latest".** The release is marked prerelease, so
   `releases/latest` keeps pointing at the newest stable tag, which is the URL
   the updater reads.
+
+Which commit a nightly came from is on the release page, not in the filenames.
+GitHub publishes a sha256 beside every asset, so identity is checkable without
+putting it in the name.
 
 The previous nightly is deleted outright (`--cleanup-tag`) before the new one
 is created, so a stale Windows installer never sits beside a fresh macOS one.

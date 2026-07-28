@@ -135,17 +135,61 @@ jobs:
             - name: Install npm dependencies
               run: npm ci
 
-            - name: Build and upload
-              uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+            # tauri-action is deliberately not used here. It owns the upload, and
+            # with it the asset names, which for a nightly are the whole point:
+            # a rolling build must not ship files stamped with a release version
+            # it is not. Building and uploading by hand also means the macOS
+            # `.app` simply stays on the runner instead of being tarred into
+            # something that looks like an update bundle.
+            - name: Build
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  # The Rust cache restores `target/`, and the upload below finds
+                  # installers by extension rather than by name. A bundle left by
+                  # an earlier run would now collide with this one instead of
+                  # being overwritten, so the directory starts empty.
+                  rm -rf src-tauri/target/release/bundle src-tauri/target/*/release/bundle
+                  npm run tauri build -- --config src-tauri/tauri.nightly.conf.json ${{ matrix.args }}
+
+            # Names carry the platform and nothing else, so a download URL under
+            # the `nightly` tag is stable and a file on disk never claims to be a
+            # release. Which commit a nightly came from is on the release page
+            # and in the sha256 GitHub publishes beside every asset.
+            - name: Upload without a version in the name
+              shell: bash
               env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  # No TAURI_SIGNING_PRIVATE_KEY on purpose. The overlay config
-                  # turns updater artifacts off, so there is nothing to sign, and
-                  # a nightly must not be able to produce a signed update.
-              with:
-                  releaseId: ${{ needs.prepare.outputs.release_id }}
-                  uploadUpdaterJson: false
-                  args: --config src-tauri/tauri.nightly.conf.json ${{ matrix.args }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+              run: |
+                  set -euo pipefail
+                  version=$(node -p "require('./package.json').version")
+                  escaped=${version//./\\.}
+
+                  found=0
+                  while IFS= read -r file; do
+                      name=$(basename "$file")
+                      # `ebb_0.7.2_universal.dmg` -> `ebb_universal.dmg`, and the
+                      # rpm's `name-version-release.arch` -> `ebb_x86_64.rpm`.
+                      name=$(printf '%s' "$name" | sed -E "s/-${escaped}-[0-9]+\./_/; s/_${escaped}_/_/")
+                      if [ "$name" = "$(basename "$file")" ]; then
+                          echo "refusing to upload $name: the version was not in the name where expected" >&2
+                          exit 1
+                      fi
+                      echo "$(basename "$file") -> $name"
+                      curl -sSf -X POST \
+                        -H "Authorization: Bearer $GH_TOKEN" \
+                        -H "Content-Type: application/octet-stream" \
+                        --data-binary @"$file" \
+                        "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
+                        -o /dev/null
+                      found=$((found + 1))
+                  done < <(find src-tauri/target -path '*/release/bundle/*' -type f \
+                             \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \
+                                -o -name '*.rpm' -o -name '*.exe' -o -name '*.msi' \) | sort)
+
+                  # A green build that shipped nothing is the failure this catches.
+                  [ "$found" -gt 0 ] || { echo "no installers found under src-tauri/target" >&2; exit 1; }
 
     publish:
         needs: build
