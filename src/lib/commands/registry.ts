@@ -170,6 +170,7 @@ export const COLLAB_COMMANDS: readonly CommandId[] = [
  * host is holding.
  */
 export const EDITS_ROUND: Record<CommandId, boolean> = {
+    "window.new": false,
     "flow.new": false,
     "flow.open": false,
     "flow.save": false,
