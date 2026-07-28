@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { configure, render, screen, waitFor } from "@testing-library/react";
 import type Handsontable from "handsontable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,9 +55,13 @@ afterEach(() => {
 
 // Each test mounts a real Handsontable over a 250-row sheet and waits for two
 // imperative repaints. That is genuinely slow, and slower still when the whole
-// suite runs in parallel, so this file gets a ceiling that reflects the work
-// rather than one tuned to a quiet machine.
+// suite runs in parallel on a two-core runner, so this file gets ceilings that
+// reflect the work rather than ones tuned to a quiet machine. Both are needed:
+// `testTimeout` bounds the test, while `asyncUtilTimeout` bounds a single
+// `waitFor`, which otherwise gives up after a second and reports the repaint
+// that had not landed yet as a wrong class.
 vi.setConfig({ testTimeout: 30_000 });
+configure({ asyncUtilTimeout: 15_000 });
 
 describe("HotGrid lock surface", () => {
     it("marks the cell a peer holds and clears it on release", async () => {
