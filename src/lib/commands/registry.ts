@@ -60,6 +60,7 @@ export type CommandId =
     | "theme.dark"
     | "theme.system"
     | "collab.share"
+    | "collab.shareView"
     | "collab.join"
     | "collab.invite"
     | "collab.end";
@@ -140,6 +141,7 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.dark": { id: "theme.dark", label: "Theme: Dark" },
     "theme.system": { id: "theme.system", label: "Theme: System" },
     "collab.share": { id: "collab.share", label: "Share this round" },
+    "collab.shareView": { id: "collab.shareView", label: "Share this round view only" },
     "collab.join": { id: "collab.join", label: "Join a shared round" },
     "collab.invite": { id: "collab.invite", label: "Invite a saved partner" },
     "collab.end": { id: "collab.end", label: "End shared session" },
@@ -149,4 +151,77 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
 export const CARDMIRROR_COMMANDS: readonly CommandId[] = ["cell.jumpToSource", "cell.sendToDoc"];
 
 /** The commands shared editing owns; dead while the master switch is off. */
-export const COLLAB_COMMANDS: readonly CommandId[] = ["collab.share", "collab.join", "collab.end"];
+export const COLLAB_COMMANDS: readonly CommandId[] = [
+    "collab.share",
+    "collab.shareView",
+    "collab.join",
+    "collab.end",
+];
+
+/**
+ * Whether a command changes the round, which is the one thing a coach may not
+ * do. Exhaustive over `CommandId` on purpose: a new command has to say which
+ * it is, so read-only cannot quietly spring a leak the next time one is added.
+ *
+ * Saving is not editing. A coach's file is a real `.ebb` on their own disk and
+ * writing it out is theirs to do; what they may not do is change the round the
+ * host is holding.
+ */
+export const EDITS_ROUND: Record<CommandId, boolean> = {
+    "flow.new": false,
+    "flow.open": false,
+    "flow.save": false,
+    "flow.saveAs": false,
+    "flow.reveal": false,
+    "flow.close": false,
+    "edit.undo": true,
+    "edit.redo": true,
+    "format.toggleBold": true,
+    "format.toggleHighlight": true,
+    "format.toggleCard": true,
+    "format.toggleGroup": true,
+    "format.toggleKicked": true,
+    "row.insertAbove": true,
+    "row.insertBelow": true,
+    "row.delete": true,
+    "cell.insert": true,
+    "cell.insertBelow": true,
+    "cell.move": true,
+    "cell.jumpToSource": false,
+    "cell.sendToDoc": false,
+    "sheet.next": false,
+    "sheet.prev": false,
+    "sheet.newAff": true,
+    "sheet.newNeg": true,
+    "sheet.rename": true,
+    "sheet.quickSwitch": false,
+    "round.swapOrder": true,
+    "sheet.jump1": false,
+    "sheet.jump2": false,
+    "sheet.jump3": false,
+    "sheet.jump4": false,
+    "sheet.jump5": false,
+    "sheet.jump6": false,
+    "sheet.jump7": false,
+    "sheet.jump8": false,
+    "sheet.jump9": false,
+    "settings.open": false,
+    "info.open": false,
+    "rfd.toggle": false,
+    "help.open": false,
+    "sidebar.toggle": false,
+    "view.zoomIn": false,
+    "view.zoomOut": false,
+    "split.toggle": false,
+    "split.focusLeft": false,
+    "split.focusRight": false,
+    "palette.open": false,
+    "theme.light": false,
+    "theme.dark": false,
+    "theme.system": false,
+    "collab.share": false,
+    "collab.shareView": false,
+    "collab.join": false,
+    "collab.invite": false,
+    "collab.end": false,
+};

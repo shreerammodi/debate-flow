@@ -4,11 +4,12 @@ import { seedDoc } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { HEARTBEAT_MS } from "@/lib/collab/presence";
 import { startCollabSession, type CollabSession } from "@/lib/collab/session";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
-import { getLocks } from "@/lib/grid/lockBridge";
+import { getPresences, setPresences } from "@/lib/grid/presenceBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -88,6 +89,7 @@ let sheetId: string;
 beforeEach(() => {
     net.reset();
     clock.reset();
+    setPresences([]);
     useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
     shared = round();
     sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
@@ -340,8 +342,13 @@ describe("presence across a session", () => {
         const { host, guest } = await hostAndGuest();
         guest.setPresence({ sheetId, col: 1, row: 4 });
         await settle();
-        expect(getLocks()).toHaveLength(1);
-        expect(getLocks()[0]).toMatchObject({ endpointId: "sam", col: 1, row: 4 });
+        expect(getPresences()).toHaveLength(1);
+        expect(getPresences()[0]).toMatchObject({
+            endpointId: "sam",
+            col: 1,
+            row: 4,
+            editing: true,
+        });
         await host.stop();
     });
 
@@ -351,18 +358,110 @@ describe("presence across a session", () => {
         await settle();
         guest.setPresence(null);
         await settle();
-        expect(getLocks()).toEqual([]);
+        expect(getPresences()).toEqual([]);
     });
 
     it("leaves an unreachable peer holding nothing", async () => {
         const { guest } = await hostAndGuest();
         guest.setPresence({ sheetId, col: 0, row: 0 });
         await settle();
-        expect(getLocks()).toHaveLength(1);
+        expect(getPresences()).toHaveLength(1);
 
         // The link drops. Nothing waits for the heartbeat to lapse.
         await guest.stop();
         await settle();
-        expect(getLocks()).toEqual([]);
+        expect(getPresences()).toEqual([]);
+    });
+});
+
+describe("a partner's cursor across a session", () => {
+    it("shows the cell they are on, claiming nothing", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 1, row: 4 });
+        await settle();
+        expect(getPresences()).toHaveLength(1);
+        expect(getPresences()[0]).toMatchObject({
+            endpointId: "sam",
+            col: 1,
+            row: 4,
+            editing: false,
+        });
+        await host.stop();
+    });
+
+    it("keeps arrowing off the wire, and the heartbeat carries where they landed", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 0, row: 0 });
+        await settle();
+
+        // A debater holding the down arrow moves faster than anything needs to
+        // hear about, so only the first of a burst goes out at once.
+        for (let row = 1; row <= 8; row++) guest.setCursor({ sheetId, col: 0, row });
+        await settle();
+        expect(getPresences()[0]).toMatchObject({ row: 0 });
+
+        clock.advance(HEARTBEAT_MS);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        expect(getPresences()[0]).toMatchObject({ row: 8, editing: false });
+        await host.stop();
+    });
+
+    it("hands the cell back the moment they leave the grid", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 2, row: 1 });
+        await settle();
+        expect(getPresences()).toHaveLength(1);
+
+        guest.setCursor(null);
+        await settle();
+        expect(getPresences()).toEqual([]);
+        await host.stop();
+    });
+
+    it("does not downgrade an open editor, because the editor speaks for both", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 1, row: 3 });
+        guest.setPresence({ sheetId, col: 1, row: 3 });
+        await settle();
+        expect(getPresences()[0].editing).toBe(true);
+
+        // A selection cannot move under an open editor, but a stray claim must
+        // not unlock the cell either.
+        guest.setCursor({ sheetId, col: 1, row: 3 });
+        clock.advance(HEARTBEAT_MS * 2);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        expect(getPresences()[0].editing).toBe(true);
+        await host.stop();
+    });
+
+    it("goes back to a plain cursor when the editor closes on the cell they keep", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 1, row: 3 });
+        guest.setPresence({ sheetId, col: 1, row: 3 });
+        await settle();
+        expect(getPresences()[0].editing).toBe(true);
+
+        // No blank frame: the release carries the cursor with it, so the cell
+        // never stops showing where the partner is.
+        guest.setPresence(null);
+        await settle();
+        expect(getPresences()).toHaveLength(1);
+        expect(getPresences()[0]).toMatchObject({ col: 1, row: 3, editing: false });
+        await host.stop();
+    });
+
+    it("stops the heartbeat once a peer is nowhere, so an idle pane costs no timer", async () => {
+        const { host, guest } = await hostAndGuest();
+        guest.setCursor({ sheetId, col: 0, row: 0 });
+        await settle();
+        guest.setCursor(null);
+        await settle();
+
+        // Nothing left to say: advancing far past the TTL puts no message on
+        // the wire and leaves the table empty rather than resurrecting a cell.
+        clock.advance(HEARTBEAT_MS * 20);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        expect(getPresences()).toEqual([]);
+        await host.stop();
     });
 });

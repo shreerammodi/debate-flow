@@ -16,7 +16,7 @@ import type { CollabDoc, Role } from "./types";
 /** Bumped only for a change an older build cannot read. */
 export const PROTOCOL_MAJOR = 1;
 
-/** The grid slot an editor is open on. */
+/** A grid slot a peer is on. */
 export interface CellRef {
     sheetId: string;
     col: number;
@@ -43,14 +43,28 @@ export type WireMessage =
           /** Present only on the first join, and spent when it is accepted. */
           ticket?: string;
       }
-    /** The host answers with its own name, so naming works in both directions. */
-    | { type: "helloAck"; ok: true; name?: string }
+    /**
+     * The host answers with its own name, so naming works in both directions,
+     * and with the role it granted, which is the only way the guest learns it:
+     * a guest asks to be a partner and is admitted as whatever the ticket that
+     * let it in says. An ack with no role is an older host, and partner is
+     * what every one of those granted.
+     */
+    | { type: "helloAck"; ok: true; name?: string; role?: Role }
     | { type: "helloAck"; ok: false; reason: string }
     | { type: "state"; doc: CollabDoc }
     | { type: "delta"; doc: CollabDoc }
     /** Per-actor highest stamp seen, so the far side can replay what was lost. */
     | { type: "vector"; seen: Record<string, Stamp> }
+    /** The cell an editor is open on, which claims it. */
     | { type: "presence"; cell: CellRef | null }
+    /**
+     * The cell a cursor is resting on, which claims nothing. Separate from
+     * `presence` so a build that predates it drops the message rather than
+     * reading a parked cursor as a claim and refusing its own debater's
+     * keystrokes.
+     */
+    | { type: "cursor"; cell: CellRef | null }
     | { type: "bye" };
 
 /**
@@ -63,7 +77,7 @@ type Hello = Extract<WireMessage, { type: "hello" }>;
 type HelloAck = Extract<WireMessage, { type: "helloAck" }>;
 type DocMessage = Extract<WireMessage, { type: "state" | "delta" }>;
 type VectorMessage = Extract<WireMessage, { type: "vector" }>;
-type PresenceMessage = Extract<WireMessage, { type: "presence" }>;
+type PositionMessage = Extract<WireMessage, { type: "presence" | "cursor" }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,7 +132,7 @@ function isHello(m: Record<string, unknown>): m is Hello {
 
 function isHelloAck(m: Record<string, unknown>): m is HelloAck {
     if (m.type !== "helloAck") return false;
-    if (m.ok === true) return isOptionalField(m.name);
+    if (m.ok === true) return isOptionalField(m.name) && (m.role === undefined || isRole(m.role));
     return m.ok === false && isField(m.reason);
 }
 
@@ -142,8 +156,8 @@ function isVector(m: Record<string, unknown>): m is VectorMessage {
     return m.type === "vector" && isRecord(m.seen) && Object.values(m.seen).every(isStamp);
 }
 
-function isPresence(m: Record<string, unknown>): m is PresenceMessage {
-    return m.type === "presence" && (m.cell === null || isCellRef(m.cell));
+function isPosition(m: Record<string, unknown>): m is PositionMessage {
+    return (m.type === "presence" || m.type === "cursor") && (m.cell === null || isCellRef(m.cell));
 }
 
 /**
@@ -169,7 +183,8 @@ export function parseWireMessage(raw: unknown): WireMessage | null {
         case "vector":
             return isVector(raw) ? raw : null;
         case "presence":
-            return isPresence(raw) ? raw : null;
+        case "cursor":
+            return isPosition(raw) ? raw : null;
         case "bye":
             return { type: "bye" };
         default:

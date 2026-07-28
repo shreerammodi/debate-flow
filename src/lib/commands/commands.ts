@@ -25,6 +25,7 @@ import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { chooseContact } from "@/lib/store/useContactPicker";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 import { askForTicket, showTicket } from "@/lib/store/useTicketDialog";
@@ -38,7 +39,7 @@ import {
     saveOpenFlowAs,
 } from "./fileCommands";
 import { navigateToFlow } from "./flowNav";
-import type { CommandId } from "./registry";
+import { EDITS_ROUND, type CommandId } from "./registry";
 
 /** Jumps to the Nth (1-indexed, order-sorted) flow sheet, no-op if out of range. */
 function jumpToSheet(n: number): void {
@@ -176,6 +177,14 @@ function collabDeps(): CollabCommandDeps {
 }
 
 export function executeCommand(id: CommandId): void {
+    // A coach reads the round. The host drops their writes, so a command that
+    // changed the flow here would look like it worked and be gone on the next
+    // merge. Saying so beats losing it quietly, and it leaves every command
+    // that only navigates, looks, or configures free to run.
+    if (EDITS_ROUND[id] && useCollabStore.getState().selfRole === "coach") {
+        toast("You are viewing this round, not editing it");
+        return;
+    }
     const state = useFlowStore.getState();
     const { round } = state;
 
@@ -350,6 +359,9 @@ export function executeCommand(id: CommandId): void {
             return;
         case "collab.share":
             void runShare(collabDeps());
+            return;
+        case "collab.shareView":
+            void runShare(collabDeps(), "coach");
             return;
         case "collab.join":
             void runJoin(collabDeps());

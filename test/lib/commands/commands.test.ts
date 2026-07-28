@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("sonner", () => ({
+    toast: Object.assign(vi.fn(), { warning: vi.fn(), error: vi.fn(), success: vi.fn() }),
+}));
+
+import { toast } from "sonner";
+
 import { executeCommand } from "@/lib/commands/commands";
+import { COMMANDS, EDITS_ROUND, type CommandId } from "@/lib/commands/registry";
 import { BOLD_CLASS, GROUP_CLASS, HIGHLIGHT_CLASS, KICKED_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
 import { makeFlowRound, type CellSource } from "@/lib/model/flow";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useContactPicker } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -429,5 +437,55 @@ describe("collab commands", () => {
         await vi.waitFor(() =>
             expect(useContactPicker.getState().contacts).toEqual({ alex: ALEX }),
         );
+    });
+});
+
+describe("a coach at the keyboard", () => {
+    afterEach(() => {
+        useCollabStore.getState().reset();
+    });
+
+    it("changes nothing about the round, and is told why", () => {
+        loadRound();
+        const before = useFlowStore.getState().round!.sheets.length;
+        useCollabStore.setState({ selfRole: "coach" });
+
+        executeCommand("sheet.newAff");
+        executeCommand("sheet.newNeg");
+
+        expect(useFlowStore.getState().round!.sheets).toHaveLength(before);
+        expect(toast).toHaveBeenCalledWith("You are viewing this round, not editing it");
+    });
+
+    it("still navigates, looks, and configures", () => {
+        loadRound();
+        // Two sheets to step between, made before the role lands: what is
+        // refused is the edit, and this proves the refusal is not everything.
+        executeCommand("sheet.newAff");
+        const second = useFlowStore.getState().activeSheetId;
+        useCollabStore.setState({ selfRole: "coach" });
+
+        executeCommand("sheet.prev");
+        expect(useFlowStore.getState().activeSheetId).not.toBe(second);
+        executeCommand("settings.open");
+        expect(useFlowStore.getState().settingsOpen).toBe(true);
+        executeCommand("sidebar.toggle");
+        expect(useFlowStore.getState().sidebarCollapsed).toBe(true);
+    });
+
+    it("lets a partner do all of it, which is what makes the refusal the role", () => {
+        loadRound();
+        const before = useFlowStore.getState().round!.sheets.length;
+
+        executeCommand("sheet.newAff");
+
+        expect(useFlowStore.getState().round!.sheets).toHaveLength(before + 1);
+    });
+
+    it("grades every command, so a new one cannot slip through ungraded", () => {
+        for (const id of Object.keys(COMMANDS) as CommandId[]) {
+            expect(EDITS_ROUND[id], id).toBeTypeOf("boolean");
+        }
+        expect(Object.keys(EDITS_ROUND).sort()).toEqual(Object.keys(COMMANDS).sort());
     });
 });

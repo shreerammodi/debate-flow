@@ -21,8 +21,6 @@ import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
-import { claimCell, getLocks, onLocksChanged } from "@/lib/grid/lockBridge";
-import { LOCK_CLASS, lockClassFor, lockLabel } from "@/lib/grid/lockDecor";
 import {
     attachMetaUndo,
     rebaseUndoStacks,
@@ -41,11 +39,20 @@ import {
     nudge,
     revertMove,
 } from "@/lib/grid/moveSession";
+import { claimCell, claimCursor, getPresences, onPresenceChanged } from "@/lib/grid/presenceBridge";
+import {
+    LOCK_CLASS,
+    lockLabel,
+    PEER_CLASS,
+    peerInitial,
+    presenceOn,
+} from "@/lib/grid/presenceDecor";
 import { setRemoteApply, type RemoteApplyHandler } from "@/lib/grid/remoteBridge";
 import { breakEmptiedLinks, REMOTE_WRITE, type GridChange } from "@/lib/grid/staleSource";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { resolveCommand } from "@/lib/keymap/resolve";
 import type { CellMeta, CellSource, FlowSheet } from "@/lib/model/flow";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
 
 registerAllModules();
@@ -224,6 +231,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const splitSheetId = useFlowStore((s) => s.splitSheetId);
     const focusedPane = useFlowStore((s) => s.focusedPane);
     const gridZoom = useFlowStore((s) => s.gridZoom);
+    // A coach reads the flow; the host drops their writes, so text typed here
+    // would vanish on the next merge. Refusing the keystroke is honest where
+    // silently losing it is not, and the same rule takes away the context menu,
+    // whose entries all edit the sheet.
+    const viewOnly = useCollabStore((s) => s.selfRole === "coach");
     const isFocused = splitSheetId == null || focusedPane === pane;
     const hotRef = useRef<HotTableRef>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
@@ -319,11 +331,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         return () => setRemoteApply(null);
     }, []);
 
-    // A peer claiming or releasing a cell has to show up without waiting for
-    // an unrelated render, so the table's own change drives the repaint. Only
-    // decorations move, so the pass is a render and never a data write.
+    // A peer moving, claiming, or releasing a cell has to show up without
+    // waiting for an unrelated render, so the table's own change drives the
+    // repaint. Only decorations move, so the pass is a render and never a data
+    // write.
     useEffect(() => {
-        return onLocksChanged(() => hotRef.current?.hotInstance?.render());
+        return onPresenceChanged(() => hotRef.current?.hotInstance?.render());
     }, []);
 
     useEffect(() => {
@@ -436,10 +449,22 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     }, [sheetId, firstSide]);
 
     // Clicking or arrowing into a pane focuses it (so keystrokes route here).
+    //
+    // The same selection is what the partner sees as this side's cursor. In a
+    // split only the focused pane may own that broadcast, and this hook is
+    // where the focus moves, so the last selection is always the focused one
+    // and an unconditional claim here cannot make the two panes fight over it.
+    // The session coalesces the claim onto the heartbeat, so firing per
+    // selection costs no extra message.
     const afterSelectionEnd = useCallback(() => {
         setActiveHot(hotRef.current?.hotInstance ?? null, snapshot, currentSheetIdRef.current);
         const { splitSheetId, focusedPane, focusPane } = useFlowStore.getState();
         if (splitSheetId != null && focusedPane !== pane) focusPane(pane);
+        const sid = currentSheetIdRef.current;
+        const cell = hotRef.current?.hotInstance?.getSelectedRangeLast()?.highlight;
+        if (sid && cell && cell.row != null && cell.col != null) {
+            claimCursor({ sheetId: sid, col: cell.col, row: cell.row });
+        }
     }, [pane, snapshot]);
 
     // Search palette jump: declared after the sheet-switch effect so that when
@@ -510,8 +535,8 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     );
 
     // Cells inherit their column header's side color: blue for aff, red for neg.
-    // The move tint, the linked rail, and the lock mark are classes on the TD
-    // alone, never cellMeta, so none of them can leak into a saved sheet
+    // The move tint, the linked rail, and the presence marks are classes on the
+    // TD alone, never cellMeta, so none of them can leak into a saved sheet
     // through collectMeta.
     const afterRenderer = useCallback(
         (
@@ -532,13 +557,25 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             if (cellProperties.source && value !== null && value !== undefined && value !== "") {
                 TD.classList.add("cell-linked");
             }
-            // A cell a peer holds is marked before the debater types into it,
-            // which is what makes the refusal predictable instead of a
-            // surprise. The lock expires against the clock, so a peer that
-            // vanished stops marking the cell on the next pass.
+            // Where the partner is, marked before the debater types into the
+            // cell, so a refusal on a cell they have an editor open on is
+            // predictable instead of a surprise. Presence expires against the
+            // clock, so a peer that vanished stops marking the cell on the next
+            // pass. Only a cell that carries a peer pays for the name lookup;
+            // every other cell pays one class test. The badge letter rides on
+            // the TD's dataset and is cleared unconditionally, because
+            // Handsontable reuses TD elements and resets className alone, so a
+            // stale letter would outlive the peer moving away.
             const sid = currentSheetIdRef.current;
-            if (sid && lockClassFor(getLocks(), sid, col, row, Date.now())) {
-                TD.classList.add(LOCK_CLASS);
+            const at = sid ? presenceOn(getPresences(), sid, col, row, Date.now()) : null;
+            if (at) {
+                TD.classList.add(PEER_CLASS);
+                if (at.editing) TD.classList.add(LOCK_CLASS);
+                TD.dataset.peer = peerInitial(
+                    contactName(useFlowStore.getState().contacts, at.endpointId),
+                );
+            } else {
+                delete TD.dataset.peer;
             }
         },
         [],
@@ -605,7 +642,15 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     const afterDestroyEditor = useCallback(() => claimCell(null), []);
 
-    useEffect(() => () => claimCell(null), []);
+    // A pane that went away leaves no ghost on the partner's screen: both the
+    // claim and the cursor go with it.
+    useEffect(
+        () => () => {
+            claimCell(null);
+            claimCursor(null);
+        },
+        [],
+    );
 
     // Insert-paste: the shift_down populate moves text but not decorations, so
     // the displaced classes are re-laid once the grid has grown. The hook's own
@@ -794,7 +839,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 const cell = hot.getSelectedRangeLast()?.highlight;
                 const holder =
                     sid && cell && cell.row != null && cell.col != null
-                        ? lockLabel(getLocks(), sid, cell.col, cell.row, Date.now(), (id) =>
+                        ? lockLabel(getPresences(), sid, cell.col, cell.row, Date.now(), (id) =>
                               contactName(useFlowStore.getState().contacts, id),
                           )
                         : null;
@@ -865,7 +910,8 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     enterBeginsEditing={false}
                     undo={true}
                     outsideClickDeselects={false}
-                    contextMenu={FLOW_CONTEXT_MENU as unknown as string[]}
+                    readOnly={viewOnly}
+                    contextMenu={viewOnly ? false : (FLOW_CONTEXT_MENU as unknown as string[])}
                     copyPaste={{ pasteMode: insertPaste ? "shift_down" : "overwrite" }}
                     afterGetColHeader={afterGetColHeader}
                     afterRenderer={afterRenderer}

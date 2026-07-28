@@ -41,7 +41,9 @@ export interface SessionChipProps {
 
 /**
  * The bottom-left session chip: connection state and peer count, expanding on
- * click into one row per peer with role and connection type.
+ * click into one row per peer with role and connection type. A side the host
+ * admitted as a coach is told so, because a grid that refuses every keystroke
+ * needs to say why.
  *
  * A session is the only thing it reports, so `status: "off"` renders nothing at
  * all - the master switch leaves no trace in the DOM. It is a plain button and
@@ -55,6 +57,7 @@ export default function SessionChip({
 }: SessionChipProps) {
     const status = useCollabStore((s) => s.status);
     const peers = useCollabStore((s) => s.peers);
+    const selfRole = useCollabStore((s) => s.selfRole);
     const [expanded, setExpanded] = useState(false);
     const panelId = useId();
 
@@ -99,6 +102,14 @@ export default function SessionChip({
                         data-testid="collab-chip-peers"
                         className="border-border bg-card absolute bottom-full left-0 z-30 mb-1 flex w-48 flex-col gap-1 rounded-md border p-1.5 shadow-md"
                     >
+                        {selfRole === "coach" && (
+                            <p
+                                data-testid="collab-self-role"
+                                className="text-muted-foreground border-border border-b px-1 py-0.5 text-[12px]"
+                            >
+                                You are viewing this round, not editing it.
+                            </p>
+                        )}
                         {peers.length === 0 ? (
                             <p className="text-muted-foreground px-1 py-0.5 text-[12px]">
                                 No peers connected.

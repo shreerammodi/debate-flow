@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as CollabPeerLink from "@/lib/collab/peerLink";
+import type { PeerLink, PeerLinkConfig } from "@/lib/collab/peerLink";
 import type * as CollabRuntime from "@/lib/collab/runtime";
 
 /** Lets one test stand a session up and make its teardown fail. */
@@ -17,6 +19,17 @@ vi.mock("@/lib/collab/runtime", async (importOriginal) => {
     };
 });
 
+/** Filled in below, once the real transport module has been imported. */
+const transport = vi.hoisted(() => ({
+    link: null as ((config: PeerLinkConfig) => Promise<PeerLink>) | null,
+}));
+
+vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
+    ...(await importOriginal<typeof CollabPeerLink>()),
+    createPeerLinkFor: (config: PeerLinkConfig) => transport.link!(config),
+}));
+
+import { createMemoryNet, type MemoryNet } from "@/lib/collab/peerLinkMemory";
 import { endSession } from "@/lib/collab/runtime";
 import { parseTicket } from "@/lib/collab/ticket";
 import {
@@ -26,10 +39,27 @@ import {
     runShare,
     type CollabCommandDeps,
 } from "@/lib/commands/collabCommands";
+import { executeCommand } from "@/lib/commands/commands";
 import { COLLAB_COMMANDS, COMMANDS } from "@/lib/commands/registry";
 import { getPresetKeymap } from "@/lib/keymap/presets";
 import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useTicketDialog } from "@/lib/store/useTicketDialog";
+
+const net: MemoryNet = createMemoryNet();
+/** What iroh hands back. A ticket names its host, so the host holds a real one. */
+const HOST = "a".repeat(64);
+transport.link = net.create(HOST);
+
+/** A round open, the switch on, and the desktop shell in place: a share can run. */
+function ready(): void {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    useFlowStore.setState({
+        collabEnabled: true,
+        collabName: "Host",
+        round: makeFlowRound({}),
+    });
+}
 
 function deps(over: Partial<CollabCommandDeps> = {}): CollabCommandDeps & {
     notices: string[];
@@ -61,6 +91,8 @@ beforeEach(async () => {
     useFlowStore.setState({ collabEnabled: false, round: null });
     // isDesktop() is false under jsdom unless the harness says otherwise.
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    net.reset();
+    useTicketDialog.setState({ open: false, ticket: "", resolve: null });
 });
 
 describe("the commands are palette-only", () => {
@@ -71,6 +103,7 @@ describe("the commands are palette-only", () => {
 
     it("is registered with a label a debater can search for", () => {
         expect(COMMANDS["collab.share"].label).toBe("Share this round");
+        expect(COMMANDS["collab.shareView"].label).toBe("Share this round view only");
         expect(COMMANDS["collab.join"].label).toBe("Join a shared round");
         expect(COMMANDS["collab.end"].label).toBe("End shared session");
     });
@@ -90,6 +123,22 @@ describe("share", () => {
         const d = deps();
         await runShare(d);
         expect(d.failures[0]).toMatch(/Open a flow/);
+    });
+
+    it("hands over a ticket a partner can edit through", async () => {
+        ready();
+        const d = deps();
+        await runShare(d);
+        expect(d.failures).toEqual([]);
+        expect(parseTicket(d.shown[0])?.role).toBe("partner");
+    });
+
+    it("hands over a view-only ticket when the share names a coach", async () => {
+        ready();
+        const d = deps();
+        await runShare(d, "coach");
+        expect(d.failures).toEqual([]);
+        expect(parseTicket(d.shown[0])?.role).toBe("coach");
     });
 });
 
@@ -151,6 +200,20 @@ describe("the ticket a share would hand over", () => {
         const round = makeFlowRound({});
         expect(parseTicket("nonsense")).toBeNull();
         expect(round.id).toBeTruthy();
+    });
+
+    it("carries the editing role the palette asked for", async () => {
+        ready();
+        executeCommand("collab.share");
+        await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
+        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("partner");
+    });
+
+    it("carries the view-only role the palette asked for", async () => {
+        ready();
+        executeCommand("collab.shareView");
+        await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
+        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("coach");
     });
 });
 

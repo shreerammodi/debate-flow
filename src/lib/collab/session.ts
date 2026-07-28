@@ -13,7 +13,7 @@
  * role.
  */
 
-import { setLocks } from "@/lib/grid/lockBridge";
+import { setPresences } from "@/lib/grid/presenceBridge";
 
 import type { Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
@@ -26,8 +26,9 @@ import {
     type PeerConn,
     type PeerLink,
     type PeerLinkFactory,
+    type WireMessage,
 } from "./peerLink";
-import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Lock } from "./presence";
+import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Presence } from "./presence";
 import { retryForever, type Retry } from "./reconnect";
 import { attachSync, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
@@ -48,6 +49,12 @@ export interface CollabSession {
     endpointId: string;
     roundId: string;
     peers(): CollabPeer[];
+    /**
+     * What this side was admitted as. A host is always a partner: it holds the
+     * file. A guest asks to be a partner and is granted whatever the ticket
+     * that let it in said, which is the only place a coach learns it is one.
+     */
+    role(): Role;
     /** Mints the ticket the next peer presents. Replaces any unspent one. */
     share(role: Role): Ticket;
     /** Dials a peer this round already trusts, with no ticket. */
@@ -71,6 +78,13 @@ export interface CollabSession {
      * heartbeat so a frozen process stops holding it.
      */
     setPresence(cell: CellRef | null): void;
+    /**
+     * Says where this side's cursor is. Claims nothing, so a partner parked on
+     * a cell never refuses a keystroke on it. Coalesced onto the heartbeat:
+     * arrowing down a column moves the cursor faster than anything needs to
+     * hear about, and the document is what the link is for.
+     */
+    setCursor(cell: CellRef | null): void;
     stop(): Promise<void>;
 }
 
@@ -89,15 +103,20 @@ export interface CollabSessionDeps {
     /** What this side asks to be. The host's ticket is the authority. */
     role?: Role;
     onPeersChanged?: (peers: CollabPeer[]) => void;
+    /** Fires when the host names what this side was admitted as. */
+    onRoleChanged?: (role: Role) => void;
     schedule?: (fn: () => void, ms: number) => () => void;
     /** What this side calls the round, so an invite it sends can name it. */
     roundLabel?: string;
     /** What this side calls itself, carried to every peer it greets. */
     displayName?: string;
     /**
-     * The contact table, consulted only to decide whether a dial this session
-     * cannot admit is an invite worth showing. Absent means every refusal is
-     * silent.
+     * The contact table. It decides whether a dial this session cannot admit
+     * is an invite worth showing, and it is where an already-known peer's role
+     * comes from: the round file remembers who to re-dial but not what they
+     * were admitted as, so without this a coach the debater saved comes back
+     * as a partner the next time the round is opened. Absent means every
+     * refusal is silent and every known peer is a partner.
      */
     contacts?: () => Contacts;
     onInvite?: (notice: InviteNotice) => void;
@@ -136,7 +155,11 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         roundId: deps.roundId,
         pending: null,
         knownPeers: [...(deps.dial ?? [])],
-        roles: {},
+        // Read once, at the start: a role is what a peer was admitted as for
+        // this session, and a contact edited mid-round grades the next one.
+        roles: Object.fromEntries(
+            Object.entries(deps.contacts?.() ?? {}).map(([id, contact]) => [id, contact.role]),
+        ),
     };
     const live = new Map<string, Live>();
     /** Peers this side reached out to, and so is the one to reach out again. */
@@ -149,16 +172,28 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * session cancels a backoff that would otherwise fire minutes later.
      */
     const retries = new Map<string, Retry>();
-    /** Cells peers have an editor open on. Advisory, and always expiring. */
-    let locks: Lock[] = [];
+    /** Where each peer is. Advisory, and always expiring. */
+    let presences: Presence[] = [];
     let stopped = false;
+    /**
+     * What this side is. A host never dials and so is never graded: it holds
+     * the file, and the value stands at partner for its whole life.
+     */
+    let myRole: Role = deps.role ?? "partner";
 
-    function publishLocks(): void {
-        setLocks(locks);
+    function setRole(next: Role): void {
+        if (next === myRole) return;
+        myRole = next;
+        deps.onRoleChanged?.(next);
     }
 
-    /** The cell this side holds, refreshed until the editor closes. */
+    function publishPresences(): void {
+        setPresences(presences);
+    }
+
+    /** This side's own open editor, and this side's own cursor. */
     let held: CellRef | null = null;
+    let at: CellRef | null = null;
     let cancelHeartbeat: (() => void) | null = null;
     const schedule =
         deps.schedule ??
@@ -167,25 +202,47 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             return () => clearTimeout(id);
         });
 
-    function broadcastPresence(): void {
-        for (const l of live.values()) l.conn.send({ type: "presence", cell: held });
+    /**
+     * One message per send, because a peer is in one place: an open editor
+     * speaks for the cursor too, so the two never race each other into the far
+     * side's table.
+     */
+    function broadcastPosition(): void {
+        const msg: WireMessage = held
+            ? { type: "presence", cell: held }
+            : { type: "cursor", cell: at };
+        for (const l of live.values()) l.conn.send(msg);
     }
 
+    /**
+     * Refreshes the far side's TTL while this side is anywhere, and carries
+     * whatever a coalesced cursor move skipped. It stops on its own once there
+     * is nothing to say, so an idle pane costs no timer.
+     */
     function armHeartbeat(): void {
-        cancelHeartbeat = schedule(() => {
-            if (stopped || !held) return;
-            broadcastPresence();
-            armHeartbeat();
+        if (cancelHeartbeat) return;
+        cancelHeartbeat = schedule(function tick() {
+            cancelHeartbeat = null;
+            if (stopped || (!held && !at)) return;
+            broadcastPosition();
+            cancelHeartbeat = schedule(tick, HEARTBEAT_MS);
         }, HEARTBEAT_MS);
+    }
+
+    function stopHeartbeat(): void {
+        cancelHeartbeat?.();
+        cancelHeartbeat = null;
     }
 
     function announce(): void {
         deps.onPeersChanged?.([...live.values()].map((l) => l.peer));
     }
 
-    function onPresence(endpointId: string, cell: Lock | null): void {
-        locks = cell ? claim(locks, cell) : releaseCell(locks, endpointId);
-        publishLocks();
+    function onPosition(peerId: string, cell: CellRef | null, editing: boolean): void {
+        presences = cell
+            ? claim(presences, { endpointId: peerId, ...cell, heldAt: Date.now(), editing })
+            : releaseCell(presences, peerId);
+        publishPresences();
     }
 
     function track(
@@ -220,18 +277,16 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             existing.sync.stop();
             existing.conn.close();
         }
-        // A peer's open editor claims a cell so this side sees it before
-        // typing into it; the claim goes the moment the link does.
+        // A peer says where it is, so this side can see a partner working and
+        // is warned off a cell they have an editor on before typing into it.
+        // Both go the moment the link does.
         conn.onMessage((msg) => {
-            if (msg.type !== "presence") return;
-            // The cell goes straight into the lock table, so a claim that is
-            // not one is not a claim: a row below zero or a sheet named by
+            if (msg.type !== "presence" && msg.type !== "cursor") return;
+            // The cell goes straight into the table, so a position that is not
+            // one is not a position: a row below zero or a sheet named by
             // nothing would sit there unmatched until the peer left.
             if (msg.cell !== null && !isCellRef(msg.cell)) return;
-            onPresence(
-                peer.endpointId,
-                msg.cell ? { endpointId: peer.endpointId, ...msg.cell, heldAt: Date.now() } : null,
-            );
+            onPosition(peer.endpointId, msg.cell, msg.type === "presence");
         });
         const sync = attachSync({
             conn,
@@ -259,10 +314,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (held?.conn !== conn) return;
             held.sync.stop();
             live.delete(peer.endpointId);
-            // A peer that is gone holds nothing, instantly and without waiting
+            // A peer that is gone is nowhere, instantly and without waiting
             // for the heartbeat to lapse.
-            locks = releasePeer(locks, peer.endpointId);
-            publishLocks();
+            presences = releasePeer(presences, peer.endpointId);
+            publishPresences();
             announce();
             // A link that blips mid-round is the ordinary case in a gym full
             // of laptops, and the dial that opened this one only retried while
@@ -326,7 +381,9 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (verdict.spendSecret) policy.pending = null;
             if (!policy.knownPeers.includes(remoteId)) policy.knownPeers.push(remoteId);
             policy.roles[remoteId] = verdict.role;
-            conn.send({ type: "helloAck", ok: true, name: deps.displayName });
+            // The role goes back with the ack because the guest has no other
+            // way to know it: it asked to be a partner and the ticket decided.
+            conn.send({ type: "helloAck", ok: true, name: deps.displayName, role: verdict.role });
             const sync = track(
                 conn,
                 {
@@ -366,11 +423,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     reject(new Error(refusalMessage(msg.reason)));
                     return;
                 }
+                // The ack names what this side was admitted as, which is the
+                // only place a coach finds out. An older host says nothing,
+                // and every one of those granted partner.
+                setRole(msg.role ?? "partner");
                 track(
                     conn,
                     {
                         endpointId: target,
-                        role: deps.role ?? "partner",
+                        // The host holds the file and is never read-only. The
+                        // role in the ack is this side's, not theirs.
+                        role: "partner",
                         connectionType: conn.connectionType(),
                         name: typeof msg.name === "string" ? msg.name : undefined,
                     },
@@ -436,6 +499,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             return [...live.values()].map((l) => l.peer);
         },
 
+        role() {
+            return myRole;
+        },
+
         share(role) {
             const ticket = mintTicket({
                 endpointId,
@@ -481,8 +548,8 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             entry.sync.stop();
             entry.conn.send({ type: "bye" });
             entry.conn.close();
-            locks = releasePeer(locks, target);
-            publishLocks();
+            presences = releasePeer(presences, target);
+            publishPresences();
             announce();
         },
 
@@ -496,11 +563,25 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
         setPresence(cell) {
             held = cell;
-            broadcastPresence();
-            cancelHeartbeat?.();
-            cancelHeartbeat = null;
-            // Only an open editor needs refreshing; a release is final.
-            if (cell) armHeartbeat();
+            // An open editor is what refuses a partner's keystroke, so it goes
+            // out at once, and so does the release that hands the cell back.
+            broadcastPosition();
+            if (held || at) armHeartbeat();
+            else stopHeartbeat();
+        },
+
+        setCursor(cell) {
+            at = cell;
+            // An open editor already speaks for this side's position, and a
+            // cursor cannot move while one is open.
+            if (held) return;
+            // A heartbeat already ticking will carry this within HEARTBEAT_MS,
+            // which is what keeps arrowing down a column off the wire. Leaving
+            // is the exception: a cursor nobody is behind has to go at once,
+            // because the tick that would have cleared it is about to stop.
+            if (!cancelHeartbeat || cell === null) broadcastPosition();
+            if (at) armHeartbeat();
+            else stopHeartbeat();
         },
 
         async stop() {
@@ -515,11 +596,11 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 l.conn.close();
             }
             live.clear();
-            cancelHeartbeat?.();
-            cancelHeartbeat = null;
+            stopHeartbeat();
             held = null;
-            locks = [];
-            publishLocks();
+            at = null;
+            presences = [];
+            publishPresences();
             announce();
             await link.stop();
         },

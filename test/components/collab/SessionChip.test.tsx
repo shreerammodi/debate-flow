@@ -110,6 +110,25 @@ describe("SessionChip", () => {
         expect(within(coach).getByTestId("collab-peer-role")).toHaveTextContent("view only");
     });
 
+    it("tells a coach their own side is view only", async () => {
+        const user = userEvent.setup();
+        live();
+        useCollabStore.getState().setSelfRole("coach");
+        render(<SessionChip />);
+        await user.click(screen.getByTestId("collab-chip"));
+
+        expect(screen.getByTestId("collab-self-role")).toHaveTextContent("viewing this round");
+    });
+
+    it("says nothing about a side that can edit, which needs no explaining", async () => {
+        const user = userEvent.setup();
+        live();
+        render(<SessionChip />);
+        await user.click(screen.getByTestId("collab-chip"));
+
+        expect(screen.queryByTestId("collab-self-role")).toBeNull();
+    });
+
     it("shows the connection type per peer, so a relayed link is disclosed", async () => {
         const user = userEvent.setup();
         live();

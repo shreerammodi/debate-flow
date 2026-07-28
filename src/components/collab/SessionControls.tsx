@@ -28,8 +28,8 @@ export default function SessionControls() {
             title="Session"
             description={
                 live
-                    ? "A session is running. Showing the invite again mints a fresh one."
-                    : "Sharing starts a session and mints an invite. It works once, and it carries this round only."
+                    ? "A session is running. Showing an invite again mints a fresh one, to edit with or to watch by."
+                    : "Sharing starts a session and mints an invite a partner edits through. A view-only invite lets a coach watch instead. Either works once, and carries this round only."
             }
         >
             <div className="flex flex-wrap gap-2" data-testid="session-controls">
@@ -41,6 +41,16 @@ export default function SessionControls() {
                     data-testid="session-share"
                 >
                     {live ? "Show invite" : "Share this round"}
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!round}
+                    onClick={() => executeCommand("collab.shareView")}
+                    data-testid="session-share-view"
+                >
+                    Share view only
                 </Button>
                 <Button
                     type="button"

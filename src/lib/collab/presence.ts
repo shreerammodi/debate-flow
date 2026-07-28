@@ -1,60 +1,83 @@
 /**
- * Advisory cell locks.
+ * Where each peer is, and whether their editor is open on it.
  *
- * Opening an editor claims the cell so the other side sees it before they
- * start typing, which makes a refusal predictable rather than surprising. The
- * claim is advisory: there is no coordinator, so two peers can hold one cell
- * during a partition and last-writer-wins settles it underneath.
+ * One entry per peer, because a debater has one cursor. A cell somebody is
+ * merely parked on is shown and nothing more; a cell somebody has an editor
+ * open on is claimed, so the other side sees it before they start typing and a
+ * refusal is predictable rather than surprising. The claim is advisory: there
+ * is no coordinator, so two peers can hold one cell during a partition and
+ * last-writer-wins settles it underneath.
  *
- * What matters more than the lock is that it always goes away. A cell that
- * stays locked because a peer vanished is worse than no locking at all, so
- * there are three releases and only the last is timed: the editor closing, the
- * connection dropping, and a TTL for a frozen process on a live link.
+ * What matters more than the claim is that it always goes away. A cell that
+ * stays marked because a peer vanished is worse than no marking at all, so
+ * there are three releases and only the last is timed: the cursor moving or
+ * the editor closing, the connection dropping, and a TTL for a frozen process
+ * on a live link.
  */
 
-/** Refresh cadence while an editor stays open. */
+/** Refresh cadence while a peer is anywhere at all. */
 export const HEARTBEAT_MS = 250;
-/** A lock nothing refreshed inside this window is gone. */
-export const LOCK_TTL_MS = 1_000;
+/** An entry nothing refreshed inside this window is gone. */
+export const PRESENCE_TTL_MS = 1_000;
 
-export interface Lock {
+export interface Presence {
     endpointId: string;
     sheetId: string;
     col: number;
     row: number;
-    /** When the holder last said it was still there. */
+    /** When the peer last said it was still there. */
     heldAt: number;
+    /** Their editor is open on this cell, so typing into it is refused. */
+    editing: boolean;
 }
 
 /**
- * One cell per peer: an editor opens on exactly one, so a new claim replaces
- * whatever that peer held before.
+ * One cell per peer: a cursor is on exactly one, so a new position replaces
+ * whatever that peer was on before.
  */
-export function claim(locks: readonly Lock[], lock: Lock): Lock[] {
-    return [...locks.filter((l) => l.endpointId !== lock.endpointId), lock];
+export function claim(list: readonly Presence[], next: Presence): Presence[] {
+    return [...list.filter((p) => p.endpointId !== next.endpointId), next];
 }
 
-/** The editor closed. Instant. */
-export function releaseCell(locks: readonly Lock[], endpointId: string): Lock[] {
-    return locks.filter((l) => l.endpointId !== endpointId);
+/** The peer left the grid, or has no cell to report. Instant. */
+export function releaseCell(list: readonly Presence[], endpointId: string): Presence[] {
+    return list.filter((p) => p.endpointId !== endpointId);
 }
 
-/** The connection dropped, which releases every lock that peer held. Instant. */
-export function releasePeer(locks: readonly Lock[], endpointId: string): Lock[] {
-    return locks.filter((l) => l.endpointId !== endpointId);
+/** The connection dropped, which releases everything that peer held. Instant. */
+export function releasePeer(list: readonly Presence[], endpointId: string): Presence[] {
+    return list.filter((p) => p.endpointId !== endpointId);
 }
 
 /** The backstop, for a frozen process on a connection that still looks alive. */
-export function expire(locks: readonly Lock[], now: number, ttlMs: number = LOCK_TTL_MS): Lock[] {
-    return locks.filter((l) => now - l.heldAt <= ttlMs);
+export function expire(
+    list: readonly Presence[],
+    now: number,
+    ttlMs: number = PRESENCE_TTL_MS,
+): Presence[] {
+    return list.filter((p) => now - p.heldAt <= ttlMs);
 }
 
-/** Who holds this cell, if anyone. */
-export function lockAt(
-    locks: readonly Lock[],
+/** Who is on this cell, if anyone. */
+export function presenceAt(
+    list: readonly Presence[],
     sheetId: string,
     col: number,
     row: number,
-): Lock | null {
-    return locks.find((l) => l.sheetId === sheetId && l.col === col && l.row === row) ?? null;
+): Presence | null {
+    return list.find((p) => p.sheetId === sheetId && p.col === col && p.row === row) ?? null;
+}
+
+/**
+ * Who has an editor open on this cell, if anyone. A peer whose cursor is
+ * merely resting here holds nothing and blocks nothing.
+ */
+export function lockAt(
+    list: readonly Presence[],
+    sheetId: string,
+    col: number,
+    row: number,
+): Presence | null {
+    const at = presenceAt(list, sheetId, col, row);
+    return at?.editing ? at : null;
 }

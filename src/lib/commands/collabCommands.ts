@@ -12,6 +12,7 @@ import { joinRound } from "@/lib/collab/join";
 import { createPeerLinkFor } from "@/lib/collab/peerLink";
 import { currentSession, endSession, inviteContact, startForRound } from "@/lib/collab/runtime";
 import { encodeTicket } from "@/lib/collab/ticket";
+import type { Role } from "@/lib/collab/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
@@ -31,9 +32,11 @@ export interface CollabCommandDeps {
 
 /**
  * Mints a ticket for the open round and puts it in front of the user, starting
- * a session first when none is running.
+ * a session first when none is running. A view-only ticket grants its holder
+ * the round as it unfolds and nothing more: the host drops the writes that
+ * come back from it.
  */
-export async function runShare(deps: CollabCommandDeps): Promise<void> {
+export async function runShare(deps: CollabCommandDeps, role: Role = "partner"): Promise<void> {
     if (!collabLive()) {
         deps.fail("Turn on shared editing in Settings first");
         return;
@@ -49,7 +52,7 @@ export async function runShare(deps: CollabCommandDeps): Promise<void> {
             deps.fail("Could not start a session");
             return;
         }
-        deps.presentTicket(encodeTicket(session.share("partner")));
+        deps.presentTicket(encodeTicket(session.share(role)));
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not share this round");
     }

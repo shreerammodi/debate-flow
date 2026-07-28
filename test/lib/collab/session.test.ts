@@ -13,7 +13,7 @@ import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { startCollabSession, type CollabPeer, type CollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
-import { getLocks } from "@/lib/grid/lockBridge";
+import { getPresences } from "@/lib/grid/presenceBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -516,13 +516,13 @@ describe("a peer's claim on a cell", () => {
         return conn;
     }
 
-    // The cell goes straight into the lock table, where a row nobody can hold
-    // would sit unmatched for the rest of the round.
+    // The cell goes straight into the presence table, where a row nobody can
+    // hold would sit unmatched for the rest of the round.
     it("ignores a cell that is not one", async () => {
         const host = (await open(ALEX))!;
         const conn = await admitted(host);
         expect(host.peers()).toHaveLength(1);
-        expect(getLocks()).toEqual([]);
+        expect(getPresences()).toEqual([]);
 
         for (const cell of [
             { sheetId: "sheet_1", col: -1, row: 0 },
@@ -533,15 +533,55 @@ describe("a peer's claim on a cell", () => {
             "sheet_1",
         ]) {
             conn.send({ type: "presence", cell } as WireMessage);
+            conn.send({ type: "cursor", cell } as WireMessage);
             await settle();
-            expect(getLocks()).toEqual([]);
+            expect(getPresences()).toEqual([]);
         }
 
         conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
         await settle();
-        expect(getLocks()).toEqual([
-            { endpointId: SAM, sheetId: "sheet_1", col: 1, row: 2, heldAt: expect.any(Number) },
+        expect(getPresences()).toEqual([
+            {
+                endpointId: SAM,
+                sheetId: "sheet_1",
+                col: 1,
+                row: 2,
+                heldAt: expect.any(Number),
+                editing: true,
+            },
         ]);
+        await host.stop();
+    });
+
+    // A cursor is not a claim. Painting it is the point; refusing a keystroke
+    // on it would make a partner reading over your shoulder cost you a cell.
+    it("records a resting cursor without claiming the cell", async () => {
+        const host = (await open(ALEX))!;
+        const conn = await admitted(host);
+
+        conn.send({ type: "cursor", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        await settle();
+        expect(getPresences()).toEqual([
+            {
+                endpointId: SAM,
+                sheetId: "sheet_1",
+                col: 1,
+                row: 2,
+                heldAt: expect.any(Number),
+                editing: false,
+            },
+        ]);
+
+        // One entry per peer either way round: a cursor that started editing
+        // is the same peer in the same place, not a second mark.
+        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        await settle();
+        expect(getPresences()).toHaveLength(1);
+        expect(getPresences()[0].editing).toBe(true);
+
+        conn.send({ type: "cursor", cell: null });
+        await settle();
+        expect(getPresences()).toEqual([]);
         await host.stop();
     });
 });

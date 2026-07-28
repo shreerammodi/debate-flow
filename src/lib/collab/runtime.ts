@@ -12,7 +12,7 @@
 
 import { toast } from "sonner";
 
-import { setClaimHandler } from "@/lib/grid/lockBridge";
+import { setClaimHandler, setCursorHandler } from "@/lib/grid/presenceBridge";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { basename } from "@/lib/persistence/flowPaths";
@@ -42,7 +42,7 @@ import {
 import { dropSelfNote } from "./rfdSync";
 import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
 import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
-import type { CollabDoc } from "./types";
+import type { CollabDoc, Role } from "./types";
 
 let session: CollabSession | null = null;
 /** Bound between rounds so a saved contact's invite has somewhere to land. */
@@ -86,6 +86,15 @@ function offerToSave(peers: CollabPeer[]): void {
             },
         });
     }
+}
+
+/**
+ * What this side may do, for the surfaces that have to stop offering an edit.
+ * A coach learns it from the host's ack, which lands after the session is
+ * already up, so this is pushed rather than read once.
+ */
+function publishRole(role: Role): void {
+    useCollabStore.getState().setSelfRole(role);
 }
 
 function publish(peers: CollabPeer[]): void {
@@ -182,6 +191,7 @@ export async function startForRound(
             apply: (incoming) => applyRemoteDoc(round, incoming),
             dial: knownPeers,
             onPeersChanged: publish,
+            onRoleChanged: publishRole,
             contacts: () => useFlowStore.getState().contacts,
             onInvite: announceInvite,
         });
@@ -203,6 +213,7 @@ export async function startForRound(
     }
     rememberRoundPeers(round.id, knownPeers);
     useCollabStore.getState().setEndpointId(session.endpointId);
+    publishRole(session.role());
     // Every cell written from here carries this machine's own identity, so a
     // cell it inserts can never collide with one a peer inserts at the same
     // position.
@@ -220,8 +231,10 @@ export async function startForRound(
     // peers the moment it lands, coalesced a frame later by the sync.
     setLocalChangeListener(notifyLocalChange);
     // An open editor claims its cell, so a partner is warned off before they
-    // type rather than after the merge has picked a winner.
+    // type rather than after the merge has picked a winner. A cursor claims
+    // nothing and only says where this side is looking.
     setClaimHandler((cell) => session?.setPresence(cell));
+    setCursorHandler((cell) => session?.setCursor(cell));
     return session;
 }
 
@@ -259,6 +272,7 @@ export async function endSession(): Promise<void> {
     session = null;
     setLocalChangeListener(null);
     setClaimHandler(null);
+    setCursorHandler(null);
     offered.clear();
     try {
         await held?.stop();

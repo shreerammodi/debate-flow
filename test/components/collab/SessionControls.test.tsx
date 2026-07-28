@@ -36,9 +36,18 @@ describe("SessionControls", () => {
         expect(executeCommand).toHaveBeenCalledWith("collab.share");
     });
 
+    it("shares the open round view only, for a coach who should not edit", async () => {
+        useFlowStore.setState({ round: ROUND });
+        render(<SessionControls />);
+
+        await userEvent.click(screen.getByTestId("session-share-view"));
+        expect(executeCommand).toHaveBeenCalledWith("collab.shareView");
+    });
+
     it("refuses to share with no flow open", () => {
         render(<SessionControls />);
         expect(screen.getByTestId("session-share")).toBeDisabled();
+        expect(screen.getByTestId("session-share-view")).toBeDisabled();
         expect(screen.getByTestId("session-invite")).toBeDisabled();
     });
 

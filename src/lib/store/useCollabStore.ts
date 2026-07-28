@@ -8,6 +8,7 @@
 import { create } from "zustand";
 
 import type { InviteNotice } from "@/lib/collab/invite";
+import type { Role } from "@/lib/collab/types";
 
 export type CollabStatus = "off" | "connecting" | "connected" | "reconnecting";
 
@@ -15,13 +16,20 @@ export interface CollabPeerView {
     endpointId: string;
     /** Display name when a contact is known, else a short form of the id. */
     name: string;
-    role: "partner" | "coach";
+    role: Role;
     connectionType: "direct" | "relayed";
 }
 
 export interface CollabUiState {
     status: CollabStatus;
     peers: CollabPeerView[];
+    /**
+     * What this side was admitted as. Partner unless a host granted a
+     * view-only ticket, which is the one thing that makes the surfaces stop
+     * offering an edit. Off the wire, so it stands at partner with no session:
+     * a debater flowing alone answers to nobody.
+     */
+    selfRole: Role;
     /**
      * This install's own EndpointId, once an endpoint has bound one. Stable
      * for the life of the identity file, so it is learned and never cleared:
@@ -32,6 +40,7 @@ export interface CollabUiState {
     invites: readonly InviteNotice[];
     setStatus(status: CollabStatus): void;
     setPeers(peers: CollabPeerView[]): void;
+    setSelfRole(role: Role): void;
     setEndpointId(endpointId: string): void;
     pushInvite(invite: InviteNotice): void;
     dismissInvite(endpointId: string, roundId: string): void;
@@ -57,10 +66,12 @@ const MAX_INVITES = 20;
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
+    selfRole: "partner",
     endpointId: null,
     invites: NO_INVITES,
     setStatus: (status) => set({ status }),
     setPeers: (peers) => set({ peers }),
+    setSelfRole: (selfRole) => set({ selfRole }),
     setEndpointId: (endpointId) => set({ endpointId }),
     // A partner who dials twice about one round is one invitation, not two.
     pushInvite: (invite) =>
@@ -82,5 +93,5 @@ export const useCollabStore = create<CollabUiState>((set) => ({
     // An offer is only actionable while shared editing is running: with no
     // session, joining answers "turn on shared editing" and the sender has
     // long since moved on. Nothing survives a teardown that cannot be acted on.
-    reset: () => set({ status: "off", peers: NO_PEERS, invites: NO_INVITES }),
+    reset: () => set({ status: "off", peers: NO_PEERS, selfRole: "partner", invites: NO_INVITES }),
 }));
