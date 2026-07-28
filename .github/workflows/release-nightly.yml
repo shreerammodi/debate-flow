@@ -60,13 +60,15 @@ jobs:
                     --repo "$GITHUB_REPOSITORY" || true
 
                   body=$(cat <<EOF
-                  Automatic build of \`main\`, refreshed on every push that passes tests.
+                  This nightly release is automatically built and generated on every commit to main that passes tests.
 
-                  Built from commit [\`${GITHUB_SHA:0:8}\`](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA).
-
-                  These builds are unsigned and unreviewed. They can lose data, and
-                  they do not auto-update. For a release meant to be used in a round,
-                  take the [latest stable release](https://github.com/$GITHUB_REPOSITORY/releases/latest).
+                  > [!WARNING]
+                  > **This is a nightly build, not a tagged release. We
+                  > recommend using tagged releases, and nightly releases will
+                  > not auto-update.**
+                  >
+                  > For releases meant to be used in a round, please see the
+                  > [ebb website](https://ebb.smodi.net).
                   EOF
                   )
 
