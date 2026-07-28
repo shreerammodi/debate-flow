@@ -14,10 +14,15 @@ links carry the internals.
 
 ## 1. Shipping model
 
-| Product         | What it is                             | Distribution                      | How it updates                                      |
-| --------------- | -------------------------------------- | --------------------------------- | --------------------------------------------------- |
-| **Web build**   | Static export in `out/`                | Vercel CDN, no backend            | User reloads; the CDN always serves current         |
-| **Desktop app** | Tauri 2 shell wrapping the same `out/` | Signed installers, GitHub Release | In-app signed auto-updater, install on user confirm |
+| Product         | What it is                              | Distribution                                            | How it updates                                                    |
+| --------------- | --------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Web build**   | Static export in `out/`                 | Vercel CDN, no backend                                  | User reloads; the CDN serves the newest tag                       |
+| **Desktop app** | Tauri 2 shell wrapping the same `out/`  | Signed installers, GitHub Release                       | In-app signed auto-updater, install on user confirm               |
+| **Nightly**     | The same desktop app, built from `main` | Unsigned installers on the rolling `nightly` prerelease | It does not. Carries no updater artifacts; you download a new one |
+
+Both products ship from one tag, so a version number means the same thing on
+both. The nightly channel sits outside that: it is the current tip of `main`,
+it is not a release, and it is not something to run in a round.
 
 Local-first invariant holds for all three: no backend, no telemetry, no
 accounts. Two network paths exist, and the user opts into each one:
@@ -43,7 +48,7 @@ hand:
 - `src-tauri/Cargo.lock` -> refresh with `cargo update -p ebb --manifest-path src-tauri/Cargo.toml`
 
 Then commit all four, tag `vX.Y.Z`, and push with `git push --follow-tags`.
-**The pushed tag is what triggers the desktop release** (section 5).
+**The pushed tag is what triggers the desktop release** (section 6).
 
 ## 3. Continuous integration (`.github/workflows/ci.yml`)
 
@@ -56,26 +61,63 @@ Runs on every push to `main` and every PR. Two parallel jobs, both on
   first because Tauri's `generate_context!` reads `frontendDist: ../out`, which
   must exist for `cargo check` to compile.
 
-CI does **not** build full installers (release-only) and does **not** deploy the
-web build (Vercel handles that, section 4).
+CI does **not** build full installers and does **not** deploy the web build.
+Installers come from the nightly workflow (section 4) and the release workflow
+(section 6); the web deploy is Vercel's (section 5).
 
-## 4. Web deployment (Vercel)
+## 4. Nightly builds (`.github/workflows/release-nightly.yml`)
+
+**Trigger:** every push to `main`, or manual dispatch.
+
+Installers for people who want to run what is on `main` without building it
+themselves. The workflow gates on `npm test` + `npm run lint` against the exact
+commit it is about to bundle, then builds the same 3-way matrix as a real
+release and uploads into a single rolling prerelease tagged `nightly`.
+
+Two properties keep a nightly from being mistaken for a release:
+
+- **It cannot update anyone.** `src-tauri/tauri.nightly.conf.json` overlays
+  `createUpdaterArtifacts: false`, so the build emits no `.tar.gz`/`.sig` pair
+  and no signing key is present to make one. There is no path by which a
+  nightly artifact becomes something the updater will install.
+- **It cannot become "latest".** The release is marked prerelease, so
+  `releases/latest` keeps pointing at the newest stable tag, which is the URL
+  the updater reads.
+
+The previous nightly is deleted outright (`--cleanup-tag`) before the new one
+is created, so a stale Windows installer never sits beside a fresh macOS one.
+Like a tagged release, it is built as a draft and undrafted only once all three
+platforms land. A `concurrency` group cancels an in-flight nightly when a newer
+commit lands on `main`.
+
+## 5. Web deployment (Vercel)
 
 The web build is a pure static export (`output: "export"`,
 `images.unoptimized`) deployed via **Vercel's native Git integration** - not a
 GitHub Actions workflow. No deploy tokens or secrets live in this repo.
 
-- Push to `main` -> production deploy.
-- Pull request -> isolated preview URL.
+- Push to the `release` branch -> production deploy.
+- Push to `main` or any pull request -> isolated preview URL.
 
 Configured once in the Vercel dashboard: framework preset **Next.js**, build
-`npm run build`, output dir `out`. Deploying the web build _is_ its update -
-there is no update concept on web; a reload is non-destructive (continuous
-autosave) and the user controls when they reload.
+`npm run build`, output dir `out`, and **production branch `release`**.
 
-## 5. Desktop release (`.github/workflows/release.yml`)
+`release` is not a branch anyone commits to. The `publish` job fast-forwards it
+to the tag it just released, so production web is always the commit the current
+installers were cut from. That is what makes a version number mean the same
+thing on both surfaces: a web user reporting a bug is on a version you can
+name. The cost is that a fix reaches web users when you tag, not when you
+merge, which is why a patch release is cheap on purpose.
 
-**Trigger:** pushing a `v*` tag (section 2 does this for you).
+A reload is still non-destructive (continuous autosave) and the user controls
+when they reload; there is no update concept on web beyond the deploy.
+
+## 6. Desktop release (`.github/workflows/release.yml`)
+
+**Trigger:** pushing a `v*` tag (section 2 does this for you). It also accepts
+a manual dispatch, which is only valid against an existing `v*` tag - a first
+step fails the run otherwise, because everything downstream names the release
+after the ref and a dispatch on `main` would publish a release tagged `main`.
 
 A 3-way build matrix (`fail-fast: false`) - macOS universal, Linux x64, Windows
 x64 - runs `tauri-apps/tauri-action`, which builds each installer, signs the
@@ -83,14 +125,19 @@ updater artifacts with the Ed25519 key, generates `latest.json`, and uploads
 everything to a GitHub Release named `ebb vX.Y.Z`.
 
 The workflow creates the release as a draft, and the `publish` job
-(`needs: release`) publishes it after all three platforms succeed. The draft
-keeps a partly uploaded release away from clients: the updater reads
+(`needs: release`) publishes it after all three platforms succeed, then
+fast-forwards the `release` branch to the tag so the web build follows. The
+draft keeps a partly uploaded release away from clients: the updater reads
 `releases/latest/download/latest.json`, and a draft is never "latest". **A tag
-push reaches users on its own. If one platform fails, nothing publishes.**
+push reaches users on its own. If one platform fails, nothing publishes and
+production web does not move.**
+
+The release body links the changelog at the tag, not at `main`, so notes for a
+shipped release do not show entries written after it.
 
 Full procedure and one-time signing-key setup: [`desktop/releasing.md`](desktop/releasing.md).
 
-## 6. Signing (two independent layers)
+## 7. Signing (two independent layers)
 
 - **Updater signing (Ed25519) - mandatory, live from day one.** Guarantees
   update integrity independent of the OS. Public key committed in
@@ -103,10 +150,10 @@ Full procedure and one-time signing-key setup: [`desktop/releasing.md`](desktop/
   then, beta builds are unsigned and users do a one-time trust step
   ([`desktop/manual-trust.md`](desktop/manual-trust.md)).
 
-## 7. How users update
+## 8. How users update
 
-**Web:** reload the page. Whatever the Vercel CDN serves is current. Nothing to
-install, no version to track.
+**Web:** reload the page. The Vercel CDN serves the newest tag. Nothing to
+install; the version in the UI is a real release you can name.
 
 **Desktop:** the in-app updater checks GitHub Releases, downloads and verifies
 the signed artifact in the background, and installs it **only when the user
@@ -128,7 +175,7 @@ Settings.
 Full state machine and failure properties:
 [`desktop/ci-and-deployment.md`](desktop/ci-and-deployment.md).
 
-## 8. Beta ship checklist
+## 9. Beta ship checklist
 
 Blocking before the first real release:
 
@@ -137,8 +184,9 @@ Blocking before the first real release:
       (`npm run tauri signer generate`), commit the new pubkey, and set
       `TAURI_SIGNING_PRIVATE_KEY` + `..._PASSWORD` as repo secrets. See
       [`desktop/releasing.md`](desktop/releasing.md).
-- [ ] **Connect the repo in the Vercel dashboard** so section 4's Git
-      integration is live.
+- [ ] **Connect the repo in the Vercel dashboard** and set the production
+      branch to `release`, so section 5's Git integration is live. Until that
+      is set, production tracks `main` and web ships ahead of desktop.
 
 Ships fine for beta, worth doing after:
 
@@ -147,7 +195,7 @@ Ships fine for beta, worth doing after:
 - [ ] Consider a `pub_date`-based minimum age so a bad publish can't auto-apply
       instantly.
 
-## 9. Cutting a release (quick reference)
+## 10. Cutting a release (quick reference)
 
 ```bash
 # From a clean main with CI green, set VERSION=X.Y.Z, then by hand:
@@ -155,9 +203,10 @@ Ships fine for beta, worth doing after:
 cargo update -p ebb --manifest-path src-tauri/Cargo.toml   # refresh Cargo.lock
 git commit -am "$VERSION" && git tag -s "v$VERSION" -m "v$VERSION"
 git push --follow-tags
-# -> release.yml builds 3 installers into a draft GitHub Release,
-#    then publishes it once every platform succeeds. No click needed.
+# -> release.yml builds 3 installers into a draft GitHub Release, publishes it
+#    once every platform succeeds, and fast-forwards `release` to the tag.
 # -> the /latest/ redirect flips; desktop clients pick it up on next check.
+# -> Vercel deploys `release` to production, so web lands on the same commit.
 ```
 
 There is no `critical` flag. Every install waits for the user to click, so a

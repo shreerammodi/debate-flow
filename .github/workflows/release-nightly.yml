@@ -1,0 +1,161 @@
+name: Nightly desktop build
+
+# Builds unsigned, unversioned-in-name installers from the current tip of main
+# and publishes them to a single rolling prerelease tagged `nightly`. This is
+# the channel for people who want to run what is on main without building it
+# themselves; it is not an update channel. Nightly builds carry no updater
+# artifacts, so an installed nightly can never be offered to a stable client.
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+# One nightly at a time. A newer push supersedes an in-flight build, because
+# only the newest commit on main is worth having a nightly for.
+concurrency:
+    group: nightly
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+
+jobs:
+    # The nightly is "what is on main and passing", so the gate runs against
+    # the exact commit being bundled rather than trusting a separate CI run.
+    gate:
+        name: Test + lint
+        runs-on: ubuntu-22.04
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install Node
+              uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 20
+                  cache: npm
+
+            - run: npm ci
+            - run: npm test
+            - run: npm run lint
+
+    # Recreating the release (rather than adding to it) is what keeps a stale
+    # Windows installer from a week ago sitting next to today's macOS one.
+    prepare:
+        needs: gate
+        runs-on: ubuntu-22.04
+        outputs:
+            release_id: ${{ steps.recreate.outputs.release_id }}
+        steps:
+            - name: Recreate the nightly release
+              id: recreate
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  set -euo pipefail
+
+                  # --cleanup-tag drops the `nightly` git tag too, so the tag the
+                  # new release creates points at this commit instead of an old one.
+                  gh release delete nightly --yes --cleanup-tag \
+                    --repo "$GITHUB_REPOSITORY" || true
+
+                  body=$(cat <<EOF
+                  Automatic build of \`main\`, refreshed on every push that passes tests.
+
+                  Built from commit [\`${GITHUB_SHA:0:8}\`](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA).
+
+                  These builds are unsigned and unreviewed. They can lose data, and
+                  they do not auto-update. For a release meant to be used in a round,
+                  take the [latest stable release](https://github.com/$GITHUB_REPOSITORY/releases/latest).
+                  EOF
+                  )
+
+                  # Born as a draft for the same reason a tagged release is: the
+                  # three platforms upload independently and a half-populated
+                  # nightly should not be downloadable.
+                  id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                    -f tag_name=nightly \
+                    -f target_commitish="$GITHUB_SHA" \
+                    -f name="ebb nightly" \
+                    -f body="$body" \
+                    -F draft=true \
+                    -F prerelease=true \
+                    --jq .id)
+
+                  echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+    build:
+        needs: prepare
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    # macOS universal (Apple Silicon + Intel)
+                    - platform: macos-latest
+                      args: "--target universal-apple-darwin"
+                    # Linux x64
+                    - platform: ubuntu-22.04
+                      args: ""
+                    # Windows x64
+                    - platform: windows-latest
+                      args: ""
+
+        runs-on: ${{ matrix.platform }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install Node
+              uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 20
+                  cache: npm
+
+            - name: Install Rust stable
+              uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+              with:
+                  targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+            - name: Rust cache
+              uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+              with:
+                  workspaces: "./src-tauri -> target"
+
+            - name: Install Linux dependencies
+              if: matrix.platform == 'ubuntu-22.04'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y \
+                    libwebkit2gtk-4.1-dev \
+                    libappindicator3-dev \
+                    librsvg2-dev \
+                    patchelf \
+                    libssl-dev
+
+            - name: Install npm dependencies
+              run: npm ci
+
+            - name: Build and upload
+              uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # No TAURI_SIGNING_PRIVATE_KEY on purpose. The overlay config
+                  # turns updater artifacts off, so there is nothing to sign, and
+                  # a nightly must not be able to produce a signed update.
+              with:
+                  releaseId: ${{ needs.prepare.outputs.release_id }}
+                  uploadUpdaterJson: false
+                  args: --config src-tauri/tauri.nightly.conf.json ${{ matrix.args }}
+
+    publish:
+        needs: build
+        runs-on: ubuntu-22.04
+        steps:
+            - name: Publish the nightly
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh release edit nightly \
+                    --draft=false \
+                    --prerelease \
+                    --repo "$GITHUB_REPOSITORY"
