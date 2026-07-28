@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { COMMANDS } from "@/lib/commands/registry";
 import {
     chordToAccelerator,
     chordForCommand,
@@ -86,5 +87,15 @@ describe("menuAccelerators", () => {
         // Every menu command id is present, even when unbound, and no others.
         for (const id of MENU_COMMAND_IDS) expect(accels).toHaveProperty(id);
         expect(Object.keys(accels).length).toBe(MENU_COMMAND_IDS.length);
+    });
+});
+
+describe("MENU_COMMAND_IDS", () => {
+    // Group shipped without a Format menu entry and nothing noticed, so the
+    // rule is checked rather than remembered.
+    it("carries every format command, so no decoration ships menu-less", () => {
+        const format = Object.keys(COMMANDS).filter((id) => id.startsWith("format."));
+        expect(format.length).toBeGreaterThan(0);
+        for (const id of format) expect(MENU_COMMAND_IDS).toContain(id);
     });
 });

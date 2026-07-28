@@ -20,6 +20,7 @@ export type CommandId =
     | "format.toggleHighlight"
     | "format.toggleCard"
     | "format.toggleGroup"
+    | "format.toggleKicked"
     | "row.insertAbove"
     | "row.insertBelow"
     | "row.delete"
@@ -66,6 +67,11 @@ export type CommandId =
 export interface CommandDef {
     id: CommandId;
     label: string;
+    /**
+     * Extra search terms for the palette, ranked below every label match.
+     * For a command a debater knows by its mark rather than its name.
+     */
+    keywords?: string;
 }
 
 export const COMMANDS: Record<CommandId, CommandDef> = {
@@ -84,6 +90,11 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     },
     "format.toggleCard": { id: "format.toggleCard", label: "Toggle card" },
     "format.toggleGroup": { id: "format.toggleGroup", label: "Toggle group" },
+    "format.toggleKicked": {
+        id: "format.toggleKicked",
+        label: "Toggle kicked",
+        keywords: "strikethrough cross out dead slash",
+    },
     "row.insertAbove": { id: "row.insertAbove", label: "Insert row above" },
     "row.insertBelow": { id: "row.insertBelow", label: "Insert row below" },
     "row.delete": { id: "row.delete", label: "Delete row" },

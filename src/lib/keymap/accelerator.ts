@@ -114,6 +114,8 @@ export const MENU_COMMAND_IDS = [
     "format.toggleBold",
     "format.toggleHighlight",
     "format.toggleCard",
+    "format.toggleGroup",
+    "format.toggleKicked",
     "row.insertAbove",
     "cell.insert",
     "row.delete",

@@ -281,7 +281,7 @@ html .ht-theme-main {
 /* Outranks the theme's even/odd row striping (.handsontable tr.ht__row_even td).
    Solid yellow on the light-locked sheet; dark ink stays legible. */
 .handsontable tbody tr td.flow-highlight {
-    background: #fde047;
+    background-color: #fde047;
 }
 
 /* Card marker: an inset bottom rule under the cell. box-shadow rather than
@@ -330,6 +330,29 @@ html .ht-theme-main {
     box-shadow:
         inset 0 -2px 0 #2563eb,
         inset 3px 0 0 var(--muted-foreground);
+}
+
+/* Kicked marker: the slash a debater draws through a dead argument on paper,
+   corner to corner. A background gradient, so it paints behind the glyphs and
+   an argument you may un-kick in the 2AR stays legible - a strikethrough over
+   the text would not. The `to bottom right` axis puts the band's iso-line
+   through the other two corners, which is a "/" at any cell aspect ratio, and
+   matches the diagonal.up border the workbook exports. Fixed gray, not a
+   token, because the flow sheet is light-locked paper.
+
+   Drawn as background-image so a kicked cell that is also highlighted keeps
+   its yellow background-color underneath. The print table wears the same
+   slash, so both selectors share the one declaration; the print block adds
+   only the color-adjust that lets a background reach paper. */
+.handsontable tbody tr td.flow-kicked,
+.print-flow td.flow-kicked {
+    background-image: linear-gradient(
+        to bottom right,
+        transparent calc(50% - 0.5px),
+        #6b7280 calc(50% - 0.5px),
+        #6b7280 calc(50% + 0.5px),
+        transparent calc(50% + 0.5px)
+    );
 }
 
 /* Move mode: the travelling block, tinted for the life of the session. Painted
@@ -392,7 +415,7 @@ html .ht-theme-main {
         color: #000;
     }
     .print-flow td.flow-highlight {
-        background: #fde047;
+        background-color: #fde047;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
@@ -403,6 +426,10 @@ html .ht-theme-main {
     }
     .print-flow td.flow-group {
         box-shadow: inset 3px 0 0 #6b7280;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .print-flow td.flow-kicked {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }

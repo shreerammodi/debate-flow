@@ -6,6 +6,7 @@ import {
     classNameToMeta,
     GROUP_CLASS,
     HIGHLIGHT_CLASS,
+    KICKED_CLASS,
     metaToClassName,
     padGrid,
     toggleClassToken,
@@ -43,6 +44,18 @@ describe("meta <-> className", () => {
         expect(classNameToMeta(`${BOLD_CLASS} ${GROUP_CLASS}`)).toEqual({
             bold: true,
             group: true,
+        });
+    });
+
+    it("round-trips the kicked tag, alone and beside a highlight", () => {
+        expect(metaToClassName({ kicked: true })).toBe(KICKED_CLASS);
+        expect(metaToClassName({ highlight: true, kicked: true })).toBe(
+            `${HIGHLIGHT_CLASS} ${KICKED_CLASS}`,
+        );
+        expect(classNameToMeta(KICKED_CLASS)).toEqual({ kicked: true });
+        expect(classNameToMeta(`${HIGHLIGHT_CLASS} ${KICKED_CLASS}`)).toEqual({
+            highlight: true,
+            kicked: true,
         });
     });
 

@@ -10,32 +10,41 @@ export const BOLD_CLASS = "flow-bold";
 export const HIGHLIGHT_CLASS = "flow-highlight";
 export const CARD_CLASS = "flow-card";
 export const GROUP_CLASS = "flow-group";
+export const KICKED_CLASS = "flow-kicked";
+
+/** The boolean decoration keys of CellMeta, excluding its structured fields. */
+type FlagKey = {
+    [K in keyof CellMeta]-?: CellMeta[K] extends boolean | undefined ? K : never;
+}[keyof CellMeta];
+
+/**
+ * Every decoration, paired with the class token that carries it. Both
+ * directions and the emptiness check below derive from this one list, so a
+ * decoration cannot reach half of them: a flag present in the writer but
+ * missing from the reader round-trips to nothing and erases the mark on save.
+ */
+const FLAGS: readonly (readonly [FlagKey, string])[] = [
+    ["bold", BOLD_CLASS],
+    ["highlight", HIGHLIGHT_CLASS],
+    ["card", CARD_CLASS],
+    ["group", GROUP_CLASS],
+    ["kicked", KICKED_CLASS],
+];
 
 export function metaToClassName(m: CellMeta | undefined): string {
     if (!m) return "";
-    return [
-        m.bold ? BOLD_CLASS : "",
-        m.highlight ? HIGHLIGHT_CLASS : "",
-        m.card ? CARD_CLASS : "",
-        m.group ? GROUP_CLASS : "",
-    ]
-        .filter(Boolean)
+    return FLAGS.filter(([flag]) => m[flag])
+        .map(([, token]) => token)
         .join(" ");
 }
 
 export function classNameToMeta(cls: string): CellMeta | undefined {
     const tokens = cls.split(/\s+/);
-    const bold = tokens.includes(BOLD_CLASS);
-    const highlight = tokens.includes(HIGHLIGHT_CLASS);
-    const card = tokens.includes(CARD_CLASS);
-    const group = tokens.includes(GROUP_CLASS);
-    if (!bold && !highlight && !card && !group) return undefined;
     const meta: CellMeta = {};
-    if (bold) meta.bold = true;
-    if (highlight) meta.highlight = true;
-    if (card) meta.card = true;
-    if (group) meta.group = true;
-    return meta;
+    for (const [flag, token] of FLAGS) {
+        if (tokens.includes(token)) meta[flag] = true;
+    }
+    return Object.keys(meta).length === 0 ? undefined : meta;
 }
 
 export function toggleClassToken(cls: string, token: string): string {

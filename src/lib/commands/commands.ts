@@ -17,6 +17,7 @@ import {
     CARD_CLASS,
     GROUP_CLASS,
     HIGHLIGHT_CLASS,
+    KICKED_CLASS,
     toggleClassToken,
 } from "@/lib/grid/codec";
 import { getActiveHot, getActiveSheetId, notifyGridMutated } from "@/lib/grid/hotInstance";
@@ -54,7 +55,12 @@ function jumpToSheet(n: number): void {
  * so mixed ranges converge instead of flip-flopping per cell.
  */
 function toggleDecoration(
-    token: typeof BOLD_CLASS | typeof HIGHLIGHT_CLASS | typeof CARD_CLASS | typeof GROUP_CLASS,
+    token:
+        | typeof BOLD_CLASS
+        | typeof HIGHLIGHT_CLASS
+        | typeof CARD_CLASS
+        | typeof GROUP_CLASS
+        | typeof KICKED_CLASS,
 ): void {
     const hot = getActiveHot();
     const ranges = hot?.getSelectedRange();
@@ -194,6 +200,9 @@ export function executeCommand(id: CommandId): void {
             return;
         case "format.toggleGroup":
             toggleDecoration(GROUP_CLASS);
+            return;
+        case "format.toggleKicked":
+            toggleDecoration(KICKED_CLASS);
             return;
         case "row.insertAbove":
             alterRow("insert_row_above");

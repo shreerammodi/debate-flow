@@ -23,7 +23,12 @@ function setup() {
     const flow = round.sheets.find((s) => s.kind !== "cx")!;
     flow.title = "Case";
     flow.data = Array.from({ length: 60 }, (_, r) => [`arg ${r}`, null]);
-    flow.meta = { "0,0": { bold: true }, "1,0": { highlight: true } };
+    flow.meta = {
+        "0,0": { bold: true },
+        "1,0": { highlight: true },
+        "2,0": { card: true },
+        "3,0": { kicked: true },
+    };
     useFlowStore.getState().loadRound(round);
     return round;
 }
@@ -53,6 +58,9 @@ describe("PrintView", () => {
         render(<PrintView />);
         expect(screen.getByText("arg 0")).toHaveClass("flow-bold");
         expect(screen.getByText("arg 1")).toHaveClass("flow-highlight");
+        // Print shares the grid's codec, so every decoration reaches paper.
+        expect(screen.getByText("arg 2")).toHaveClass("flow-card");
+        expect(screen.getByText("arg 3")).toHaveClass("flow-kicked");
     });
 
     it("renders CX period labels in the CX header", () => {

@@ -15,7 +15,7 @@ function judgedRound() {
     ];
     flow.meta = {
         "0,0": { bold: true, highlight: true },
-        "1,1": { card: true, group: true },
+        "1,1": { card: true, group: true, kicked: true },
     };
     return round;
 }
@@ -67,6 +67,11 @@ describe("fillWorkbook", () => {
         expect(marked.value).toBe("Counter-interp");
         expect(marked.border?.bottom).toMatchObject({ color: { argb: "FF2563EB" } });
         expect(marked.border?.left).toMatchObject({ color: { argb: "FF6B7280" } });
+        expect(marked.border?.diagonal).toMatchObject({
+            up: true,
+            style: "thin",
+            color: { argb: "FF6B7280" },
+        });
         // Plain cells carry no fill, so worksheets keep Excel's default white.
         expect(flow.getCell(2, 2).fill ?? {}).not.toHaveProperty("fgColor");
     });

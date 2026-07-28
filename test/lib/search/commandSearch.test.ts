@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 
+import { COMMANDS } from "@/lib/commands/registry";
 import { getEvent, speechOrder } from "@/lib/format/events";
-import { searchSpeechCommands } from "@/lib/search/commandSearch";
+import { searchCommands, searchSpeechCommands } from "@/lib/search/commandSearch";
 
 const speeches = speechOrder(getEvent("policy"), "aff");
 const parli = speechOrder(getEvent("parli"), "aff");
@@ -74,5 +75,26 @@ describe("searchSpeechCommands", () => {
             "Go to speech: Member of the Government Constructive",
         );
         expect(searchSpeechCommands("pmc", parli)[0].label).toBe("Go to speech: Prime Minister");
+    });
+});
+
+describe("searchCommands", () => {
+    it("finds a command by its mark without showing the alias", () => {
+        const hits = searchCommands("strikethrough");
+        expect(hits.map((h) => h.id)).toEqual(["format.toggleKicked"]);
+        // Keywords rank the hit, they never reach the palette row.
+        expect(hits[0].label).toBe("Toggle kicked");
+    });
+
+    it("ranks a keyword hit below every command the query names", () => {
+        // "Toggle bold" is a label match; kicked matches only on its keywords.
+        const hits = searchCommands("bold");
+        expect(hits[0].id).toBe("format.toggleBold");
+    });
+
+    it("matches on the label as before", () => {
+        expect(searchCommands("toggle kicked")[0].label).toBe(
+            COMMANDS["format.toggleKicked"].label,
+        );
     });
 });

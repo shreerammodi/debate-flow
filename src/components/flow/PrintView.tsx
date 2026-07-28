@@ -9,7 +9,7 @@
  * workspace hides via .no-print, this shows via .print-only.
  */
 
-import { gridWidth, trimGrid } from "@/lib/grid/codec";
+import { gridWidth, metaToClassName, trimGrid } from "@/lib/grid/codec";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { sortedSheets } from "@/lib/model/flow";
 import { renderRfdHtml } from "@/lib/rfd/markdown";
@@ -78,16 +78,7 @@ export default function PrintView() {
                                         {columns.map((_, c) => {
                                             const m = sheet.meta[`${r},${c}`];
                                             return (
-                                                <td
-                                                    key={c}
-                                                    className={[
-                                                        m?.bold ? "flow-bold" : "",
-                                                        m?.highlight ? "flow-highlight" : "",
-                                                        m?.group ? "flow-group" : "",
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                >
+                                                <td key={c} className={metaToClassName(m)}>
                                                     {row[c] ?? ""}
                                                 </td>
                                             );

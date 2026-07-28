@@ -129,6 +129,8 @@ pub fn build<R: Runtime>(
         .item(&cmd("format.toggleBold", "Bold", "CmdOrCtrl+B")?)
         .item(&cmd("format.toggleHighlight", "Highlight", "CmdOrCtrl+Shift+H")?)
         .item(&cmd("format.toggleCard", "Card", "CmdOrCtrl+T")?)
+        .item(&cmd("format.toggleGroup", "Group", "CmdOrCtrl+G")?)
+        .item(&cmd("format.toggleKicked", "Kicked", "CmdOrCtrl+K")?)
         .separator()
         .item(&cmd("row.insertAbove", "Insert Row", "CmdOrCtrl+Shift+O")?)
         .item(&cmd("cell.insert", "Insert Cell", "CmdOrCtrl+O")?)

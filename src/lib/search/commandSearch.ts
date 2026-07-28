@@ -17,13 +17,18 @@ export interface CommandHit {
 
 const ALL = Object.values(COMMANDS);
 
-/** Rank commands against `query`; an empty query lists them all in order. */
+/**
+ * Rank commands against `query`; an empty query lists them all in order.
+ * A command's `keywords` match in the secondary field, so a debater who
+ * searches for the mark ("strikethrough") finds it, ranked below every
+ * command whose label the query actually names.
+ */
 export function searchCommands(query: string): CommandHit[] {
     return rank(
         ALL,
         query,
         (c) => c.label,
-        () => "",
+        (c) => c.keywords ?? "",
         () => 0,
     ).map((c) => ({ id: c.id, label: c.label }));
 }

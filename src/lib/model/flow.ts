@@ -27,6 +27,8 @@ export interface CellMeta {
     card?: boolean;
     /** Marks the cell as part of a visual group (a left bar hugging the run). */
     group?: boolean;
+    /** Marks the argument dead: kicked, turned away, or never extended. */
+    kicked?: boolean;
     /** Reserved for the links phase; nothing reads or writes it yet. */
     answers?: { sheetId: string; row: number; col: number };
     /** Provenance for text handed in by another app; absent for typed cells. */

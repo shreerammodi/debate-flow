@@ -3,9 +3,9 @@
  * RFD (when there is a decision), then the round's sheets in ebb order (the
  * cross-ex sheet sorts first at order -1). Each flow worksheet mirrors the
  * on-screen grid in its light theme: a frozen speech-title header row,
- * side-colored ink, and the bold/highlight/card/group cell decorations - no
- * gridlines, no fills beyond the highlight, no sheet protection. (In export
- * code, "sheet" is the app's FlowSheet; Excel tabs are worksheets.)
+ * side-colored ink, and the bold/highlight/card/group/kicked cell decorations
+ * - no gridlines, no fills beyond the highlight, no sheet protection. (In
+ * export code, "sheet" is the app's FlowSheet; Excel tabs are worksheets.)
  */
 
 import type ExcelJS from "exceljs";
@@ -27,6 +27,8 @@ const SIDE_INK: Record<Side, string> = { aff: "FF1D4ED8", neg: "FFC0271F" };
 const HIGHLIGHT_FILL = "FFFDE047";
 const CARD_EDGE = "FF2563EB";
 const GROUP_EDGE = "FF6B7280";
+/** The kicked slash. Its own constant, so retuning the group bar leaves it be. */
+const KICKED_EDGE = "FF6B7280";
 const COL_WIDTH = 36;
 
 export function addFlowWorksheet(
@@ -92,13 +94,23 @@ export function addFlowWorksheet(
                     fgColor: { argb: HIGHLIGHT_FILL },
                 };
             }
-            if (meta?.card || meta?.group) {
+            if (meta?.card || meta?.group || meta?.kicked) {
                 cell.border = {
                     ...(meta?.card && {
                         bottom: { style: "medium" as const, color: { argb: CARD_EDGE } },
                     }),
                     ...(meta?.group && {
                         left: { style: "medium" as const, color: { argb: GROUP_EDGE } },
+                    }),
+                    // Thin, unlike the edge markers: the diagonal crosses the
+                    // text, and a medium stroke through the words is the
+                    // interference the on-screen slash is drawn to avoid.
+                    ...(meta?.kicked && {
+                        diagonal: {
+                            up: true,
+                            style: "thin" as const,
+                            color: { argb: KICKED_EDGE },
+                        },
                     }),
                 };
             }

@@ -27,6 +27,7 @@ const LETTER_BINDINGS: Record<Chord, CommandId> = (() => {
         [`${mod}+H`]: "format.toggleHighlight",
         [`${mod}+t`]: "format.toggleCard",
         [`${mod}+g`]: "format.toggleGroup",
+        [`${mod}+k`]: "format.toggleKicked",
         [`${mod}+p`]: "sheet.quickSwitch",
         [`${mod}+P`]: "palette.open",
         [`${mod}+A`]: "sheet.newAff",

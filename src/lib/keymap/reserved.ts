@@ -33,6 +33,7 @@ const RESERVED_KEYS = [
     "H", // toggle highlight (Shift encoded in uppercase key)
     "t", // toggle card
     "g", // toggle group (suppresses browser find-next)
+    "k", // toggle kicked (suppresses the browser's address-bar search)
     // -- UI ---------------------------------------------------------------------
     "\\", // sidebar toggle
     ",", // settings

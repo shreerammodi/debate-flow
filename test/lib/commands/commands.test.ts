@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { executeCommand } from "@/lib/commands/commands";
-import { BOLD_CLASS, GROUP_CLASS } from "@/lib/grid/codec";
+import { BOLD_CLASS, GROUP_CLASS, HIGHLIGHT_CLASS, KICKED_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
 import { makeFlowRound, type CellSource } from "@/lib/model/flow";
@@ -255,6 +255,37 @@ describe("grid commands", () => {
         expect(at(0, 0).className).toBe(GROUP_CLASS);
         expect(at(1, 0).className).toBe(GROUP_CLASS);
         expect(at(2, 0).className).toBe(GROUP_CLASS);
+    });
+
+    it("toggleKicked marks a run without disturbing a highlight it already wears", () => {
+        const meta = new Map<string, { className?: string }>([
+            ["1,0", { className: HIGHLIGHT_CLASS }],
+        ]);
+        const at = (r: number, c: number) => {
+            const key = `${r},${c}`;
+            if (!meta.has(key)) meta.set(key, {});
+            return meta.get(key)!;
+        };
+        const fakeHot = {
+            getSelectedRange: () => [
+                {
+                    highlight: { row: 0, col: 0 },
+                    getTopLeftCorner: () => ({ row: 0, col: 0 }),
+                    getBottomRightCorner: () => ({ row: 1, col: 0 }),
+                },
+            ],
+            getCellMeta: (r: number, c: number) => at(r, c),
+            setCellMeta: (r: number, c: number, _k: string, v: string) => {
+                at(r, c).className = v;
+            },
+            render: vi.fn(),
+        };
+        setActiveHot(fakeHot as never, vi.fn());
+
+        executeCommand("format.toggleKicked");
+        expect(at(0, 0).className).toBe(KICKED_CLASS);
+        // A cell the opponent conceded and this side kicked anyway keeps both.
+        expect(at(1, 0).className).toBe(`${HIGHLIGHT_CLASS} ${KICKED_CLASS}`);
     });
 
     it("cell.insert shifts the selected column down and blanks the target", () => {
