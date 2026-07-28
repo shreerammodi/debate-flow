@@ -8,6 +8,7 @@
         "build": "next build",
         "test": "vitest run",
         "test:watch": "vitest",
+        "bench": "BENCH_STRICT=1 vitest run test/lib/collab/perf.bench.test.ts",
         "lint": "eslint .",
         "format": "oxfmt .",
         "format:check": "oxfmt --check .",

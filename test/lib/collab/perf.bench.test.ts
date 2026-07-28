@@ -250,21 +250,21 @@ describe("cost as a round grows", () => {
     /**
      * Quadrupling the cells must not square the work on any hot path.
      *
-     * Both points are large on purpose. A small round projects in tens of
-     * microseconds, where scheduling jitter is a large fraction of the
-     * measurement and the ratio against it says more about the timer than
-     * about the algorithm.
+     * Off by default, because it cannot be made to mean one thing on every
+     * machine. The ratio is wall time, and wall time is not purely
+     * algorithmic: the same linear walk costs more per cell once the working
+     * set stops fitting in cache, which is a property of the machine. The same
+     * commit measures `project` at x4.5 on a developer laptop and x8.8 on a
+     * two-core shared runner, so a bound tight enough to separate linear (x4)
+     * from quadratic (x16) is also tight enough to fail on hardware rather
+     * than on code. Two bounds were tried against CI and both were wrong.
      *
-     * The spread is x4 rather than x2 because the ratio is wall time, and wall
-     * time is not purely algorithmic: the same linear walk costs more per cell
-     * once the working set stops fitting in cache, which is a property of the
-     * machine and not of the code. At x2 that distortion is the same size as
-     * the gap between linear (x2) and quadratic (x4), and a shared CI runner
-     * lands inside it. At x4 the two predictions are x4 and x16, so a bound
-     * halfway between absorbs a doubled constant factor and still fails loudly
-     * on a real regression.
+     * So it runs where the answer means something: `npm run bench`, on a quiet
+     * machine, when a hot path changed. What still gates every push is the
+     * absolute budgets above, which carry an order of magnitude of headroom
+     * and do not depend on comparing two measurements to each other.
      */
-    it("stays linear in the number of cells", () => {
+    it.runIf(process.env.BENCH_STRICT === "1")("stays linear in the number of cells", () => {
         const scale = (rows: number) => {
             const r = heavyRound(4, rows);
             const d = seedDoc(r);
