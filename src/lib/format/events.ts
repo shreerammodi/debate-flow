@@ -16,6 +16,10 @@ export interface SpeechDef {
     /** Column-header label; equals name for Policy. */
     short: string;
     side: Side;
+    /** Other names debaters call this speech, matched by search but never
+     *  shown. A Block column carries the speeches it folds together, and an
+     *  event whose speeches go by a second vocabulary carries that too. */
+    aliases?: string[];
 }
 
 export interface CrossExPeriod {
@@ -53,11 +57,18 @@ const AFF_NEG_SIDES: Record<Side, SideLabel> = {
     neg: { label: "Neg", speakers: ["1N", "2N"] },
 };
 
-const speech = (id: string, name: string, short: string, side: Side): SpeechDef => ({
+const speech = (
+    id: string,
+    name: string,
+    short: string,
+    side: Side,
+    aliases?: string[],
+): SpeechDef => ({
     id,
     name,
     short,
     side,
+    ...(aliases && { aliases }),
 });
 
 export const EVENTS: Record<EventId, EventDef> = {
@@ -72,7 +83,7 @@ export const EVENTS: Record<EventId, EventDef> = {
         ],
         neg: [
             speech("1nc", "1NC", "1NC", "neg"),
-            speech("block", "Block", "Block", "neg"),
+            speech("block", "Block", "Block", "neg", ["2NC", "1NR"]),
             speech("2nr", "2NR", "2NR", "neg"),
         ],
         variableOrder: false,
@@ -133,19 +144,32 @@ export const EVENTS: Record<EventId, EventDef> = {
     parli: {
         id: "parli",
         name: "Parliamentary",
+        // Debaters name these speeches either by role or by the Policy-style
+        // numbering, so each carries the other vocabulary as a search alias.
         // The opening speech is the Prime Minister, not a "PMC"; only the
         // speeches that have a rebuttal counterpart are named Constructive.
         aff: [
-            speech("pm", "Prime Minister", "PM", "aff"),
-            speech("mgc", "Member of the Government Constructive", "MGC", "aff"),
-            speech("pmr", "Prime Minister Rebuttal", "PMR", "aff"),
+            speech("pm", "Prime Minister", "PM", "aff", [
+                "PMC",
+                "Prime Minister Constructive",
+                "1AC",
+            ]),
+            speech("mgc", "Member of the Government Constructive", "MGC", "aff", ["2AC"]),
+            speech("pmr", "Prime Minister Rebuttal", "PMR", "aff", ["1AR"]),
         ],
         // The MOC and LOR run back to back, so they share one column the way
         // Policy's 2NC and 1NR share the Block: strict alternation cannot
         // express two consecutive speeches on the same side.
         neg: [
-            speech("loc", "Leader of the Opposition Constructive", "LOC", "neg"),
-            speech("block", "Opposition Block", "Block", "neg"),
+            speech("loc", "Leader of the Opposition Constructive", "LOC", "neg", ["1NC"]),
+            speech("block", "Opposition Block", "Block", "neg", [
+                "MOC",
+                "Member of the Opposition Constructive",
+                "2NC",
+                "LOR",
+                "Leader of the Opposition Rebuttal",
+                "1NR",
+            ]),
         ],
         variableOrder: false,
         // Parliamentary has no cross-examination; a point of information
@@ -164,6 +188,15 @@ export function getEvent(id?: EventId): EventDef {
 /** The event's side naming, falling back to the aff/neg the model stores. */
 export function sideLabels(id?: EventId): Record<Side, SideLabel> {
     return getEvent(id).sides ?? AFF_NEG_SIDES;
+}
+
+/**
+ * Everything a speech answers to in search: the name it shows under, its
+ * column abbreviation, and any other name debaters call it. Search matches
+ * this; nothing displays it.
+ */
+export function speechTerms(speech: SpeechDef): string {
+    return [speech.name, speech.short, ...(speech.aliases ?? [])].join(" ");
 }
 
 /**

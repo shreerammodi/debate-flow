@@ -6,7 +6,7 @@
  */
 
 import { COMMANDS, type CommandId } from "@/lib/commands/registry";
-import type { SpeechDef } from "@/lib/format/events";
+import { speechTerms, type SpeechDef } from "@/lib/format/events";
 
 import { rank } from "./match";
 
@@ -41,6 +41,11 @@ export function speechCommandLabel(speech: SpeechDef): string {
 /**
  * Rank the round's speeches as palette commands; an empty query lists them
  * all in speaking order. Dynamic, so these live outside the static registry.
+ *
+ * A speech's abbreviation and aliases match as strongly as its name, not as
+ * weak context: "ns" is what a debater calls the Neg Summary, and it is also
+ * buried inside "Co-ns-tructive", so matching it in the secondary field would
+ * rank the speech the query names below two it does not.
  */
 export function searchSpeechCommands(
     query: string,
@@ -49,7 +54,7 @@ export function searchSpeechCommands(
     return rank(
         speeches,
         query,
-        speechCommandLabel,
+        (s) => `${speechCommandLabel(s)} ${speechTerms(s)}`,
         () => "",
         () => 0,
     ).map((s) => ({ speechId: s.id, label: speechCommandLabel(s) }));

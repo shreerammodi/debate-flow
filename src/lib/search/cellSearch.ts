@@ -2,10 +2,13 @@
  * Search over every filled cell in a flow. Powers the search palette: one
  * query ranks cells across all sheets by relevance tier. The sheet title and
  * column header are a secondary match field, so "2ac warming" finds warming
- * answers in the 2AC column - ranked below a cell-text hit. Same-tier ties
- * stay in flow order (sheet order, then row-major).
+ * answers in the 2AC column - ranked below a cell-text hit. A column answers
+ * to its abbreviation and aliases too, so "mgc warming" works where the header
+ * spells out Member of the Government Constructive. Same-tier ties stay in
+ * flow order (sheet order, then row-major).
  */
 
+import { speechTerms } from "@/lib/format/events";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { sortedSheets, type FlowRound } from "@/lib/model/flow";
 import type { Side } from "@/lib/model/types";
@@ -19,6 +22,8 @@ export interface CellHit {
     col: number;
     /** Column header the cell sits under (e.g. "2AC", "Question"), for context. */
     colName: string;
+    /** Every name that column answers to in search; never displayed. */
+    colTerms: string;
     /** Side of the cell's speech column; drives the aff/neg ink, as in the grid. */
     side: Side;
     text: string;
@@ -41,6 +46,7 @@ export function collectCells(round: FlowRound): CellHit[] {
                     row,
                     col,
                     colName: cols[col]?.name ?? "",
+                    colTerms: cols[col] ? speechTerms(cols[col]) : "",
                     side: cols[col]?.side ?? "aff",
                     text,
                     card: sheet.meta[`${row},${col}`]?.card ?? false,
@@ -64,7 +70,7 @@ export function searchCells(round: FlowRound, query: string): CellHit[] {
         collectCells(round),
         query,
         (c) => c.text,
-        (c) => `${c.sheetTitle} ${c.colName}`,
+        (c) => `${c.sheetTitle} ${c.colTerms}`,
         () => 0,
     );
 }

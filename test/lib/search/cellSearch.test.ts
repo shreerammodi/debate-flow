@@ -64,6 +64,17 @@ describe("searchCells", () => {
         expect(hits.map((c) => c.colName)).toEqual(["1NC", "1NC"]);
     });
 
+    it("finds a cell by its column's abbreviation, not just the spelled-out header", () => {
+        const round = makeFlowRound({ event: "parli" });
+        const sheet = round.sheets.find((s) => s.kind !== "cx")!;
+        // col 2 is the MGC, whose header spells out Member of the Government
+        // Constructive; a debater searches for it as "mgc".
+        sheet.data = [["", "", "warming turn"]];
+        const hits = searchCells(round, "mgc warming");
+        expect(hits.map((c) => c.text)).toEqual(["warming turn"]);
+        expect(hits[0].colName).toBe("Member of the Government Constructive");
+    });
+
     it("returns nothing when no cell matches", () => {
         expect(searchCells(roundWithCells(), "zzzzz")).toEqual([]);
     });

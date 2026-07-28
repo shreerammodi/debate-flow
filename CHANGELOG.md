@@ -77,6 +77,15 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   slots are PM, MG, LO, and MO, in the round and in an exported workbook. It
   opens with no cross-examination sheet, since a point of information
   interrupts a speech rather than taking a period of its own.
+- A speech answers to the abbreviation its column header shows, in both the
+  command palette and cell search, so "ns" reaches the Neg Summary and "mgc"
+  the Member of the Government Constructive. Either speech folded into a Block
+  reaches it too: "2nc" and "1nr" in Policy, "moc" and "lor" in Parliamentary.
+  Parliamentary speeches also answer to the Policy-style numbering some
+  debaters use for them, so "1ac" finds the Prime Minister, and to the
+  Constructive name some circuits give the opening speech, so "pmc" finds it
+  too. None of these names are displayed; the column header and the palette
+  still read the one name the speech goes by.
 - **Shared editing**, off by default under Settings > Collaboration. On, that
   pane grows a Session row: Share this round puts a one-time invite on screen
   to send however you already talk, Invite a partner dials a saved one, and

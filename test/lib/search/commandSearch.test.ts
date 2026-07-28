@@ -4,6 +4,8 @@ import { getEvent, speechOrder } from "@/lib/format/events";
 import { searchSpeechCommands } from "@/lib/search/commandSearch";
 
 const speeches = speechOrder(getEvent("policy"), "aff");
+const parli = speechOrder(getEvent("parli"), "aff");
+const pf = speechOrder(getEvent("pf"), "aff");
 
 describe("searchSpeechCommands", () => {
     it("lists every speech in speaking order for an empty query", () => {
@@ -24,5 +26,53 @@ describe("searchSpeechCommands", () => {
 
     it("returns nothing when a token is absent", () => {
         expect(searchSpeechCommands("9nr", speeches)).toEqual([]);
+    });
+
+    it("matches the abbreviation a column header shows", () => {
+        expect(searchSpeechCommands("mgc", parli).map((h) => h.speechId)).toEqual(["mgc"]);
+        expect(searchSpeechCommands("pmr", parli).map((h) => h.speechId)).toEqual(["pmr"]);
+    });
+
+    it("ranks the speech an abbreviation names above one that merely spells it", () => {
+        // "ns" also hides inside "Co-ns-tructive", so the Aff and Neg
+        // Constructives match too - below the Neg Summary, which is what a
+        // debater typing "ns" is asking for.
+        expect(searchSpeechCommands("ns", pf).map((h) => h.speechId)).toEqual(["ns", "ac", "nc"]);
+    });
+
+    it("finds a Block by either speech folded into it", () => {
+        for (const q of ["2nc", "1nr"]) {
+            expect(searchSpeechCommands(q, speeches).map((h) => h.speechId)).toEqual(["block"]);
+        }
+        for (const q of ["moc", "lor", "leader of opposition rebuttal"]) {
+            expect(searchSpeechCommands(q, parli).map((h) => h.speechId)).toEqual(["block"]);
+        }
+    });
+
+    it("finds a parli speech by the Policy-style name debaters also use", () => {
+        expect(searchSpeechCommands("1ac", parli).map((h) => h.speechId)).toEqual(["pm"]);
+        expect(searchSpeechCommands("1nc", parli).map((h) => h.speechId)).toEqual(["loc"]);
+    });
+
+    it("finds the Prime Minister by the Constructive name some circuits give it", () => {
+        for (const q of ["pmc", "prime minister constructive"]) {
+            expect(searchSpeechCommands(q, parli).map((h) => h.speechId)).toEqual(["pm"]);
+        }
+    });
+
+    it("returns both speeches a shared role name reaches, in speaking order", () => {
+        // "Leader of the Opposition Constructive" is the LOC's own name; the
+        // Block carries the phrase only inside its LOR alias.
+        expect(searchSpeechCommands("leader of opposition", parli).map((h) => h.speechId)).toEqual([
+            "loc",
+            "block",
+        ]);
+    });
+
+    it("never shows an alias, only the name the speech goes by", () => {
+        expect(searchSpeechCommands("mgc", parli)[0].label).toBe(
+            "Go to speech: Member of the Government Constructive",
+        );
+        expect(searchSpeechCommands("pmc", parli)[0].label).toBe("Go to speech: Prime Minister");
     });
 });
