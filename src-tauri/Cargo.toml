@@ -61,6 +61,16 @@ tauri-plugin-process = "2"
 # hands its argv to the running one so two copies never autosave over one file.
 tauri-plugin-single-instance = "2"
 
+# Not used here. iroh reaches wmi through netwatch, and from 0.18.2 wmi asks for
+# `windows >=0.59, <0.63` and `windows-core >=0.59, <0.63` as two independent
+# ranges. In a tree that also holds tauri, cargo settles the first against
+# tauri's `windows` 0.61 and the second against iroh's `windows-core` 0.62, and
+# wmi then applies 0.62's `#[implement]` macro to 0.61's `IWbemObjectSink` and
+# fails to compile. 0.18.1 asks for `^0.62` on both, so there is nothing to
+# split. Drop this pin once wmi ties the two together again.
+[target.'cfg(windows)'.dependencies]
+wmi = "=0.18.1"
+
 [dev-dependencies]
 # The loopback transport tests drive real endpoints, which needs a test runtime.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync"] }
