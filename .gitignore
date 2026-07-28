@@ -1,3 +1,6 @@
+# Agent worktrees
+.worktrees/
+
 # Core build/runtime artifacts
 node_modules/
 .next/
