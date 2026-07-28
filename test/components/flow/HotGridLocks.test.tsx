@@ -38,6 +38,14 @@ function press(hot: Handsontable, key: string) {
 }
 
 beforeEach(() => {
+    // A lock carries a wall-clock `heldAt` and `expire` drops it one second
+    // later, while mounting a real Handsontable over a 250-row sheet can
+    // outlast that on a slow machine: the cell then paints bare because the
+    // lock died, not because the decoration is wrong. A held peer refreshes
+    // every HEARTBEAT_MS in a real session, so freezing the clock is what a
+    // live holder looks like. Only Date is faked; the grid's own timers and
+    // the repaints they drive have to keep running.
+    vi.useFakeTimers({ toFake: ["Date"] });
     useFlowStore.setState({
         round,
         activeSheetId: sheetId,
@@ -50,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.useRealTimers();
     setLocks([]);
 });
 
