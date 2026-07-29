@@ -28,7 +28,7 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   row in a browser database, so you can move, copy, rename, back up, and sync
   your rounds with everything else you own. New flows are filed in
   `~/Documents/ebb` and autosave there from the first keystroke, exactly as
-  before; Save As puts one wherever you like. Writes are atomic - the file is
+  before. Save As puts one wherever you like. Writes are atomic - the file is
   written beside itself and moved into place - so a crash mid-round can cost
   the last half second, never the file. Flows already in ebb are moved into
   that folder automatically the first time you open this version, and the move
@@ -45,10 +45,10 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   folder before anything is written. Declining leaves them untouched and asks
   again next time, so nothing is stranded.
 - **Flows folder** is now a setting, under Settings > Editor. It decides where
-  new flows are filed; files already written stay where they are.
+  new flows are filed. Files already written stay where they are.
 - Double-clicking a `.ebb` file opens it in ebb. macOS and Linux also know a
   flow is a kind of JSON, so Quick Look previews one and any text editor will
-  open it; ebb stays the default. On Windows and Linux, opening a second flow
+  open it. ebb stays the default. On Windows and Linux, opening a second flow
   focuses the window you already have rather than starting a rival copy.
 
 ### Removed
@@ -84,7 +84,7 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   Parliamentary speeches also answer to the Policy-style numbering some
   debaters use for them, so "1ac" finds the Prime Minister, and to the
   Constructive name some circuits give the opening speech, so "pmc" finds it
-  too. None of these names are displayed; the column header and the palette
+  too. None of these names are displayed. The column header and the palette
   still read the one name the speech goes by.
 - **Shared editing**, off by default under Settings > Collaboration. On, that
   pane grows a Session row: Share this round puts a one-time invite on screen
@@ -94,17 +94,17 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   of you writes reaches the other, the cell someone has an editor open on is
   marked so nobody types over it, and each of you keeps a real `.ebb` of your
   own, so a dead laptop or a dead network costs nothing. A coach can be given
-  a view-only link instead. The switch opens those four actions and nothing
-  else. The app touches the network when you share a round or join one, and
-  at no other time. Off, the app binds no endpoint, dials no peer, publishes
-  no discovery record, and contacts no relay, which is a tested invariant
-  rather than a promise.
+  a view-only link instead. Switching it on does not connect you to anything.
+  ebb goes to the network when you share a round or join one, and at no other
+  time. Off, the app binds no endpoint, dials no peer, publishes no discovery
+  record, and contacts no relay, which is a tested invariant rather than a
+  promise.
 - **Listen for invites**, a second switch under Settings > Collaboration, off
   by default. On, ebb holds an endpoint open until you close the app. A saved
   partner can then offer you a round while you have no round open. Off, they
   send you an invite instead. macOS asks for local network access the first
   time an endpoint opens, and Windows asks about the firewall. You see that
-  question when you turn this on, not while ebb starts.
+  question when you turn this on, rather than during a launch.
 - **Contacts.** After a session, one click saves that partner, and inviting
   them again needs no link at all: pick them from Invite a saved partner and
   they get a corner message offering the round, with a Join that is theirs to
@@ -113,12 +113,13 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   them, change what they may do, or drop them.
 - **Partners can be saved before the first round.** Settings > Collaboration
   shows Your ID, the one identity this install answers to, with a Copy beside
-  it; send it to a partner and they add you under Contacts by pasting it with
+  it. Send it to a partner and they add you under Contacts by pasting it with
   a name. Two people on the way to a tournament can pair up on the bus and
   invite each other by name for the rest of the day. The ID is checked as you
   type it, opens nothing but a round you invite them to, and is the same one
   the app has always used, so nothing about an existing contact changes. ebb
-  reads it from your own identity file, so it is there with nothing connected.
+  reads it from your own identity file rather than from a live connection, so
+  it is there whether or not you are sharing.
 - **Your name travels with the round you share.** A session carries what
   Settings > Collaboration calls Your name, so a partner sees "Rin" in the
   chip and on the toast that offers to save you, instead of eight characters
@@ -147,7 +148,7 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   flow menu now asks only for the event: Policy, Public Forum (with its
   first-speaker submenu), or Lincoln-Douglas. Every flow holds both sides, so
   the choice only decided which sheet opened first, and the first speech
-  already decides that. Rounds you already have keep all of their sheets; the
+  already decides that. Rounds you already have keep all of their sheets. The
   Aff/Neg/Judge pill is gone from the dashboard cards, and exported filenames
   drop the role segment (`debate-flow-20260725.xlsx`).
 
@@ -219,7 +220,7 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
     - Send to CardMirror (`Meta+Shift+e` / `Ctrl+Shift+e`): pushes the selected
       cells into the document open in CardMirror, joined as paragraphs. Settings
       then Editor picks the role ebb tags the text with (card body, cite, or
-      inline); CardMirror decides how to type it from there.
+      inline). CardMirror decides how to type it from there.
     - Reveal in flow: CardMirror's "Reveal in Flow (ebb)" finds every cell a
       card produced, activates that sheet, selects the cell, and steps to the
       next match each time you run it.
