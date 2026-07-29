@@ -22,7 +22,7 @@ use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use parking_lot::Mutex;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -73,17 +73,13 @@ trait Events: Send + Sync + 'static {
 
 impl Events for AppHandle {
     fn emit(&self, event: Event) {
-        // A round is shared from one specific window; targeting the one the
-        // user last focused keeps another open window from seeing traffic
-        // for a session it has nothing to do with.
-        let target = crate::windows::target_window(self);
-        let _ = match (&target, event) {
-            (Some(w), Event::Peer(e)) => Emitter::emit(w, "collab:peer", e),
-            (Some(w), Event::Message(e)) => Emitter::emit(w, "collab:message", e),
-            (Some(w), Event::Closed(e)) => Emitter::emit(w, "collab:closed", e),
-            (None, Event::Peer(e)) => Emitter::emit(self, "collab:peer", e),
-            (None, Event::Message(e)) => Emitter::emit(self, "collab:message", e),
-            (None, Event::Closed(e)) => Emitter::emit(self, "collab:closed", e),
+        // A round is shared from one specific window; naming that window keeps
+        // another open window from seeing traffic for a session it has nothing
+        // to do with, and from adopting an inbound peer that is not its own.
+        let _ = match event {
+            Event::Peer(e) => crate::windows::emit_target(self, "collab:peer", e),
+            Event::Message(e) => crate::windows::emit_target(self, "collab:message", e),
+            Event::Closed(e) => crate::windows::emit_target(self, "collab:closed", e),
         };
     }
 }

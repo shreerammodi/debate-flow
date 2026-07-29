@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { saveOpenFlow } from "@/lib/commands/fileCommands";
 import { isDesktop } from "@/lib/update/adapter";
+import { listenHere } from "@/lib/windowEvents";
 
 /**
  * Answers the shell's flush request before the process exits.
@@ -24,13 +25,12 @@ export default function QuitGuard() {
         let mounted = true;
 
         void (async () => {
-            // Platform-only modules: the browser bundle must not pull them in.
-            const [{ invoke }, { listen }] = await Promise.all([
-                import("@tauri-apps/api/core"),
-                import("@tauri-apps/api/event"),
-            ]);
+            // Platform-only module: the browser bundle must not pull it in.
+            const { invoke } = await import("@tauri-apps/api/core");
 
-            const stop = await listen("app:flush", () => {
+            // Closing one window flushes only that window, so the shell aims its
+            // request; a full quit broadcasts, which reaches this listener too.
+            const stop = await listenHere("app:flush", () => {
                 void (async () => {
                     let saved = false;
                     try {

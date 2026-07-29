@@ -2,15 +2,18 @@ import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-let flushHandler: (() => void) | null = null;
+let flushHandler: ((e: { payload: unknown }) => void) | null = null;
 const unlisten = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 vi.mock("@tauri-apps/api/event", () => ({
-    listen: (name: string, cb: () => void) => {
+    listen: (name: string, cb: (e: { payload: unknown }) => void) => {
         if (name === "app:flush") flushHandler = cb;
         return Promise.resolve(unlisten);
     },
+}));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+    getCurrentWebviewWindow: () => ({ label: "win-0" }),
 }));
 
 const saveOpenFlow = vi.fn();
@@ -34,7 +37,7 @@ beforeEach(() => {
 async function requestQuit() {
     render(<QuitGuard />);
     await waitFor(() => expect(flushHandler).not.toBeNull());
-    flushHandler?.();
+    flushHandler?.({ payload: undefined });
 }
 
 describe("QuitGuard", () => {

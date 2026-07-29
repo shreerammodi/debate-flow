@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { isDesktop } from "@/lib/update/adapter";
+import { listenHere } from "@/lib/windowEvents";
 
 import { handleBridgeRequest } from "./inbound";
 
@@ -27,24 +28,20 @@ export function useBridgeHost(): void {
         let active = true;
         let unlisten: (() => void) | undefined;
 
-        // Tauri's api package only exists inside the desktop shell; a static
-        // import would drag it into the web bundle and break the export.
-        void import("@tauri-apps/api/event")
-            .then(({ listen }) =>
-                listen<BridgeRequest>("bridge:request", (e) => {
-                    const { id, route, body } = e.payload;
-                    const response = handleBridgeRequest(route, body);
-                    void import("@tauri-apps/api/core")
-                        .then(({ invoke }) => invoke("bridge_reply", { id, response }))
-                        .catch(() => {
-                            // The host times the request out on its own, and
-                            // the sender hears about it there.
-                        });
-                }),
-            )
+        void listenHere<BridgeRequest>("bridge:request", ({ id, route, body }) => {
+            const response = handleBridgeRequest(route, body);
+            // Dynamic because Tauri's api package only exists inside the desktop
+            // shell; a static import would break the web export.
+            void import("@tauri-apps/api/core")
+                .then(({ invoke }) => invoke("bridge_reply", { id, response }))
+                .catch(() => {
+                    // The host times the request out on its own, and
+                    // the sender hears about it there.
+                });
+        })
             .then((un) => {
                 if (active) unlisten = un;
-                else un?.();
+                else un();
             })
             .catch(() => {
                 // No listener means every inbound route times out, which the

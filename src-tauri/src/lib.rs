@@ -13,7 +13,7 @@ mod shutdown;
 mod sidecar;
 mod windows;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 /// `[os, arch]` of the running binary, e.g. `["macos", "aarch64"]`. The webview
 /// user agent can't be trusted for either (macOS reports "Intel" on Apple
@@ -146,8 +146,8 @@ pub fn run() {
             let id = event.id().0.as_str();
             if id == menu::QUIT_ID {
                 shutdown::request_all(app);
-            } else if let Some(window) = windows::target_window(app) {
-                let _ = window.emit("menu:command", id.to_string());
+            } else {
+                let _ = windows::emit_target(app, "menu:command", id.to_string());
             }
         })
         .on_window_event(|window, event| match event {

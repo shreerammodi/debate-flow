@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::{json, Value as Json};
 use subtle::ConstantTimeEq;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Handshake directory shared by every bridge-speaking app.
 const DIR_NAME: &str = "cardmirror-bridge";
@@ -328,16 +328,11 @@ fn call_renderer(app: &AppHandle, route: &str, body: Json) -> Reply {
     let state = app.state::<BridgeState>();
     state.pending.lock().insert(id.clone(), tx);
     // CardMirror pairs with whichever flow is in front, not every open one.
-    let sent = match crate::windows::target_window(app) {
-        Some(window) => window.emit(
-            "bridge:request",
-            json!({ "id": id, "route": route, "body": body }),
-        ),
-        None => app.emit(
-            "bridge:request",
-            json!({ "id": id, "route": route, "body": body }),
-        ),
-    };
+    let sent = crate::windows::emit_target(
+        app,
+        "bridge:request",
+        json!({ "id": id, "route": route, "body": body }),
+    );
     let reply = if sent.is_ok() {
         await_reply(&rx, RENDERER_TIMEOUT)
     } else {

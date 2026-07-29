@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { isDesktop } from "@/lib/update/adapter";
+import { listenHere } from "@/lib/windowEvents";
 
 import { MENU_COMMAND_IDS, menuAccelerators } from "./accelerator";
 import { SELECT_ALL_MENU_ID, dispatchMenuCommand } from "./menuDispatch";
@@ -25,14 +26,14 @@ export function useDesktopMenu(): void {
         let active = true;
         let unlisten: (() => void) | undefined;
 
-        import("@tauri-apps/api/event").then(({ listen }) =>
-            listen<string>("menu:command", (e) => {
-                dispatchMenuCommand(e.payload);
-            }).then((un) => {
-                if (active) unlisten = un;
-                else un();
-            }),
-        );
+        // A menu accelerator is meant for the window the user is looking at, so
+        // this listens only for the events the shell aims here.
+        void listenHere<string>("menu:command", (id) => {
+            dispatchMenuCommand(id);
+        }).then((un) => {
+            if (active) unlisten = un;
+            else un();
+        });
 
         return () => {
             active = false;

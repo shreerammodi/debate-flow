@@ -21,7 +21,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
 
 use parking_lot::Mutex;
-use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use serde::Serialize;
+use tauri::{
+    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 /// Chrome shared by every window; mirrors the single static entry
 /// tauri.conf.json declared before windows became dynamic.
@@ -89,6 +92,28 @@ pub fn target_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>>
     label
         .and_then(|l| app.get_webview_window(&l))
         .or_else(|| app.webview_windows().values().next().cloned())
+}
+
+/// Sends `event` to exactly one window: the one `target_window` picks, or every
+/// window when none has been observed yet.
+///
+/// Naming the label is what makes this single-recipient, and both halves have to
+/// do it. `Emitter::emit` fans out to every webview whatever handle it is called
+/// on - a `WebviewWindow` included - so emitting "through" a window narrows
+/// nothing; and a listener registered for the default `Any` target matches a
+/// narrowed emit regardless. The frontend half is `listenHere` in
+/// `src/lib/windowEvents.ts`, which every listener for one of these events uses.
+/// A broadcast still reaches those listeners, so an event every window must see
+/// stays a plain `emit`.
+pub fn emit_target<R: Runtime, S: Serialize + Clone>(
+    app: &AppHandle<R>,
+    event: &str,
+    payload: S,
+) -> tauri::Result<()> {
+    match target_window(app) {
+        Some(w) => app.emit_to(w.label(), event, payload),
+        None => app.emit(event, payload),
+    }
 }
 
 fn build<R: Runtime>(app: &AppHandle<R>, url: WebviewUrl) -> tauri::Result<WebviewWindow<R>> {

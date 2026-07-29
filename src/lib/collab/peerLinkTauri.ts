@@ -7,6 +7,8 @@
  * line of JSON back into a wire message.
  */
 
+import { listenHere } from "@/lib/windowEvents";
+
 import {
     parseWireMessage,
     type PeerConn,
@@ -63,13 +65,12 @@ async function defaultBridge(): Promise<TauriBridge> {
     // Dynamic so the browser bundle never pulls in Tauri's JS API, matching
     // how every other desktop touchpoint is gated.
     const core = await import("@tauri-apps/api/core");
-    const event = await import("@tauri-apps/api/event");
     return {
         invoke: (cmd, args) => core.invoke(cmd, args),
-        listen: async (name, cb) => {
-            const un = await event.listen(name, (e) => cb(e.payload));
-            return () => un();
-        },
+        // A session belongs to the window that started it. `listenHere` is what
+        // keeps a second window from seeing this one's traffic, or adopting an
+        // inbound peer that dialled it.
+        listen: (name, cb) => listenHere(name, cb),
     };
 }
 

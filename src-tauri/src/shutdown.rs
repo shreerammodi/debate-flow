@@ -164,7 +164,7 @@ pub fn request_window<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>)
     ) else {
         return;
     };
-    let _ = window.emit("app:flush", ());
+    let _ = app.emit_to(window.label(), "app:flush", ());
     arm_timeout(app, attempt);
 }
 

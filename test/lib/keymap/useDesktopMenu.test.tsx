@@ -15,6 +15,10 @@ vi.mock("@tauri-apps/api/event", () => ({
     }),
 }));
 
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+    getCurrentWebviewWindow: () => ({ label: "win-0" }),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({
     invoke: (...args: unknown[]) => invoke(...args),
 }));
