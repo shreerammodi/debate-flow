@@ -54,6 +54,26 @@ fn config_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("config.toml"))
 }
 
+/// Whether shared editing is switched on, read from the file the debater's
+/// switch writes rather than from the webview that asks.
+///
+/// The frontend's `collabLive()` is a UI gate and not a bound: a script that
+/// reaches `invoke` never went through it. This module knows nothing about any
+/// other setting on purpose, and this stays that way - it reads one boolean at
+/// the moment it is asked, so a switch thrown a second ago is honoured and no
+/// cached copy can lock a debater out of a feature they just turned on.
+/// Missing, unreadable or malformed is off, which is the shipped default.
+pub fn collab_enabled() -> bool {
+    let Some(path) = config_path() else {
+        return false;
+    };
+    collab_enabled_in(&std::fs::read_to_string(path).unwrap_or_default())
+}
+
+fn collab_enabled_in(toml: &str) -> bool {
+    parse_toml_to_json(toml).is_ok_and(|json| json["collab_enabled"] == Json::Bool(true))
+}
+
 // --- TOML <-> JSON -------------------------------------------------------------
 
 fn parse_toml_to_json(text: &str) -> Result<Json, String> {
@@ -287,5 +307,24 @@ mod tests {
         assert!(out.contains("default_zoom = 1.25"), "float written: {out}");
         let json = parse_toml_to_json(&out).unwrap();
         assert_eq!(json["default_zoom"], 1.25);
+    }
+
+    /// The one setting this layer reads rather than only carries, because the
+    /// Rust side of shared editing has to gate itself and cannot ask the
+    /// webview whether it is allowed to.
+    #[test]
+    fn shared_editing_is_off_unless_the_file_says_otherwise() {
+        assert!(collab_enabled_in("collab_enabled = true\n"));
+        assert!(!collab_enabled_in("collab_enabled = false\n"));
+        assert!(!collab_enabled_in("theme = \"dark\"\n"), "absent is off");
+        assert!(!collab_enabled_in(""), "an empty file is off");
+        assert!(
+            !collab_enabled_in("collab_enabled = \"yes\"\n"),
+            "a string is not a switch"
+        );
+        assert!(
+            !collab_enabled_in("collab_enabled = tru"),
+            "malformed is off"
+        );
     }
 }

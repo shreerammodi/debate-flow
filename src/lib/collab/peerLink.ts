@@ -226,6 +226,21 @@ export interface PeerConn {
     /** The far side's EndpointId. */
     id: string;
     connectionType(): "direct" | "relayed";
+    /**
+     * Takes an accepted connection for this window, which is what admitting
+     * its peer means.
+     *
+     * Every window hears every accepted connection, because the round one
+     * belongs to arrives in its hello and the shell reads no further than the
+     * bytes. A window that is not hosting that round answers with a refusal
+     * and hangs up, so writing cannot be what decides ownership: whichever
+     * handler ran first would win, and a refusal would take a guest away from
+     * the window admitting them. Only admission claims.
+     *
+     * Absent on a transport with no shell in front of it, where a connection
+     * has exactly one window and nothing to take it from.
+     */
+    claim?(): void;
     send(msg: WireMessage): void;
     onMessage(cb: (msg: WireMessage) => void): void;
     onClose(cb: () => void): void;

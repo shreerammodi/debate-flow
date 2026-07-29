@@ -80,6 +80,17 @@ interface Held {
     onMessage: ((m: WireMessage) => void)[];
     onClose: (() => void)[];
     open: boolean;
+    /**
+     * The claim this window has in flight, which every write queues behind.
+     *
+     * The shell refuses a write to a connection another window owns, and the
+     * ack admitting a peer goes out the moment the claim does. Two invokes are
+     * two IPC requests and nothing orders them, so the ack could reach the
+     * shell before the claim and be refused as somebody else's. Null once
+     * there is nothing to wait for, so an ordinary send still reaches the
+     * shell in the same turn.
+     */
+    claiming: Promise<unknown> | null;
 }
 
 export async function createPeerLink(
@@ -119,20 +130,32 @@ export async function createPeerLink(
             kind,
             onMessage: [],
             onClose: [],
+            claiming: null,
             conn: {
                 id: remote,
                 connectionType: () => entry.kind,
+                claim() {
+                    if (!entry.open || entry.claiming) return;
+                    // A claim the shell refuses means another window admitted
+                    // this peer first, so the connection is theirs and this
+                    // side has nothing left to say on it. Dropping it is the
+                    // same answer a refused send gets, for the same reason.
+                    entry.claiming = shell.invoke("collab_claim", { connId });
+                    void entry.claiming.catch(() => dropConn(connId));
+                },
                 send(msg) {
                     if (!entry.open) return;
+                    const write = () =>
+                        shell.invoke("collab_send", { connId, payload: JSON.stringify(msg) });
                     // The shell refuses a send for one reason: it is not
                     // holding this connection. A peer that quit and an endpoint
                     // that stopped both land here, neither is retryable, and a
                     // peer going away is ordinary. So the link is dropped
                     // rather than left claiming to be up, and nothing about it
                     // reaches the debater as an error.
-                    void shell
-                        .invoke("collab_send", { connId, payload: JSON.stringify(msg) })
-                        .catch(() => dropConn(connId));
+                    void (entry.claiming ? entry.claiming.then(write) : write()).catch(() =>
+                        dropConn(connId),
+                    );
                 },
                 onMessage(cb) {
                     entry.onMessage.push(cb);
@@ -143,9 +166,14 @@ export async function createPeerLink(
                 close() {
                     if (!entry.open) return;
                     entry.open = false;
-                    // Already gone on the shell's side is the ordinary way a
-                    // close races a peer that hung up first.
-                    void shell.invoke("collab_close", { connId }).catch(() => {});
+                    const hangUp = () => shell.invoke("collab_close", { connId });
+                    // Behind the claim for the reason a write is: the shell
+                    // refuses a hang-up from a window that does not own the
+                    // connection, and a close that overtook this window's own
+                    // claim would be refused as somebody else's. Already gone
+                    // on the shell's side is the ordinary way a close races a
+                    // peer that hung up first, so nothing is made of either.
+                    void (entry.claiming ? entry.claiming.then(hangUp) : hangUp()).catch(() => {});
                     held.delete(connId);
                     for (const cb of entry.onClose) cb();
                 },

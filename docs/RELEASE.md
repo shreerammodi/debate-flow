@@ -18,11 +18,14 @@ links carry the internals.
 | --------------- | --------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
 | **Web build**   | Static export in `out/`                 | Vercel CDN, no backend                                  | User reloads; the CDN serves the newest tag                       |
 | **Desktop app** | Tauri 2 shell wrapping the same `out/`  | Signed installers, GitHub Release                       | In-app signed auto-updater, install on user confirm               |
-| **Nightly**     | The same desktop app, built from `main` | Unsigned installers on the rolling `nightly` prerelease | It does not. Carries no updater artifacts; you download a new one |
+| **Nightly**     | The same desktop app, built from `main` | Unsigned installers on the rolling `nightly` prerelease | Updates itself to the next tagged release, not to a newer nightly |
 
 Both products ship from one tag, so a version number means the same thing on
 both. The nightly channel sits outside that: it is the current tip of `main`,
-it is not a release, and it is not something to run in a round.
+it is not a release, and it is not something to run in a round. It carries no
+updater artifacts of its own, so no nightly is ever served as an update to
+anyone, and it reads the same stable manifest a tagged build does, so the
+first release past it is what it offers to install.
 
 Local-first invariant holds for all three: no backend, no telemetry, no
 accounts. Two network paths exist, and the user opts into each one:
@@ -52,14 +55,20 @@ Then commit all four, tag `vX.Y.Z`, and push with `git push --follow-tags`.
 
 ## 3. Continuous integration (`.github/workflows/ci.yml`)
 
-Runs on every push to `main` and every PR. Two parallel jobs, both on
+Runs on every push to `main` and every PR. Three parallel jobs, all on
 `ubuntu-22.04`:
 
 - **`web`** - `npm ci -> npm test -> npm run lint -> npm run build`. Gates all
   logic, including the pure update-policy tests in `src/lib/update/*.test.ts`.
-- **`desktop`** - `npm ci -> npm run build -> cargo check`. The web build runs
-  first because Tauri's `generate_context!` reads `frontendDist: ../out`, which
-  must exist for `cargo check` to compile.
+- **`desktop`** - `npm ci -> npm run build -> cargo check -> cargo test`. The
+  web build runs first because Tauri's `generate_context!` reads
+  `frontendDist: ../out`, which must exist for `cargo check` to compile.
+- **`advisory`** - `npm audit --audit-level=critical` and `cargo audit` against
+  `src-tauri/Cargo.lock`. Both read a lock file and query a database, so the
+  job runs no `npm ci` and no build, which keeps it clear of every package's
+  install script. The npm threshold is critical rather than high because the
+  highs open against this tree are unreachable and npm offers only major
+  downgrades for them; the reasoning is in the workflow beside the step.
 
 CI does **not** build full installers and does **not** deploy the web build.
 Installers come from the nightly workflow (section 4) and the release workflow

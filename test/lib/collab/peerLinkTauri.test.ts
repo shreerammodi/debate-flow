@@ -206,6 +206,93 @@ describe("createPeerLink", () => {
 });
 
 /**
+ * An accepted connection reaches every window, so the shell keeps it ownerless
+ * until a window admits its peer. A claim is how that window says so, and it
+ * is the precondition for everything this window says on it afterwards.
+ */
+describe("claiming an accepted connection", () => {
+    /** An inbound peer, which is the only kind a window has to claim. */
+    async function inbound(): Promise<PeerConn> {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        let conn: PeerConn | null = null;
+        await link.listen((c) => (conn = c));
+        fake.emit("collab:peer", { connId: "c7", endpointId: "sam", connectionType: "direct" });
+        return conn!;
+    }
+
+    it("names the connection to the shell", async () => {
+        const conn = await inbound();
+        conn.claim!();
+        expect(fake.calls.filter((c) => c.cmd === "collab_claim")).toEqual([
+            { cmd: "collab_claim", args: { connId: "c7" } },
+        ]);
+    });
+
+    it("claims once, however many times it is asked", async () => {
+        const conn = await inbound();
+        conn.claim!();
+        conn.claim!();
+        expect(fake.calls.filter((c) => c.cmd === "collab_claim")).toHaveLength(1);
+    });
+
+    // Two invokes are two IPC requests and nothing orders them, so an ack sent
+    // in the same turn as the claim could reach the shell first and be refused
+    // as another window's, which is the guest's admission lost.
+    it("holds the ack back until the claim has landed", async () => {
+        const conn = await inbound();
+        conn.claim!();
+        conn.send({ type: "helloAck", ok: true });
+        expect(fake.calls.some((c) => c.cmd === "collab_send")).toBe(false);
+
+        await vi.waitFor(() => expect(fake.calls.some((c) => c.cmd === "collab_send")).toBe(true));
+        expect(fake.calls.map((c) => c.cmd)).toEqual([
+            "collab_start",
+            "collab_claim",
+            "collab_send",
+        ]);
+    });
+
+    it("holds a hang-up back the same way", async () => {
+        const conn = await inbound();
+        conn.claim!();
+        conn.close();
+        expect(fake.calls.some((c) => c.cmd === "collab_close")).toBe(false);
+
+        await vi.waitFor(() => expect(fake.calls.some((c) => c.cmd === "collab_close")).toBe(true));
+    });
+
+    // Refused means another window admitted this peer first, so the connection
+    // is theirs: nothing more goes out on it from here, and this window does
+    // not hang up on somebody else's guest on its way out.
+    it("drops a connection the shell will not hand over, and touches it no further", async () => {
+        const conn = await inbound();
+        const onClose = vi.fn();
+        conn.onClose(onClose);
+
+        fake.refuse.add("collab_claim");
+        conn.claim!();
+        conn.send({ type: "helloAck", ok: true });
+        await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+
+        conn.close();
+        expect(fake.calls.some((c) => c.cmd === "collab_send")).toBe(false);
+        expect(fake.calls.some((c) => c.cmd === "collab_close")).toBe(false);
+    });
+
+    // A refusal answers and hangs up without claiming, which the shell permits
+    // on a connection nobody owns. Queueing that behind a claim it never makes
+    // would leave the peer waiting on an answer already written.
+    it("does not delay a window that claims nothing", async () => {
+        const conn = await inbound();
+        conn.send({ type: "helloAck", ok: false, reason: "invited" });
+        conn.close();
+        expect(fake.calls.some((c) => c.cmd === "collab_send")).toBe(true);
+        expect(fake.calls.some((c) => c.cmd === "collab_close")).toBe(true);
+        expect(fake.calls.some((c) => c.cmd === "collab_claim")).toBe(false);
+    });
+});
+
+/**
  * A peer chooses every byte it sends, and everything above the transport
  * reads these fields without asking: the secret comparison indexes the
  * ticket, the vector walks the document. A line that does not conform to its

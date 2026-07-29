@@ -413,6 +413,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 return;
             }
             if (msg.type !== "hello") return;
+            // Admitting a peer is what makes this window answerable for the
+            // connection, and the only place that says so. Every window hears
+            // an accepted connection, because the round arrives in the hello,
+            // and the windows that are not hosting it refuse above - so a
+            // refusal must leave ownership alone or it takes this guest away.
+            conn.claim?.();
             if (verdict.spendSecret) policy.pending = null;
             if (!policy.knownPeers.includes(remoteId)) policy.knownPeers.push(remoteId);
             policy.roles[remoteId] = verdict.role;

@@ -65,13 +65,30 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       explicit discovery and relay config plus a dial per known peer; off, it is
       empty, so the positive control is what makes the empty recorder mean the
       gate held. A relay is only reachable through a transport, and off there is
-      none. The other routes onto the network gate on the same
-      `collabSettings()` and are held to the off case beside their own behavior
-      in `join.test.ts`, `inviteListener.test.ts`, `runtimeInvites.test.ts`, and
-      `persist.test.ts`; the last two also hold the idle listener to the case
-      where shared editing is on and `collabListenEnabled` is off. DNS-based
-      peer discovery stays disabled in every state, so an idle ebb publishes
-      nothing about itself.
+      none. Two gates rather than one, because they answer different
+      questions: `collabLive()` is what the routes a debater takes by hand
+      ask, `startForRound` (`src/lib/collab/runtime.ts:166`) and `joinRound`
+      (`join.ts:78`), and `collabSettings()` is what code already holding a
+      transport reads, at `inviteListener.ts:65`, `persist.ts:35`, and
+      `runtime.ts:264`. Every one of them is held to the off case beside its
+      own behavior in `join.test.ts`, `inviteListener.test.ts`,
+      `runtimeInvites.test.ts`, and `persist.test.ts`; the two that also hold
+      the idle listener to the case where shared editing is on and
+      `collabListenEnabled` is off are `inviteListener.test.ts` and
+      `runtimeInvites.test.ts`. Reopening a round that was shared before is
+      the one route no debater asks for, since a `.ebb` carries its peers in
+      its sidecar and a double-click is the whole gesture, so `resumeSession`
+      reads `collabSettings().listen` before it reaches `startForRound`'s
+      `collabLive()`: shared editing on and Listen for invites off binds
+      nothing on a cold launch. That route is held to both off cases in
+      `runtimeInvites.test.ts`, under the positive control the other four
+      have. Switching the master off while a session is already running tears
+      it down rather than waiting for the next route to ask
+      (`useInviteWatch.ts:42-47`, `test/lib/collab/useInviteWatch.test.tsx`);
+      a switch thrown while one is still binding is not covered, because the
+      gate is read before the await and the handle is assigned after it.
+      DNS-based peer discovery stays disabled in every state, so an idle ebb
+      publishes nothing about itself.
     - A peer link carries one round and nothing else: no folder listing, no path
       access, no arbitrary read. Hold it to the standard
       `docs/security-review.md` sets for the loopback bridge.
@@ -79,8 +96,10 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
   never directly through `invoke` or a Tauri plugin. That is what lets the
   session, recents, and migration be tested against `flowFsMemory` instead of a
   mocked IPC layer. `tauri-plugin-fs` is deliberately not installed: flow I/O
-  uses the seven narrow commands in `src-tauri/src/flowfile.rs` so the webview
-  never holds a general filesystem capability.
+  uses the six narrow commands in `src-tauri/src/flowfile.rs` so the webview
+  never holds a general filesystem capability. `src-tauri/src/sidecar.rs` adds
+  the two that persist a collaboration replica, and neither of those takes a
+  path either.
 - Keyboard-first UX is a core product value - preserve and extend keybindings
   rather than replacing them with mouse-only flows.
 

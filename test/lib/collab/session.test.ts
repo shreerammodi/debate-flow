@@ -687,3 +687,76 @@ describe("a peer's claim on a cell", () => {
         await host.stop();
     });
 });
+
+/**
+ * Every window hears every accepted connection, because the round it belongs
+ * to arrives in the hello and the shell reads no further than the bytes. So
+ * an accepted connection is nobody's until a window says the peer is theirs,
+ * and admitting them is the one thing that says it. Writing is not: a window
+ * with a different flow open answers the same hello with a refusal, and
+ * latching on that write left the refusing window holding a guest it then hung
+ * up on, with the host's own ack refused as another window's.
+ */
+describe("what admitting a peer tells the shell", () => {
+    /** The memory transport with the shell's claim on it, which only the
+     *  desktop adapter has. */
+    function claiming(endpointId: string, claimed: string[]): PeerLinkFactory {
+        return async (config) => {
+            const link = await net.create(endpointId)(config);
+            return {
+                ...link,
+                async listen(onPeer: (conn: PeerConn) => void) {
+                    await link.listen((conn) =>
+                        onPeer({ ...conn, claim: () => claimed.push(conn.id) }),
+                    );
+                },
+            };
+        };
+    }
+
+    /** Dials the host with a hello and lets the handshake run out. */
+    async function greet(from: string, msg: WireMessage): Promise<void> {
+        const link = await net.create(from)({ discovery: "mdns", relay: true });
+        const conn = await link.dial(ALEX);
+        conn.send(msg);
+        await settle();
+    }
+
+    it("claims the connection of a peer it lets in", async () => {
+        const claimed: string[] = [];
+        const host = (await open(ALEX, { createLink: claiming(ALEX, claimed) }))!;
+        const secret = host.share("partner").secret;
+
+        await greet(SAM, {
+            type: "hello",
+            protocol: PROTOCOL_MAJOR,
+            app: "0.11.0",
+            endpointId: SAM,
+            roundId: shared.id,
+            role: "partner",
+            capabilities: [],
+            ticket: secret,
+        });
+
+        expect(host.peers()).toHaveLength(1);
+        expect(claimed).toEqual([SAM]);
+    });
+
+    it("claims nothing from a peer it refuses", async () => {
+        const claimed: string[] = [];
+        const host = (await open(ALEX, { createLink: claiming(ALEX, claimed) }))!;
+
+        await greet(STRANGER, {
+            type: "hello",
+            protocol: PROTOCOL_MAJOR,
+            app: "0.11.0",
+            endpointId: STRANGER,
+            roundId: shared.id,
+            role: "partner",
+            capabilities: [],
+        });
+
+        expect(host.peers()).toEqual([]);
+        expect(claimed).toEqual([]);
+    });
+});

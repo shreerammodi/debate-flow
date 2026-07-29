@@ -159,10 +159,11 @@ struct Conn {
     writer: tokio::task::JoinHandle<()>,
     reader: tokio::task::JoinHandle<()>,
     /// The window this connection's events go to, and the only window that may
-    /// write to it. A dial knows its window from the call that made it. An
-    /// accepted connection has none until a window writes to it, because the
-    /// round it belongs to is not knowable here; a window that claims none of
-    /// it may still hang up on it, which is what a refusal is.
+    /// write to it or hang up on it. A dial knows its window from the call that
+    /// made it. An accepted connection has none until a window claims it,
+    /// because the round it belongs to is not knowable here; while it has none
+    /// any window may answer it and any window may hang up on it, which is what
+    /// a refusal is.
     owner: Option<String>,
 }
 
@@ -488,9 +489,8 @@ fn spawn_conn(
                     if line.is_empty() {
                         continue;
                     }
-                    // An accepted connection is claimed by the first window
-                    // that writes to it, so the map is consulted until one
-                    // has.
+                    // An accepted connection is claimed by the window that
+                    // admits its peer, so the map is consulted until one has.
                     if route.is_none() {
                         route = reader_conns
                             .lock()
@@ -566,7 +566,36 @@ pub fn collab_start(
     mdns: bool,
 ) -> Result<String, String> {
     let holder = window.label().to_string();
-    start(state.inner(), Arc::new(app), relay, mdns, &holder)
+    start_gated(
+        state.inner(),
+        Arc::new(app),
+        relay,
+        mdns,
+        &holder,
+        crate::config::collab_enabled(),
+    )
+}
+
+/// The bind, behind the switch the debater set.
+///
+/// The gate sits on the command rather than on `start`, because the command is
+/// the only way into this module from a webview and the suite drives the whole
+/// protocol through `start` with no config file in sight. What it answers is
+/// script execution in the webview: `collabLive()` refuses the route a debater
+/// takes and a script does not take that route. One check covers the surface,
+/// because a dial and a send both need an endpoint this refused to bind.
+fn start_gated(
+    state: &CollabState,
+    events: Arc<dyn Events>,
+    relay: bool,
+    mdns: bool,
+    holder: &str,
+    enabled: bool,
+) -> Result<String, String> {
+    if !enabled {
+        return Err("Shared editing is off".to_string());
+    }
+    start(state, events, relay, mdns, holder)
 }
 
 /// Binds the endpoint, or takes a share of the one already bound.
@@ -770,20 +799,18 @@ pub fn collab_send(
     send(state.inner(), window.label(), &conn_id, payload)
 }
 
-/// Writes one line to one peer, claiming the connection for this window when
-/// nothing has claimed it yet.
+/// Writes one line to one peer.
 fn send(state: &CollabState, holder: &str, conn_id: &str, payload: String) -> Result<(), String> {
     let held = state.live.lock();
     let live = held.as_ref().ok_or("No collaboration session is running")?;
-    let mut conns = live.conns.lock();
-    let conn = conns.get_mut(conn_id).ok_or("That peer is gone")?;
-    // Only the window that admitted an accepted connection answers its hello,
-    // so the first window to write to one is its owner. After that the
-    // connection's events go to that window alone and no other window writes
-    // to it: a script naming somebody else's connection is refused rather than
-    // forging a message onto their round.
-    let owner = conn.owner.get_or_insert_with(|| holder.to_string());
-    if owner.as_str() != holder {
+    let conns = live.conns.lock();
+    let conn = conns.get(conn_id).ok_or("That peer is gone")?;
+    // Writing does not claim. An accepted connection reaches every window, and
+    // a window that is not hosting the round the hello names answers it with a
+    // refusal, so the first write is not always the admitting window's:
+    // latching on it would hand a round's guest to a window that just hung up
+    // on them. Unclaimed, any window may answer; claimed, only the owner may.
+    if conn.owner.as_deref().is_some_and(|owner| owner != holder) {
         return Err("That peer belongs to another window".to_string());
     }
     match conn.tx.try_send(payload) {
@@ -791,6 +818,40 @@ fn send(state: &CollabState, holder: &str, conn_id: &str, payload: String) -> Re
         Err(mpsc::error::TrySendError::Full(_)) => Err("That peer is not keeping up".to_string()),
         Err(mpsc::error::TrySendError::Closed(_)) => Err("That peer is gone".to_string()),
     }
+}
+
+#[tauri::command]
+pub fn collab_claim(
+    window: WebviewWindow,
+    state: State<'_, CollabState>,
+    conn_id: String,
+) -> Result<(), String> {
+    claim(state.inner(), window.label(), &conn_id)
+}
+
+/// Takes an accepted connection for the window that admitted its peer.
+///
+/// The shell cannot know whose a connection is when it accepts one: the round
+/// arrives in the hello, which is read above this module. So an accepted
+/// connection starts owned by nobody and its events reach every window.
+/// Admission is the moment one window becomes answerable for it, and this is
+/// how that window says so. A connection another window holds is refused
+/// rather than taken over, or a second window's refusal would still cost the
+/// host its guest.
+fn claim(state: &CollabState, holder: &str, conn_id: &str) -> Result<(), String> {
+    let held = state.live.lock();
+    let live = held.as_ref().ok_or("No collaboration session is running")?;
+    let mut conns = live.conns.lock();
+    let conn = conns.get_mut(conn_id).ok_or("That peer is gone")?;
+    if let Some(owner) = &conn.owner {
+        // A repeat from the window already holding it is not a takeover.
+        if owner == holder {
+            return Ok(());
+        }
+        return Err("That peer belongs to another window".to_string());
+    }
+    conn.owner = Some(holder.to_string());
+    Ok(())
 }
 
 #[tauri::command]
@@ -1947,10 +2008,10 @@ mod loopback {
 
     /// An accepted connection cannot be addressed at all until a window claims
     /// it, because the round it belongs to arrives in its hello and that is
-    /// read above this module. So it starts on a broadcast, and the first
-    /// window to answer takes it off one.
+    /// read above this module. So it starts on a broadcast, and the window that
+    /// admits its peer takes it off one.
     #[test]
-    fn an_accepted_connection_leaves_the_broadcast_once_a_window_answers() {
+    fn an_accepted_connection_leaves_the_broadcast_once_a_window_claims_it() {
         let state = CollabState::default();
         let events = Arc::new(Recorder::default());
         start(&state, events.clone(), false, false, "session").expect("bind");
@@ -1966,13 +2027,7 @@ mod loopback {
             "nothing knows whose connection this is yet"
         );
 
-        send(
-            &state,
-            "admitting-window",
-            &conn_id,
-            "{\"type\":\"helloAck\"}".to_string(),
-        )
-        .expect("ack");
+        claim(&state, "admitting-window", &conn_id).expect("claim");
         guest.write(&mut send_stream, b"{\"type\":\"state\"}\n");
         events.wait("the second line", |seen| {
             seen.message_routes(&conn_id).len() >= 2
@@ -1981,7 +2036,7 @@ mod loopback {
         assert_eq!(
             events.message_routes(&conn_id)[1],
             Some("admitting-window".to_string()),
-            "the window that answered owns it from then on"
+            "the window that admitted the peer owns it from then on"
         );
 
         close(&state, "admitting-window", &conn_id).expect("close");
@@ -1991,6 +2046,63 @@ mod loopback {
             vec![Some("admitting-window".to_string())],
             "the close reaches the owner too"
         );
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// The window hosting a round is not always the first to write on a
+    /// connection about it: an accepted connection reaches every window, and a
+    /// window with a different flow open reads the same hello as a saved
+    /// contact offering a round and answers it with a refusal. Latching on that
+    /// write handed the guest to the refusing window, which then hung up, and
+    /// the host's own ack was refused as another window's.
+    #[test]
+    fn a_window_that_refuses_a_peer_does_not_take_it_from_the_one_that_admits_it() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (_conn, mut send_stream, _recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send_stream, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        send(
+            &state,
+            "refusing-window",
+            &conn_id,
+            "{\"type\":\"helloAck\",\"ok\":false}".to_string(),
+        )
+        .expect("a refusal is answered, not claimed");
+
+        claim(&state, "admitting-window", &conn_id).expect("the host still gets its guest");
+        assert_eq!(
+            claim(&state, "refusing-window", &conn_id).unwrap_err(),
+            "That peer belongs to another window",
+            "and a second claim does not steal it back"
+        );
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// A refusal hangs up, and it never claims what it refused, so hanging up
+    /// on a connection nobody has claimed has to stay open to any window.
+    #[test]
+    fn a_window_that_owns_nothing_may_hang_up_on_an_unclaimed_peer() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (conn, mut send_stream, _recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send_stream, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        close(&state, "refusing-window", &conn_id).expect("a refusal hangs up");
+        assert!(!holds(&state, &conn_id));
+        wait_closed(&conn);
 
         stop(&state, "session").expect("stop");
     }
@@ -2010,13 +2122,7 @@ mod loopback {
         events.wait("the hello", |seen| !seen.messages().is_empty());
         let conn_id = events.peers()[0].clone();
 
-        send(
-            &state,
-            "owner",
-            &conn_id,
-            "{\"type\":\"helloAck\"}".to_string(),
-        )
-        .expect("ack");
+        claim(&state, "owner", &conn_id).expect("the admitting window claims it");
 
         assert_eq!(
             send(
@@ -2034,6 +2140,28 @@ mod loopback {
         );
         assert!(holds(&state, &conn_id), "the owner still has its peer");
         assert!(conn.close_reason().is_none(), "and the peer is still up");
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// `collabLive()` is what a debater's click goes through, and a script does
+    /// not click. So the command a script would call refuses on its own account
+    /// with shared editing off, and refuses before anything binds: a bound
+    /// endpoint is what turns webview script execution into a socket, a relay
+    /// contact and a multicast announcement.
+    #[test]
+    fn the_start_command_binds_nothing_with_shared_editing_off() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+
+        assert_eq!(
+            start_gated(&state, events.clone(), true, true, "session", false).unwrap_err(),
+            "Shared editing is off"
+        );
+        assert!(state.live.lock().is_none(), "nothing was bound");
+
+        start_gated(&state, events.clone(), false, false, "session", true).expect("bind");
+        assert!(state.live.lock().is_some(), "the switch is what gates it");
 
         stop(&state, "session").expect("stop");
     }

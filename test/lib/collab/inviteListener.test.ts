@@ -4,7 +4,7 @@ import type { Contacts } from "@/lib/collab/contacts";
 import { helloFrom } from "@/lib/collab/handshake";
 import { INVITED, type InviteNotice } from "@/lib/collab/invite";
 import { startInviteListener } from "@/lib/collab/inviteListener";
-import type { WireMessage } from "@/lib/collab/peerLink";
+import type { PeerConn, PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -19,9 +19,9 @@ let openRound: string | null;
 /** The pending handshake deadline, so a test can reach it without a clock. */
 let deadline: (() => void) | null;
 
-function listener(table: Contacts = contacts) {
+function listener(table: Contacts = contacts, createLink: PeerLinkFactory = net.create("me")) {
     return startInviteListener({
-        createLink: net.create("me"),
+        createLink,
         contacts: () => table,
         openRoundId: () => openRound,
         onInvite: (notice) => heard.push(notice),
@@ -246,5 +246,48 @@ describe("a peer arriving about the round this window has open", () => {
         const { answers } = await offer(ALEX, "Round 3", "their-round");
         expect(heard.map((n) => n.roundId)).toEqual(["their-round"]);
         expect(answers).toEqual([{ type: "helloAck", ok: false, reason: INVITED }]);
+    });
+});
+
+/**
+ * The shell keeps an accepted connection ownerless until a window says the
+ * peer is theirs, because the round arrives in the hello and the shell reads
+ * no further than the bytes. This listener answers connections it is refusing,
+ * and a refusal that took ownership would hand the guest the hosting window
+ * just admitted to the window that hung up on them.
+ */
+describe("what refusing an invite tells the shell", () => {
+    /** The memory transport with the shell's claim on it, which only the
+     *  desktop adapter has. */
+    function claiming(claimed: string[]): PeerLinkFactory {
+        return async (config) => {
+            const link = await net.create("me")(config);
+            return {
+                ...link,
+                async listen(onPeer: (conn: PeerConn) => void) {
+                    await link.listen((conn) =>
+                        onPeer({ ...conn, claim: () => claimed.push(conn.id) }),
+                    );
+                },
+            };
+        };
+    }
+
+    it("answers and hangs up without taking the connection", async () => {
+        const claimed: string[] = [];
+        await listener(contacts, claiming(claimed));
+        const { answers, closed } = await offer(ALEX, "Round 3");
+
+        expect(answers).toEqual([{ type: "helloAck", ok: false, reason: INVITED }]);
+        expect(closed()).toBe(true);
+        expect(claimed).toEqual([]);
+    });
+
+    it("takes nothing from a stranger it never answers either", async () => {
+        const claimed: string[] = [];
+        await listener(contacts, claiming(claimed));
+        await offer(STRANGER, "Round 3");
+
+        expect(claimed).toEqual([]);
     });
 });

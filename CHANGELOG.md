@@ -152,6 +152,28 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   Aff/Neg/Judge pill is gone from the dashboard cards, and exported filenames
   drop the role segment (`debate-flow-20260725.xlsx`).
 
+### Fixed
+
+- Opening a flow you once shared no longer puts you back on the network. A
+  `.ebb` remembers the partners it was shared with, and reopening it - from
+  Finder, from a file association, from a second launch - reconnected to every
+  one of them even with Listen for invites off, which is the switch that is
+  supposed to decide whether ebb is reachable when you have not asked for it. A
+  reopen asks for that switch now, so a round you shared in October does not
+  put this laptop on the local network in March because you double-clicked it,
+  and the macOS local network prompt arrives when you turn the switch on rather
+  than during a launch.
+- A partner cannot choose where a file lands on your disk. Joining a round
+  built the new flow's filename out of the tournament and event names the host
+  sent, and a host that sent a path instead of an event name could file that
+  flow outside your flows folder, where it would keep autosaving. The name is
+  cut down to a plain filename before anything is written, whichever way the
+  flow is created.
+- A nightly build says what it actually does. Its release notes claimed a
+  nightly does not update itself. It does: it reads the same update feed a
+  tagged build reads, so it offers you the next tagged release. What stays true
+  is the other direction - a nightly is never served as an update to anyone.
+
 ## [0.7.2] - 2026-07-25
 
 ### Added
