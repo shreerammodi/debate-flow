@@ -171,10 +171,14 @@ impl Conn {
     /// writer: the QUIC connection and the reader outlive it, so a peer the
     /// host refused would hold its connection and keep pumping messages into
     /// the webview until it chose to hang up.
+    ///
+    /// The reader is left to end itself. Closing the connection is what wakes
+    /// it, and it is the only thing that reports the close upward, so aborting
+    /// it here is a race: win it and the webview is never told the peer went
+    /// away, and the chip reads connected over a connection that is gone.
     fn close(self) {
         self.conn.close(0u32.into(), b"closed");
         self.writer.abort();
-        self.reader.abort();
     }
 }
 
@@ -508,7 +512,12 @@ fn spawn_conn(
                 }
             }
         }
-        reader_conn.closed().await;
+        // Ending the read means this link is over, so it is closed here rather
+        // than waited on. A peer that finishes its send stream and keeps
+        // answering keepalives never closes the connection, and waiting for it
+        // to would park this task, its entry and both pumps for good - which
+        // the connection cap turns into a lockout at the thirty-second one.
+        reader_conn.close(0u32.into(), b"closed");
         if let Some(held) = reader_conns.lock().remove(&reader_id) {
             route = route.or(held.owner);
         }
@@ -1528,6 +1537,15 @@ mod loopback {
         fn write(&self, send: &mut iroh::endpoint::SendStream, bytes: &[u8]) {
             let _ = self.runtime.block_on(async { send.write_all(bytes).await });
         }
+
+        /// Says this peer has nothing more to send, without hanging up.
+        fn finish(&self, send: &mut iroh::endpoint::SendStream) {
+            let _ = send.finish();
+            // The FIN rides the next flush, which the host only sees once this
+            // runtime drives the connection again.
+            self.runtime
+                .block_on(async { tokio::time::sleep(Duration::from_millis(50)).await });
+        }
     }
 
     fn live_addr(state: &CollabState) -> EndpointAddr {
@@ -1619,6 +1637,34 @@ mod loopback {
         events.wait("the second peer's hello", |seen| {
             !seen.messages().is_empty()
         });
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// A peer that finishes its send stream is done talking, and the host has
+    /// to let go of it. Waiting for the peer to close the connection instead
+    /// hands it the choice: answer keepalives and the entry, both pumps and the
+    /// task are held for good, which the connection cap turns from a leak into
+    /// a lockout at the thirty-second one.
+    #[test]
+    fn a_peer_that_finishes_its_stream_is_let_go_of() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (conn, mut send, _recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        // Done sending, and holding the connection open regardless.
+        guest.finish(&mut send);
+
+        events.wait("the close", |seen| !seen.closed().is_empty());
+        assert_eq!(events.closed(), vec![conn_id.clone()]);
+        assert!(!holds(&state, &conn_id), "the entry goes with the read");
+        drop(conn);
 
         stop(&state, "session").expect("stop");
     }
