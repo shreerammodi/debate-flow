@@ -23,7 +23,7 @@ use std::sync::LazyLock;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::{
-    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, Runtime, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
 /// Chrome shared by every window; mirrors the single static entry
@@ -116,6 +116,26 @@ pub fn emit_target<R: Runtime, S: Serialize + Clone>(
     }
 }
 
+/// Whether the webview may navigate to `url`.
+///
+/// Tauri permits every navigation by default, and a peer's RFD note reaches the
+/// preview as sanitized HTML that keeps its `http(s)` anchors. A click that
+/// replaced the window would put a remote page inside a webview holding this
+/// app's whole IPC surface, so a remote page is refused. Only that case is:
+/// every scheme the shell uses to load what ebb shipped is left alone, since an
+/// allowlist of internal schemes would break the first one it failed to
+/// anticipate. A link meant for the browser never arrives here - `openExternal`
+/// hands it to the opener plugin, whose own allowlist bounds it.
+fn navigable(url: &Url) -> bool {
+    match url.scheme() {
+        "http" | "https" => matches!(
+            url.host_str(),
+            Some("tauri.localhost" | "localhost" | "127.0.0.1")
+        ),
+        _ => true,
+    }
+}
+
 fn build<R: Runtime>(app: &AppHandle<R>, url: WebviewUrl) -> tauri::Result<WebviewWindow<R>> {
     let label = format!("win-{}", NEXT_ID.fetch_add(1, Ordering::SeqCst));
     WebviewWindowBuilder::new(app, label, url)
@@ -125,6 +145,7 @@ fn build<R: Runtime>(app: &AppHandle<R>, url: WebviewUrl) -> tauri::Result<Webvi
         .resizable(true)
         .fullscreen(false)
         .disable_drag_drop_handler()
+        .on_navigation(navigable)
         .build()
 }
 
@@ -220,4 +241,34 @@ pub fn drain_boot_open<R: Runtime>(window: WebviewWindow<R>) -> Option<String> {
     }
     b.settled = true;
     b.pending.take()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn allowed(raw: &str) -> bool {
+        navigable(&Url::parse(raw).expect("parse"))
+    }
+
+    /// The bundle and the dev server are how ebb loads its own pages, so
+    /// refusing either would leave a blank window rather than a hardened one.
+    #[test]
+    fn the_app_can_navigate_to_what_it_shipped() {
+        assert!(allowed("tauri://localhost/index.html"));
+        assert!(allowed("http://tauri.localhost/index.html"));
+        assert!(allowed("http://localhost:1280/index.html"));
+        assert!(allowed("http://127.0.0.1:1280/index.html"));
+    }
+
+    /// A peer's RFD note keeps its anchors, and a click that replaced the
+    /// window would hand a remote page this app's whole IPC surface.
+    #[test]
+    fn a_remote_page_is_refused() {
+        assert!(!allowed("https://example.com/"));
+        assert!(!allowed("http://example.com/"));
+        // A host that merely ends in the local one is a different host.
+        assert!(!allowed("https://tauri.localhost.example.com/"));
+        assert!(!allowed("https://localhost.example.com/"));
+    }
 }
