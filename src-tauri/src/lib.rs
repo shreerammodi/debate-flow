@@ -115,6 +115,7 @@ pub fn run() {
             bridge::cardmirror_status,
             collab::collab_close,
             collab::collab_dial,
+            collab::collab_endpoint_id,
             collab::collab_send,
             collab::collab_start,
             collab::collab_stop,

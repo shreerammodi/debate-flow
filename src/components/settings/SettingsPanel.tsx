@@ -140,6 +140,8 @@ export default function SettingsPanel() {
     const setCollabEnabled = useFlowStore((s) => s.setCollabEnabled);
     const collabRelayEnabled = useFlowStore((s) => s.collabRelayEnabled);
     const setCollabRelayEnabled = useFlowStore((s) => s.setCollabRelayEnabled);
+    const collabListenEnabled = useFlowStore((s) => s.collabListenEnabled);
+    const setCollabListenEnabled = useFlowStore((s) => s.setCollabListenEnabled);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const tooltips = useFlowStore((s) => s.tooltips);
@@ -603,7 +605,7 @@ export default function SettingsPanel() {
                             <div className="flex flex-col" data-testid="collab-section">
                                 <SettingRow
                                     title="Shared editing"
-                                    description="Enables collaboration features, off by default. Sessions are always manually started."
+                                    description="Enables collaboration features, off by default. Nothing reaches the network until you share or join a round."
                                     control={
                                         <Switch
                                             checked={collabEnabled}
@@ -625,6 +627,18 @@ export default function SettingsPanel() {
                                                     onCheckedChange={setCollabRelayEnabled}
                                                     data-testid="collab-relay-toggle"
                                                     aria-label="Allow relay"
+                                                />
+                                            }
+                                        />
+                                        <SettingRow
+                                            title="Listen for invites"
+                                            description="Keeps an endpoint open the whole time ebb is running so a saved contact can offer you a round. Off, ebb is on the network only during a session you started."
+                                            control={
+                                                <Switch
+                                                    checked={collabListenEnabled}
+                                                    onCheckedChange={setCollabListenEnabled}
+                                                    data-testid="collab-listen-toggle"
+                                                    aria-label="Listen for invites"
                                                 />
                                             }
                                         />

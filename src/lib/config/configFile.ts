@@ -43,6 +43,8 @@ export interface ConfigFileShape {
     collab_enabled: boolean;
     /** Whether a session may fall back to a relay. */
     collab_relay: boolean;
+    /** Whether an endpoint stays bound between rounds to hear invites. */
+    collab_listen: boolean;
     /**
      * What a shared round calls this side. Empty broadcasts the machine's own
      * name, which is why the hostname is never written into this file: it
@@ -136,6 +138,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         cardmirror_text_type: s.cardmirrorTextType,
         collab_enabled: s.collabEnabled,
         collab_relay: s.collabRelayEnabled,
+        collab_listen: s.collabListenEnabled,
         collab_name: s.collabName,
         contacts: s.contacts,
         flows_dir: s.flowsDir,
@@ -183,6 +186,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),
         collabEnabled: bool(o.collab_enabled, false),
         collabRelayEnabled: bool(o.collab_relay, true),
+        collabListenEnabled: bool(o.collab_listen, false),
         collabName: typeof o.collab_name === "string" ? o.collab_name : "",
         contacts: resolveContacts(o.contacts),
         theme: resolveThemeMode(o.theme),

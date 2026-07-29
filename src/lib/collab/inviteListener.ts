@@ -9,8 +9,13 @@
  * It joins nothing and answers nothing else. A dialler who is not in the
  * contact table gets no reply at all, not even a refusal, because an
  * EndpointId is permanent and every peer who has ever shared with this install
- * holds one. And the master switch gates it exactly like a session: off, this
- * returns null before the link factory is ever called.
+ * holds one.
+ *
+ * Two switches gate it, not one. The master switch, exactly like a session;
+ * and Listen for invites, which is its own setting because this is the only
+ * route in ebb that binds an endpoint with no round in hand. Off - which is
+ * the default - the app reaches the network when a debater shares or joins a
+ * round and at no other moment, so a cold launch says nothing to anyone.
  */
 
 import type { Contacts } from "./contacts";
@@ -30,12 +35,12 @@ export interface InviteListener {
     stop(): Promise<void>;
 }
 
-/** Null when shared editing is off, which binds no endpoint at all. */
+/** Null unless both the master switch and Listen for invites are on. */
 export async function startInviteListener(
     deps: InviteListenerDeps,
 ): Promise<InviteListener | null> {
     const settings = (deps.settings ?? collabSettings)();
-    if (!settings.enabled) return null;
+    if (!settings.enabled || !settings.listen) return null;
 
     const link = await deps.createLink({ discovery: "mdns", relay: settings.relay });
     const endpointId = await link.endpointId();

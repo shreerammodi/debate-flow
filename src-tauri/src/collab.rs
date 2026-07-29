@@ -646,6 +646,26 @@ pub fn machine_name() -> String {
     short_host(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// This install's EndpointId, read from the identity file rather than from a
+/// bound endpoint.
+///
+/// The id is the public half of the stored secret key, so Settings can show a
+/// debater the id a partner saves them under while no socket is open and
+/// nothing has touched the network. Empty when the key can neither be read
+/// nor written, which the caller shows as no id rather than as an error.
+#[tauri::command]
+pub fn collab_endpoint_id() -> String {
+    identity_path()
+        .map(|path| endpoint_id_at(&path))
+        .unwrap_or_default()
+}
+
+fn endpoint_id_at(path: &Path) -> String {
+    secret_key_at(path)
+        .map(|key| key.public().to_string())
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,6 +760,33 @@ mod identity {
         let second = bound_with(&path).await;
 
         assert_eq!(second.id(), id);
+    }
+
+    /// `collab_endpoint_id` answers from the file so Settings can show the id
+    /// with nothing bound. That is only the same id if the formula matches
+    /// what the endpoint would have reported.
+    #[tokio::test]
+    async fn the_id_read_from_the_file_is_the_id_an_endpoint_would_report() {
+        let path = scratch("derived");
+        let derived = endpoint_id_at(&path);
+
+        let bound = bound_with(&path).await;
+
+        assert_eq!(derived, bound.id().to_string());
+    }
+
+    /// A read-only config directory costs the id, not the app: the pane shows
+    /// no id rather than an error, and nothing binds to go looking for one.
+    #[test]
+    fn an_identity_that_cannot_be_stored_reads_as_no_id() {
+        let blocked = scratch("no-id");
+        std::fs::write(
+            blocked.parent().unwrap(),
+            "a file where a directory would go",
+        )
+        .unwrap();
+
+        assert_eq!(endpoint_id_at(&blocked), "");
     }
 
     #[test]

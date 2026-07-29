@@ -57,6 +57,7 @@ function resetStore() {
         cardmirrorEnabled: true,
         collabEnabled: false,
         collabRelayEnabled: true,
+        collabListenEnabled: false,
         contacts: {},
     });
 }
@@ -398,6 +399,23 @@ describe("SettingsPanel", () => {
             await user.click(toggle);
             expect(useFlowStore.getState().collabRelayEnabled).toBe(false);
             expect(toggle).not.toBeChecked();
+        });
+
+        // Turning shared editing on unlocks Share and Join, and must not by
+        // itself put an endpoint on the network.
+        it("leaves idle listening off when shared editing is switched on", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
+            await user.click(screen.getByTestId("collab-enabled-toggle"));
+
+            const listen = screen.getByTestId("collab-listen-toggle");
+            expect(listen).not.toBeChecked();
+            expect(useFlowStore.getState().collabListenEnabled).toBe(false);
+
+            await user.click(listen);
+            expect(useFlowStore.getState().collabListenEnabled).toBe(true);
+            expect(listen).toBeChecked();
         });
 
         it("hides the contact list until shared editing is switched on", async () => {

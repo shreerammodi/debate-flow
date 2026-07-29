@@ -19,7 +19,11 @@ function pretendDesktop(on: boolean): void {
 }
 
 beforeEach(() => {
-    useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
+    useFlowStore.setState({
+        collabEnabled: true,
+        collabRelayEnabled: true,
+        collabListenEnabled: true,
+    });
 });
 
 afterEach(() => {
@@ -43,16 +47,20 @@ describe("whether shared editing is offered here", () => {
     });
 });
 
-describe("what the switch says", () => {
+describe("what the switches say", () => {
     // Asked by code that has already been handed a transport, so it reports
-    // the switch and not the runtime. That is what lets the suite drive the
+    // the switches and not the runtime. That is what lets the suite drive the
     // protocol against an in-process transport.
-    it("reports the switch alone, so an injected transport still runs", () => {
+    it("reports the switches alone, so an injected transport still runs", () => {
         pretendDesktop(false);
-        expect(collabSettings()).toEqual({ enabled: true, relay: true });
+        expect(collabSettings()).toEqual({ enabled: true, relay: true, listen: true });
 
-        useFlowStore.setState({ collabEnabled: false, collabRelayEnabled: false });
-        expect(collabSettings()).toEqual({ enabled: false, relay: false });
+        useFlowStore.setState({
+            collabEnabled: false,
+            collabRelayEnabled: false,
+            collabListenEnabled: false,
+        });
+        expect(collabSettings()).toEqual({ enabled: false, relay: false, listen: false });
     });
 });
 

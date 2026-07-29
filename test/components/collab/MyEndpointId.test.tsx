@@ -1,9 +1,9 @@
 /**
  * MyEndpointId component tests.
  *
- * The row exists so a partner can be handed an identity before either side has
- * a round, so what it shows before an endpoint is bound matters as much as
- * what it shows after.
+ * The row exists so a partner can be handed an identity before either side
+ * has a round, which is why it reads the id off the identity file rather than
+ * off a bound endpoint: showing it must not put ebb on the network.
  */
 
 import { render, screen } from "@testing-library/react";
@@ -13,6 +13,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import MyEndpointId from "@/components/collab/MyEndpointId";
 import { useCollabStore } from "@/lib/store/useCollabStore";
+
+const myEndpointId = vi.hoisted(() => vi.fn(async () => ""));
+
+vi.mock("@/lib/collab/identity", () => ({ myEndpointId }));
 
 const { toastSuccess, toastError } = vi.hoisted(() => ({
     toastSuccess: vi.fn(),
@@ -26,17 +30,29 @@ const ID = "c".repeat(64);
 beforeEach(() => {
     toastSuccess.mockClear();
     toastError.mockClear();
+    myEndpointId.mockClear();
+    myEndpointId.mockResolvedValue("");
     useCollabStore.setState({ endpointId: null });
 });
 
 describe("MyEndpointId", () => {
-    it("has nothing to copy until an endpoint has bound one", () => {
+    it("has nothing to copy until the shell answers", () => {
         render(<MyEndpointId />);
         expect(screen.getByTestId("my-id-copy")).toBeDisabled();
         expect(screen.getByTestId("my-id").textContent).not.toContain("c");
     });
 
-    it("shows the id once the listener reports it", () => {
+    it("asks the identity file, not an endpoint, and shows what comes back", async () => {
+        myEndpointId.mockResolvedValue(ID);
+        render(<MyEndpointId />);
+        await act(async () => {});
+
+        expect(myEndpointId).toHaveBeenCalled();
+        expect(screen.getByTestId("my-id").textContent).toBe(ID);
+        expect(screen.getByTestId("my-id-copy")).not.toBeDisabled();
+    });
+
+    it("shows the id a live session reports", () => {
         render(<MyEndpointId />);
         act(() => useCollabStore.getState().setEndpointId(ID));
 

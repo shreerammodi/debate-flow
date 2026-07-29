@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the bundled Info.plist by the Tauri bundler.
+
+  macOS shows this sentence in the local network alert. ebb only reaches the
+  local network for shared editing, which is off by default and binds nothing
+  until a debater shares a round, joins one, or turns on listening for
+  invites, so the alert should say so rather than fall back to the generic
+  "discover, connect to, and collect data from devices on your networks".
+-->
+<plist version="1.0">
+    <dict>
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>ebb finds a debate partner on the same network when you share or join a flow. Shared editing is off by default and ebb never contacts anyone otherwise.</string>
+    </dict>
+</plist>

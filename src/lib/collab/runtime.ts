@@ -327,8 +327,9 @@ export function saveContact(endpointId: string, contact: Contact): void {
 
 /**
  * Binds or releases the idle listener to match the world: it is up exactly
- * when shared editing is on and no session is holding the endpoint. Called on
- * boot, when the master switch moves, and at both ends of a session.
+ * when shared editing and Listen for invites are both on and no session is
+ * holding the endpoint. Called on boot, when either switch moves, and at both
+ * ends of a session.
  */
 export async function syncInviteWatch(): Promise<void> {
     // Binding an endpoint takes a moment, so callers are serialized rather
@@ -336,7 +337,8 @@ export async function syncInviteWatch(): Promise<void> {
     const next = (watching ?? Promise.resolve())
         .catch(() => {})
         .then(async () => {
-            const wanted = collabSettings().enabled && !session && !starting;
+            const settings = collabSettings();
+            const wanted = settings.enabled && settings.listen && !session && !starting;
             if (wanted !== (listener !== null)) {
                 if (!wanted) {
                     await dropListener();

@@ -94,9 +94,17 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   of you writes reaches the other, the cell someone has an editor open on is
   marked so nobody types over it, and each of you keeps a real `.ebb` of your
   own, so a dead laptop or a dead network costs nothing. A coach can be given
-  a view-only link instead. Off, the app binds no endpoint, dials no peer,
-  publishes no discovery record, and contacts no relay, which is a tested
-  invariant rather than a promise.
+  a view-only link instead. The switch opens those four actions and nothing
+  else. The app touches the network when you share a round or join one, and
+  at no other time. Off, the app binds no endpoint, dials no peer, publishes
+  no discovery record, and contacts no relay, which is a tested invariant
+  rather than a promise.
+- **Listen for invites**, a second switch under Settings > Collaboration, off
+  by default. On, ebb holds an endpoint open until you close the app. A saved
+  partner can then offer you a round while you have no round open. Off, they
+  send you an invite instead. macOS asks for local network access the first
+  time an endpoint opens, and Windows asks about the firewall. You see that
+  question when you turn this on, not while ebb starts.
 - **Contacts.** After a session, one click saves that partner, and inviting
   them again needs no link at all: pick them from Invite a saved partner and
   they get a corner message offering the round, with a Join that is theirs to
@@ -109,7 +117,8 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   a name. Two people on the way to a tournament can pair up on the bus and
   invite each other by name for the rest of the day. The ID is checked as you
   type it, opens nothing but a round you invite them to, and is the same one
-  the app has always used, so nothing about an existing contact changes.
+  the app has always used, so nothing about an existing contact changes. ebb
+  reads it from your own identity file, so it is there with nothing connected.
 - **Your name travels with the round you share.** A session carries what
   Settings > Collaboration calls Your name, so a partner sees "Rin" in the
   chip and on the toast that offers to save you, instead of eight characters

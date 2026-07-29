@@ -46,12 +46,32 @@ async function offer(from: string, label: string): Promise<WireMessage[]> {
 beforeEach(() => {
     net.reset();
     heard = [];
-    useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
+    useFlowStore.setState({
+        collabEnabled: true,
+        collabRelayEnabled: true,
+        collabListenEnabled: true,
+    });
 });
 
 describe("with shared editing switched off", () => {
     beforeEach(() => {
         useFlowStore.setState({ collabEnabled: false });
+    });
+
+    it("binds no endpoint and hands back no listener", async () => {
+        expect(await listener()).toBeNull();
+        expect(net.calls).toEqual([]);
+    });
+});
+
+/**
+ * Staying bound with no round in hand is the only thing in ebb that reaches
+ * the network without a debater asking for a round, so shared editing being
+ * available is not enough on its own.
+ */
+describe("with shared editing on and Listen for invites off", () => {
+    beforeEach(() => {
+        useFlowStore.setState({ collabListenEnabled: false });
     });
 
     it("binds no endpoint and hands back no listener", async () => {

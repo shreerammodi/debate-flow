@@ -36,6 +36,17 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       `docs/superpowers/specs/2026-07-26-shared-editing-design.md`. It sits behind
       a master switch, `collabEnabled`, that is off by default, and off leaves
       every route dead.
+    - **On is not the same as reachable, and a launch is not consent.** The
+      master switch unlocks Share and Join; it binds nothing on its own, so a
+      cold launch with shared editing on says nothing to anyone. Staying bound
+      between rounds so a saved contact's invite can land is the one route that
+      reaches the network with no round in hand, so it is its own switch,
+      `collabListenEnabled`, off by default. Turning it on is what mints the
+      macOS local network prompt and the Windows firewall prompt, which is the
+      point: the prompt should arrive at the moment a debater asks to be
+      reachable, never during startup. Settings shows "Your ID" from the
+      `collab_endpoint_id` command, which reads the public half of
+      `identity.key` off the disk - never bind an endpoint to learn an id.
     - **Shared editing is desktop only, and that is not a gate to relax.** A
       session is an iroh endpoint, which a browser cannot bind. There is no web
       adapter for `PeerLink` and there should never be one: a stand-in that
@@ -43,8 +54,8 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       debater they are connected to a peer that cannot exist. `collabLive()`
       answers "is this offered here", build and switch together, and every
       route that can start a session asks it; `createPeerLinkFor` throws off
-      the desktop as the backstop. `collabSettings()` is the switch alone, for
-      code that has already been handed a transport, which is what lets the
+      the desktop as the backstop. `collabSettings()` is the switches alone,
+      for code that has already been handed a transport, which is what lets the
       suite drive the whole protocol against `peerLinkMemory`.
     - **The opt-in is an invariant, so it is test-proven, not asserted.** With the
       switch off, the app binds no endpoint, dials no peer, publishes no
@@ -57,8 +68,10 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       none. The other routes onto the network gate on the same
       `collabSettings()` and are held to the off case beside their own behavior
       in `join.test.ts`, `inviteListener.test.ts`, `runtimeInvites.test.ts`, and
-      `persist.test.ts`. DNS-based peer discovery stays disabled in every state,
-      so an idle ebb publishes nothing about itself.
+      `persist.test.ts`; the last two also hold the idle listener to the case
+      where shared editing is on and `collabListenEnabled` is off. DNS-based
+      peer discovery stays disabled in every state, so an idle ebb publishes
+      nothing about itself.
     - A peer link carries one round and nothing else: no folder listing, no path
       access, no arbitrary read. Hold it to the standard
       `docs/security-review.md` sets for the loopback bridge.

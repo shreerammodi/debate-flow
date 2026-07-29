@@ -20,6 +20,7 @@ const sample: AppConfig = {
     cardmirrorTextType: "tag",
     collabEnabled: false,
     collabRelayEnabled: true,
+    collabListenEnabled: false,
     collabName: "Rin",
     contacts: {},
     theme: "dark",
@@ -122,22 +123,31 @@ describe("toAppConfig validation", () => {
 });
 
 describe("collaboration settings", () => {
-    it("writes both switches to the file", () => {
+    it("writes every switch to the file", () => {
         expect(
-            configFromState({ ...sample, collabEnabled: true, collabRelayEnabled: false }),
-        ).toMatchObject({ collab_enabled: true, collab_relay: false });
+            configFromState({
+                ...sample,
+                collabEnabled: true,
+                collabRelayEnabled: false,
+                collabListenEnabled: true,
+            }),
+        ).toMatchObject({ collab_enabled: true, collab_relay: false, collab_listen: true });
     });
 
-    it("defaults shared editing off and the relay on", () => {
+    it("defaults shared editing off, the relay on, and idle listening off", () => {
         const parsed = toAppConfig({});
         expect(parsed.collabEnabled).toBe(false);
         expect(parsed.collabRelayEnabled).toBe(true);
+        expect(parsed.collabListenEnabled).toBe(false);
     });
 
     it("reads a hand-edited switch back", () => {
-        expect(toAppConfig({ collab_enabled: true, collab_relay: false })).toMatchObject({
+        expect(
+            toAppConfig({ collab_enabled: true, collab_relay: false, collab_listen: true }),
+        ).toMatchObject({
             collabEnabled: true,
             collabRelayEnabled: false,
+            collabListenEnabled: true,
         });
     });
 });

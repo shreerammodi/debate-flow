@@ -76,6 +76,7 @@ beforeEach(async () => {
     useFlowStore.setState({
         collabEnabled: true,
         collabRelayEnabled: true,
+        collabListenEnabled: true,
         contacts: {},
         docPath: "/flows/round-3-harvard.ebb",
     });
@@ -87,6 +88,22 @@ describe("the idle invite listener", () => {
         useFlowStore.setState({ collabEnabled: false });
         await syncInviteWatch();
         expect(net.calls).toEqual([]);
+    });
+
+    // Shared editing being available is not a reason to be on the network:
+    // the master switch unlocks Share and Join, and this switch is what puts
+    // an endpoint up with no round in hand.
+    it("binds nothing while Listen for invites is off", async () => {
+        useFlowStore.setState({ collabListenEnabled: false });
+        await syncInviteWatch();
+        expect(net.calls).toEqual([]);
+    });
+
+    it("lets go of the endpoint when Listen for invites goes off", async () => {
+        await syncInviteWatch();
+        useFlowStore.setState({ collabListenEnabled: false });
+        await syncInviteWatch();
+        expect(net.calls.filter((c) => c.op === "stop")).toHaveLength(1);
     });
 
     it("binds one endpoint, however many times it is asked", async () => {

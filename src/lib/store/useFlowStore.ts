@@ -104,6 +104,14 @@ export interface FlowState {
     /** Whether a session may fall back to a relay when a direct link fails. */
     collabRelayEnabled: boolean;
     /**
+     * Whether an endpoint stays bound between rounds so a saved contact's
+     * invite has somewhere to land. Its own switch, not part of the master
+     * one: shared editing being available is not a reason to be on the
+     * network from launch, and this is the only setting in ebb that puts it
+     * there without the debater asking for a round.
+     */
+    collabListenEnabled: boolean;
+    /**
      * What a shared round calls this side. Empty means the machine's own name
      * is broadcast instead, which is why the hostname is never written here:
      * the config file syncs between machines.
@@ -174,6 +182,7 @@ export interface FlowActions {
     setCardmirrorTextType(type: CardMirrorTextType): void;
     setCollabEnabled(on: boolean): void;
     setCollabRelayEnabled(on: boolean): void;
+    setCollabListenEnabled(on: boolean): void;
     setCollabName(name: string): void;
     setContacts(contacts: Contacts): void;
     setTheme(mode: ThemeMode): void;
@@ -222,6 +231,7 @@ export interface AppConfig {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    collabListenEnabled: boolean;
     collabName: string;
     contacts: Contacts;
     theme: ThemeMode;
@@ -288,6 +298,7 @@ interface DisplaySettings {
     cardmirrorTextType: CardMirrorTextType;
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
+    collabListenEnabled: boolean;
     collabName: string;
     contacts: Contacts;
     theme: ThemeMode;
@@ -316,6 +327,7 @@ function loadDisplaySettings(): DisplaySettings {
         theme: "system",
         collabEnabled: false,
         collabRelayEnabled: true,
+        collabListenEnabled: false,
         collabName: "",
         contacts: {},
         affColor: null,
@@ -343,6 +355,8 @@ function loadDisplaySettings(): DisplaySettings {
             collabEnabled: typeof p.collabEnabled === "boolean" ? p.collabEnabled : false,
             collabRelayEnabled:
                 typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
+            collabListenEnabled:
+                typeof p.collabListenEnabled === "boolean" ? p.collabListenEnabled : false,
             collabName: typeof p.collabName === "string" ? p.collabName : "",
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
@@ -379,6 +393,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         theme: s.theme,
         collabEnabled: s.collabEnabled,
         collabRelayEnabled: s.collabRelayEnabled,
+        collabListenEnabled: s.collabListenEnabled,
         collabName: s.collabName,
         contacts: s.contacts,
         flowsDir: s.flowsDir,
@@ -454,6 +469,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
     collabEnabled: initialDisplaySettings.collabEnabled,
     collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
+    collabListenEnabled: initialDisplaySettings.collabListenEnabled,
     collabName: initialDisplaySettings.collabName,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
@@ -793,6 +809,11 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCollabRelayEnabled(on) {
         saveDisplaySettings({ ...displaySettingsOf(get()), collabRelayEnabled: on });
         set({ collabRelayEnabled: on });
+    },
+
+    setCollabListenEnabled(on) {
+        saveDisplaySettings({ ...displaySettingsOf(get()), collabListenEnabled: on });
+        set({ collabListenEnabled: on });
     },
 
     setCollabName(name) {

@@ -10,10 +10,10 @@
  * Two questions, because they have different answers. `collabLive` is whether
  * this build and this debater have the feature at all, and the build half of
  * that is permanent: a session is an iroh endpoint, which only the desktop
- * shell can bind. `collabSettings` is what the switch says, asked by code that
- * has already been handed a transport and has no business re-deciding where it
- * came from - which is what lets the suite drive the whole protocol against an
- * in-process one.
+ * shell can bind. `collabSettings` is what the switches say, asked by code
+ * that has already been handed a transport and has no business re-deciding
+ * where it came from - which is what lets the suite drive the whole protocol
+ * against an in-process one.
  */
 
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -22,6 +22,12 @@ import { isDesktop } from "@/lib/update/adapter";
 export interface CollabSettings {
     enabled: boolean;
     relay: boolean;
+    /**
+     * Whether an endpoint may stay bound with no round being shared. Its own
+     * switch because the master one unlocks routes a debater takes by hand,
+     * and this is the only thing that puts ebb on the network without one.
+     */
+    listen: boolean;
 }
 
 /**
@@ -32,8 +38,12 @@ export function collabLive(): boolean {
     return isDesktop() && useFlowStore.getState().collabEnabled;
 }
 
-/** What the switch says, for code already holding a transport. */
+/** What the switches say, for code already holding a transport. */
 export function collabSettings(): CollabSettings {
     const state = useFlowStore.getState();
-    return { enabled: state.collabEnabled, relay: state.collabRelayEnabled };
+    return {
+        enabled: state.collabEnabled,
+        relay: state.collabRelayEnabled,
+        listen: state.collabListenEnabled,
+    };
 }
