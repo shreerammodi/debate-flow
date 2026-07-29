@@ -63,7 +63,7 @@ jobs:
                   This nightly release is automatically built and generated on every commit to main that passes tests.
 
                   > [!WARNING]
-                  > **This is a nightly build, not a tagged release. We recommend using tagged releases, and nightly releases will not auto-update.**
+                  > **This is a nightly build, not a tagged release. We recommend using tagged releases, and nightly builds will not auto-update.**
                   >
                   > For releases meant to be used in a round, please see the [ebb website](https://ebb.smodi.net).
                   EOF
