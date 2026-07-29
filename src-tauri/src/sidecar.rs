@@ -2,10 +2,12 @@
 //!
 //! The webview names a round, never a path. Everything about where the file
 //! lands is decided here, the same way the recents list is, so a compromised
-//! or buggy frontend cannot steer a write anywhere it likes. A round id is the
-//! first caller-supplied path fragment this shell accepts - every other path
-//! argument arrives from a native picker the user drove - so it is validated
-//! against a plain-name pattern before it is joined to anything.
+//! or buggy frontend cannot steer a write anywhere it likes. A round id is a
+//! caller-supplied path fragment, so it is validated against a plain-name
+//! pattern before it is joined to anything. No path argument this shell takes
+//! is trusted for where it came from: a flow path arrives from argv, a query
+//! string, or the recents file as readily as from a picker, and a peer can
+//! steer the name a joined round is created under.
 //!
 //! A sidecar holds round content that already sits unprotected in the user's
 //! flows directory, so it gets no permission hardening; it is not a credential

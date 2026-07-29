@@ -164,8 +164,14 @@ export function toAppConfig(raw: unknown): AppConfig {
     const keymapOverrides: Record<string, string> = {};
     for (const [commandId, chord] of Object.entries(fromFile)) {
         // Drop entries for commands that no longer exist, empty chords, and any
-        // chord that just restates the default.
-        if (commandId in COMMANDS && chord.length > 0 && chord !== defaults[commandId]) {
+        // chord that just restates the default. The names come from a
+        // hand-editable file and `in` walks the prototype chain, so a table
+        // naming `constructor` or `toString` would register as a command.
+        if (
+            Object.hasOwn(COMMANDS, commandId) &&
+            chord.length > 0 &&
+            chord !== defaults[commandId]
+        ) {
             keymapOverrides[commandId] = chord;
         }
     }

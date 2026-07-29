@@ -33,3 +33,24 @@ updates:
           # Stay on 9.x until eslint-config-next targets eslint 10.
           - dependency-name: eslint
             update-types: ["version-update:semver-major"]
+
+    # The Rust half of the tree is the half that terminates bytes off the
+    # network - QUIC, TLS, DNS, the relay client - and it is 693 packages deep.
+    # Nothing watched it before this entry: the advisory gate in ci.yml only runs
+    # when a change lands, and an advisory opens without any change at all.
+    - package-ecosystem: cargo
+      directory: /src-tauri
+      schedule:
+          interval: weekly
+      groups:
+          cargo:
+              patterns:
+                  - "*"
+      # `wmi` is held at an exact version by src-tauri/Cargo.toml, which explains
+      # why: from 0.18.2 it asks for `windows` and `windows-core` as two
+      # independent ranges that cargo settles differently in a tree holding both
+      # tauri and iroh, and the build then fails on Windows only. CI checks the
+      # shell on Linux, so a bump would look green here and break the release
+      # build. Lifting the pin is the human decision that comment describes.
+      ignore:
+          - dependency-name: wmi

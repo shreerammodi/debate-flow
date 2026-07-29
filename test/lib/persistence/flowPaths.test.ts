@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { EventId } from "@/lib/format/events";
 import { emptyScouting } from "@/lib/model/flow";
 import type { Scouting } from "@/lib/model/types";
 import {
@@ -103,6 +104,51 @@ describe("suggestFilename", () => {
             scouting: { ...emptyScouting(), tournament: "Glenbrooks" },
         });
         expect(name).toBe("glenbrooks.ebb");
+    });
+
+    // A guest's round is the host's document flattened, so `event` is whatever
+    // the host put on the wire. The name is then joined onto the flows
+    // directory, where a separator or a `..` segment would leave it.
+    it("cannot be steered out of the flows directory by a hostile event", () => {
+        const created = new Date(2026, 6, 25, 12).getTime();
+        for (const event of [
+            "../../../../tmp/evil",
+            "/Users/victim/Library/Application Support/evil",
+            "..\\..\\evil",
+            "..",
+            "/",
+            "",
+        ]) {
+            const name = suggestFilename({
+                event: event as EventId,
+                createdAt: created,
+                scouting: emptyScouting(),
+            });
+            expect(name, event).toMatch(/^[a-z0-9-]+\.ebb$/);
+            expect(name, event).not.toContain("..");
+        }
+
+        // An event with nothing sluggable left takes the ordinary default, so
+        // the guest lands on a normally named flow rather than a refusal.
+        for (const event of ["..", "/", "", "///"]) {
+            expect(
+                suggestFilename({
+                    event: event as EventId,
+                    createdAt: created,
+                    scouting: emptyScouting(),
+                }),
+                event,
+            ).toBe("policy-2026-07-25.ebb");
+        }
+    });
+
+    it("bounds the fallback name, which the host also chooses", () => {
+        const name = suggestFilename({
+            event: "z".repeat(500) as EventId,
+            createdAt: 0,
+            scouting: emptyScouting(),
+        });
+        expect(name).toBe(`${"z".repeat(72)}.ebb`);
     });
 });
 

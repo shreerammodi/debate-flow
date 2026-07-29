@@ -71,7 +71,7 @@ describe("incomingDoc", () => {
             { kind: "roundField", path: LOCAL_RFD_PATH, value: "their private notes" },
             { actor: THEM, clock: createClock(THEM, () => 5_000) },
         );
-        expect(incomingDoc(theirs, ME).round[LOCAL_RFD_PATH]).toBeUndefined();
+        expect(incomingDoc(theirs, ME, THEM).round[LOCAL_RFD_PATH]).toBeUndefined();
     });
 
     it("keeps their note under their own id", () => {
@@ -80,7 +80,7 @@ describe("incomingDoc", () => {
             { kind: "roundField", path: peerNotePath(THEM), value: "voting neg" },
             ctx,
         );
-        expect(incomingDoc(theirs, ME).round[peerNotePath(THEM)].value).toBe("voting neg");
+        expect(incomingDoc(theirs, ME, THEM).round[peerNotePath(THEM)].value).toBe("voting neg");
     });
 
     // Every peer holds my note under my id, because that is how I sent it. It
@@ -92,11 +92,34 @@ describe("incomingDoc", () => {
             { kind: "roundField", path: peerNotePath(ME), value: "what they last saw me write" },
             { actor: THEM, clock: createClock(THEM, () => 5_000) },
         );
-        expect(incomingDoc(echoed, ME).round[peerNotePath(ME)]).toBeUndefined();
+        expect(incomingDoc(echoed, ME, THEM).round[peerNotePath(ME)]).toBeUndefined();
+    });
+
+    // Nothing signs a register, so a note is the sender's or it is nobody's.
+    // Otherwise a peer writes under a partner's or the judge's id and the
+    // drawer, the print view and the export all label it with that name.
+    it("refuses a note the sender filed under a third party's id", () => {
+        const JUDGE = "judge-endpoint";
+        const forged = applyOp(
+            doc,
+            { kind: "roundField", path: peerNotePath(JUDGE), value: "voting neg, obviously" },
+            { actor: THEM, clock: createClock(THEM, () => 5_000) },
+        );
+        const applied = incomingDoc(forged, ME, THEM);
+        expect(applied.round[peerNotePath(JUDGE)]).toBeUndefined();
+        // And the sender cannot smuggle it through by sending both at once.
+        const both = applyOp(
+            forged,
+            { kind: "roundField", path: peerNotePath(THEM), value: "mine, honestly" },
+            { actor: THEM, clock: createClock(THEM, () => 5_001) },
+        );
+        const merged = incomingDoc(both, ME, THEM);
+        expect(merged.round[peerNotePath(JUDGE)]).toBeUndefined();
+        expect(merged.round[peerNotePath(THEM)].value).toBe("mine, honestly");
     });
 
     it("is unchanged for a document carrying no notes", () => {
-        expect(incomingDoc(doc, ME)).toEqual(doc);
+        expect(incomingDoc(doc, ME, THEM)).toEqual(doc);
     });
 });
 
@@ -136,7 +159,7 @@ describe("the two together", () => {
         );
 
         // Their document reaches me the way the sync layer delivers it.
-        const merged = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
+        const merged = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME, THEM)).doc;
 
         expect(merged.round[LOCAL_RFD_PATH].value).toBe("mine, written first");
         expect(merged.round[peerNotePath(THEM)].value).toBe("theirs, written later");
@@ -150,8 +173,8 @@ describe("the two together", () => {
             { actor: THEM, clock: createClock(THEM, () => 9_000) },
         );
 
-        const onMyDisk = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
-        const onTheirDisk = merge(theirs, incomingDoc(outgoingDoc(mine, ME), THEM)).doc;
+        const onMyDisk = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME, THEM)).doc;
+        const onTheirDisk = merge(theirs, incomingDoc(outgoingDoc(mine, ME), THEM, ME)).doc;
 
         expect(onMyDisk.round[LOCAL_RFD_PATH].value).toBe("mine");
         expect(onMyDisk.round[peerNotePath(THEM)].value).toBe("theirs");
@@ -166,7 +189,7 @@ describe("the two together", () => {
         const theirs = merge(seedDoc(round), outgoingDoc(mine, ME)).doc;
         expect(theirs.round[peerNotePath(ME)].value).toBe("123123");
 
-        const back = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME)).doc;
+        const back = merge(mine, incomingDoc(outgoingDoc(theirs, THEM), ME, THEM)).doc;
         expect(back.round[peerNotePath(ME)]).toBeUndefined();
         expect(back.round[LOCAL_RFD_PATH].value).toBe("123123");
     });

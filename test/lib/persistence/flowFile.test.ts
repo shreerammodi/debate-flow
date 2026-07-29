@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import {
     FLOW_FILE_VERSION,
+    MAX_FLOW_TEXT_CHARS,
+    MAX_ROUND_CELLS,
     parseFlowFile,
     parseLegacyExport,
     serializeFlow,
@@ -100,6 +102,46 @@ describe("parseFlowFile", () => {
 
         expect(() => parseFlowFile(JSON.stringify(broken))).toThrow(
             /sheets\[1\]\.data\[1\]\[0\] is not text or null/,
+        );
+    });
+
+    it("refuses a grid whose claimed cells no machine can materialize", () => {
+        // Rows and width are independent dimensions, both taken from the file,
+        // and every consumer allocates their product: one wide row beside many
+        // single-cell rows is 10^10 cells from under a megabyte on disk.
+        const raw = JSON.parse(serializeFlow(makeFlowRound({}))) as {
+            round: { sheets: { data: unknown }[] };
+        };
+        raw.round.sheets[1].data = [
+            Array.from({ length: 20_000 }, () => ""),
+            ...Array.from({ length: 200 }, () => [""]),
+        ];
+
+        expect(() => parseFlowFile(JSON.stringify(raw))).toThrow(
+            new RegExp(`sheets hold more than ${MAX_ROUND_CELLS} cells`),
+        );
+    });
+
+    it("refuses text too large to be a flow before it parses it", () => {
+        expect(() => parseFlowFile("x".repeat(MAX_FLOW_TEXT_CHARS + 1))).toThrow(
+            /too large to be one/,
+        );
+    });
+
+    it("refuses a cell-meta key that is not a cell, since it reaches the grid as one", () => {
+        const raw = JSON.parse(serializeFlow(makeFlowRound({}))) as {
+            round: { sheets: { meta: unknown }[] };
+        };
+        // Parsed rather than written as a literal: `__proto__` in an object
+        // literal is the prototype setter, and the file gives an own key.
+        raw.round.sheets[1].meta = JSON.parse('{"__proto__":{"bold":true}}');
+        expect(() => parseFlowFile(JSON.stringify(raw))).toThrow(
+            /meta\["__proto__"\] is not a "row,col" cell/,
+        );
+
+        raw.round.sheets[1].meta = { banana: { bold: true } };
+        expect(() => parseFlowFile(JSON.stringify(raw))).toThrow(
+            /meta\["banana"\] is not a "row,col" cell/,
         );
     });
 

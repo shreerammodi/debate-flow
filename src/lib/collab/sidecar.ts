@@ -12,6 +12,7 @@
  * and last-writer-wins eats a cell.
  */
 
+import { isEndpointId } from "./contacts";
 import type { CollabDoc } from "./types";
 
 export const SIDECAR_VERSION = 1;
@@ -22,6 +23,8 @@ export interface Sidecar {
     /** Digest of the `.ebb` text this document was last in step with. */
     flowHash: string;
     peers: string[];
+    /** Of those peers, the ones admitted read-only. A grant the contact table never saw. */
+    coaches: string[];
     doc: CollabDoc;
 }
 
@@ -29,6 +32,7 @@ export function serializeSidecar(input: {
     roundId: string;
     flowHash: string;
     peers: string[];
+    coaches: string[];
     doc: CollabDoc;
 }): string {
     const sidecar: Sidecar = { version: SIDECAR_VERSION, ...input };
@@ -45,6 +49,16 @@ function isDoc(value: unknown): value is CollabDoc {
         typeof doc.sheets === "object" &&
         doc.sheets !== null
     );
+}
+
+/**
+ * Whatever of a stored list is still an id iroh could parse back into a key.
+ * Anything else is a hand edit or a peer's junk, and every entry here is
+ * dialled on the next open.
+ */
+function endpointIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((p): p is string => typeof p === "string" && isEndpointId(p));
 }
 
 /** The recovered sidecar, or null for every reason it cannot be trusted. */
@@ -70,7 +84,8 @@ export function parseSidecar(
         version: SIDECAR_VERSION,
         roundId,
         flowHash,
-        peers: Array.isArray(s.peers) ? s.peers.filter((p) => typeof p === "string") : [],
+        peers: endpointIds(s.peers),
+        coaches: endpointIds(s.coaches),
         doc: s.doc,
     };
 }

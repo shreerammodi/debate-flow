@@ -6,10 +6,13 @@ import { makeFlowRound } from "@/lib/model/flow";
 
 const round = makeFlowRound({});
 const doc = seedDoc(round);
+const SAM = "5".repeat(64);
+const KIM = "k".repeat(52);
 const text = serializeSidecar({
     roundId: round.id,
     flowHash: "deadbeef",
-    peers: ["sam"],
+    peers: [SAM, KIM],
+    coaches: [KIM],
     doc,
 });
 
@@ -19,7 +22,8 @@ describe("serializeSidecar", () => {
         expect(parsed.version).toBe(SIDECAR_VERSION);
         expect(parsed.roundId).toBe(round.id);
         expect(parsed.flowHash).toBe("deadbeef");
-        expect(parsed.peers).toEqual(["sam"]);
+        expect(parsed.peers).toEqual([SAM, KIM]);
+        expect(parsed.coaches).toEqual([KIM]);
     });
 });
 
@@ -27,7 +31,19 @@ describe("parseSidecar", () => {
     it("recovers a matching sidecar", () => {
         const got = parseSidecar(text, round.id, "deadbeef");
         expect(got!.doc).toEqual(doc);
-        expect(got!.peers).toEqual(["sam"]);
+        expect(got!.peers).toEqual([SAM, KIM]);
+        expect(got!.coaches).toEqual([KIM]);
+    });
+
+    // Every entry here is dialled on the next open, so a hand edit or a peer's
+    // junk must not survive the read.
+    it("keeps only ids iroh could parse back into a key", () => {
+        const edited = JSON.parse(text);
+        edited.peers = [SAM, "sam", 7, null, "../../etc/passwd"];
+        edited.coaches = ["nope"];
+        const got = parseSidecar(JSON.stringify(edited), round.id, "deadbeef")!;
+        expect(got.peers).toEqual([SAM]);
+        expect(got.coaches).toEqual([]);
     });
 
     it("discards a sidecar whose flow has moved on", () => {

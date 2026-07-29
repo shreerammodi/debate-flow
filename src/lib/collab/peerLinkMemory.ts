@@ -5,9 +5,20 @@
  * claim into a fact: with the master switch off the recorder stays empty, so
  * no endpoint was bound, no peer was dialled, no discovery record was
  * published, and no relay was contacted.
+ *
+ * It also narrows every line the way the desktop adapter does, because a
+ * validator the suite never reaches is one that can be weakened without a
+ * single test noticing. A message this drops is a message the shipping
+ * transport would have dropped too.
  */
 
-import type { PeerConn, PeerLink, PeerLinkConfig, WireMessage } from "./peerLink";
+import {
+    parseWireMessage,
+    type PeerConn,
+    type PeerLink,
+    type PeerLinkConfig,
+    type WireMessage,
+} from "./peerLink";
 
 export interface MemoryCall {
     op: "create" | "endpointId" | "listen" | "dial" | "stop";
@@ -48,10 +59,11 @@ function connect(
             connectionType: () => (relayed ? "relayed" : "direct"),
             send(msg) {
                 if (!open) return;
-                // A real link serializes, so a test can never hand a live
-                // object across and accidentally share it.
-                const copy = JSON.parse(JSON.stringify(msg)) as WireMessage;
-                for (const cb of listeners[other]) cb(copy);
+                // A real link carries bytes: it serializes, and a line that
+                // does not conform to its variant never reaches a listener.
+                const parsed = parseWireMessage(JSON.parse(JSON.stringify(msg)));
+                if (!parsed) return;
+                for (const cb of listeners[other]) cb(parsed);
             },
             onMessage(cb) {
                 listeners[self].push(cb);

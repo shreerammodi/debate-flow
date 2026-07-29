@@ -174,6 +174,7 @@ export function applyMeta(
         for (const key of Object.keys(prevMeta)) {
             if (key in meta) continue;
             const [r, c] = key.split(",").map(Number);
+            if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
             hot.setCellMeta(r, c, "className", "");
             hot.setCellMeta(r, c, "source", undefined);
         }
@@ -188,7 +189,11 @@ export function applyMeta(
         }
     }
     for (const [key, m] of Object.entries(meta)) {
+        // A key is `row,col` everywhere it is written, and a peer's document is
+        // one of the places it is read from, so a key that is not that is
+        // skipped rather than turned into NaN coordinates.
         const [r, c] = key.split(",").map(Number);
+        if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
         hot.setCellMeta(r, c, "className", metaToClassName(m));
         hot.setCellMeta(r, c, "source", m.source);
     }

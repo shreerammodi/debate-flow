@@ -38,6 +38,13 @@ const APP_ID_HEADER: &str = "X-App-Id";
 /// An inbound body is a handful of extracted items at worst; past this it is a
 /// resource attack, not a request.
 const MAX_BODY: usize = 4 * 1024 * 1024;
+/// `/flow` writes one cell per item, so the item count is the number of rows
+/// one request can insert into the open flow. A send is the nodes of one card,
+/// or of a selection of them; a whole pocket at once is a few hundred. Past
+/// this a request is asking for more rows than a flow sheet ever holds, which
+/// is a resource attack and not a paste. `/reveal` carries no such multiplier:
+/// its keys go into one set and drive a single pass over the sheet.
+const MAX_ITEMS: usize = 512;
 /// A handshake file is a few hundred bytes. The cap keeps a corrupt or hostile
 /// file from being read into memory.
 const MAX_HANDSHAKE: u64 = 64 * 1024;
@@ -92,13 +99,20 @@ pub fn bridge_dir() -> Option<PathBuf> {
 
 #[cfg(unix)]
 fn create_dir_private(dir: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    // On a shared machine the directory holds other users' session tokens too,
-    // so it must not be traversable by them.
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    // Every bridge-speaking app shares this directory, and
+    // `CARDMIRROR_BRIDGE_DIR` can point it outside the user's own tree, so it
+    // must not be reachable by anyone else: the session file inside it is the
+    // token.
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(dir)
+        .create(dir)?;
+    // `mode` applies only to a directory this call creates, and the shared
+    // directory may have been made by another app under a permissive umask. The
+    // token file is only as private as what holds it, so an inherited mode is
+    // corrected rather than trusted.
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
 
 #[cfg(not(unix))]
@@ -109,22 +123,29 @@ fn create_dir_private(dir: &Path) -> std::io::Result<()> {
 #[cfg(unix)]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::fs::OpenOptionsExt;
+    // Unlink, then refuse an existing path: `create` would open and write
+    // through a symlink planted at this path, and `mode` would then only fix
+    // the permissions of whatever it landed on. Losing the race to a re-planted
+    // link fails the write instead of following it.
+    let _ = std::fs::remove_file(path);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
         .open(path)?;
-    // `mode` applies only when the open creates the file, so a tmp file left by
-    // a crashed run would otherwise keep whatever permissions it had.
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     file.write_all(bytes)
 }
 
 #[cfg(not(unix))]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::write(path, bytes)
+    use std::io::Write;
+    let _ = std::fs::remove_file(path);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(bytes)
 }
 
 /// Writes `value` as JSON through `<path>.tmp` and renames it over the target,
@@ -174,6 +195,12 @@ fn fail(error: &str) -> Json {
     json!({ "ok": false, "error": error })
 }
 
+/// Whether a request asks for more work than the route's shape allows. The item
+/// count is the one multiplier a caller chooses, so it is the one to bound.
+fn oversized_send(body: &Json) -> bool {
+    matches!(body.get("items").and_then(Json::as_array), Some(items) if items.len() > MAX_ITEMS)
+}
+
 /// Handles one inbound request. The renderer round trip is injected, so the
 /// routing, auth and limit rules are exercisable without a running Tauri app.
 pub struct Router {
@@ -201,6 +228,20 @@ impl Router {
         if headers.iter().any(|(name, _)| {
             name.eq_ignore_ascii_case("origin") || name.eq_ignore_ascii_case("referer")
         }) {
+            return (403, fail("unauthorized"));
+        }
+        // A page that resolved this port through a name it controls reaches us
+        // as `Host: evil.tld:P`, which no loopback client sends, so the check
+        // defeats DNS rebinding outright. A request with no `Host` at all is not
+        // a browser.
+        let host_is_loopback = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("host"))
+            .is_none_or(|(_, value)| {
+                let host = value.rsplit_once(':').map_or(*value, |(host, _)| host);
+                matches!(host, "127.0.0.1" | "localhost")
+            });
+        if !host_is_loopback {
             return (403, fail("unauthorized"));
         }
         let given = headers
@@ -237,7 +278,9 @@ impl Router {
 
     fn to_renderer(&self, route: &str, body: &[u8]) -> Reply {
         match serde_json::from_slice::<Json>(body) {
-            Ok(parsed) if parsed.is_object() => (self.renderer)(route, parsed),
+            Ok(parsed) if parsed.is_object() && !oversized_send(&parsed) => {
+                (self.renderer)(route, parsed)
+            }
             _ => (400, fail("bad-request")),
         }
     }
@@ -277,6 +320,13 @@ fn serve(server: tiny_http::Server, router: Router) {
 
 fn accept(server: &tiny_http::Server, router: &Router) {
     while let Ok(mut request) = server.recv() {
+        // A declared length past the cap is refused before the body is read:
+        // there is nothing to gain from buffering a request that is already
+        // answered.
+        if request.body_length().is_some_and(|len| len > MAX_BODY) {
+            let _ = request.respond(json_response(400, &fail("bad-request")));
+            continue;
+        }
         // One byte past the cap is enough to know the body is oversized,
         // without buffering whatever length the sender claimed.
         let mut body = Vec::new();
@@ -506,28 +556,41 @@ pub fn cardmirror_insert(text: String, role: String, new_paragraph: bool) -> Res
 
 // --- Startup -------------------------------------------------------------------
 
+/// Binds the loopback listener and publishes this launch, retracting any
+/// predecessor's advertisement first: a session file that outlives the run it
+/// names points CardMirror at a port this process does not own, and a launch
+/// that cannot bind would otherwise leave the previous one's standing. `None`
+/// when the bridge cannot come up this run.
+fn bind_and_publish(app_version: &str) -> Option<(tiny_http::Server, String)> {
+    remove_session();
+    let server = match tiny_http::Server::http(("127.0.0.1", 0)) {
+        Ok(server) => server,
+        Err(e) => {
+            eprintln!("cardmirror bridge: bind failed: {e}");
+            return None;
+        }
+    };
+    let Some(port) = server.server_addr().to_ip().map(|addr| addr.port()) else {
+        eprintln!("cardmirror bridge: listener has no IP address");
+        return None;
+    };
+    let token = random_token();
+    if let Err(e) = write_handshake(port, &token, app_version) {
+        eprintln!("cardmirror bridge: handshake write failed: {e}");
+        return None;
+    }
+    Some((server, token))
+}
+
 /// Binds the loopback listener, publishes the handshake, and serves on its own
 /// thread. Every failure here is non-fatal: without the bridge ebb just has no
 /// CardMirror integration this run.
 pub fn start(app: &AppHandle) {
     app.manage(BridgeState::default());
-    let server = match tiny_http::Server::http(("127.0.0.1", 0)) {
-        Ok(server) => server,
-        Err(e) => {
-            eprintln!("cardmirror bridge: bind failed: {e}");
-            return;
-        }
-    };
-    let Some(port) = server.server_addr().to_ip().map(|addr| addr.port()) else {
-        eprintln!("cardmirror bridge: listener has no IP address");
-        return;
-    };
-    let token = random_token();
     let app_version = app.package_info().version.to_string();
-    if let Err(e) = write_handshake(port, &token, &app_version) {
-        eprintln!("cardmirror bridge: handshake write failed: {e}");
+    let Some((server, token)) = bind_and_publish(&app_version) else {
         return;
-    }
+    };
     let handle = app.clone();
     let router = Router::new(token, app_version, move |route, body| {
         call_renderer(&handle, route, body)
@@ -621,6 +684,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The shared directory may already exist, made by another bridge-speaking
+    /// app or by whoever got to a `CARDMIRROR_BRIDGE_DIR` override first, so its
+    /// mode is corrected and its contents are never written through.
+    #[cfg(unix)]
+    #[test]
+    fn an_inherited_directory_is_tightened_and_a_planted_tmp_is_not_followed() {
+        use std::os::unix::fs::PermissionsExt;
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("inherited");
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let planted = dir.join("planted");
+        std::fs::write(&planted, b"untouched").unwrap();
+        std::os::unix::fs::symlink(&planted, dir.join("ebb.session.json.tmp")).unwrap();
+
+        write_handshake(49213, "sekrit", "0.6.1").unwrap();
+
+        let mode = |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(dir.clone()), 0o700, "an inherited mode is corrected");
+        assert_eq!(
+            std::fs::read_to_string(&planted).unwrap(),
+            "untouched",
+            "the token never reached the symlink's target"
+        );
+        let session = dir.join("ebb.session.json");
+        let kind = std::fs::symlink_metadata(&session).unwrap().file_type();
+        assert!(kind.is_file(), "the session file is the one this run made");
+        assert_eq!(mode(session.clone()), 0o600);
+        let written: Json =
+            serde_json::from_str(&std::fs::read_to_string(&session).unwrap()).unwrap();
+        assert_eq!(written["token"], "sekrit");
+
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_wrong_or_missing_token_is_rejected() {
         let (status, body) = router().handle("GET", "/ping", &[("X-Bridge-Token", "nope")], b"");
@@ -636,6 +737,28 @@ mod tests {
             let (status, body) = router().handle("GET", "/ping", &headers, b"");
             assert_eq!(status, 403, "{header}");
             assert_eq!(body["error"], "unauthorized");
+        }
+    }
+
+    #[test]
+    fn a_host_that_is_not_loopback_is_rejected() {
+        for host in [
+            "evil.example",
+            "evil.example:49213",
+            "127.0.0.1.evil.example",
+        ] {
+            let headers = [("Host", host), ("X-Bridge-Token", "tok")];
+            let (status, body) = router().handle("GET", "/ping", &headers, b"");
+            assert_eq!(status, 403, "{host}");
+            assert_eq!(body["error"], "unauthorized");
+        }
+        for host in ["127.0.0.1", "127.0.0.1:49213", "localhost:49213"] {
+            let headers = [("Host", host), ("X-Bridge-Token", "tok")];
+            assert_eq!(
+                router().handle("GET", "/ping", &headers, b"").0,
+                200,
+                "{host}"
+            );
         }
     }
 
@@ -696,6 +819,23 @@ mod tests {
             assert_eq!(status, 400);
             assert_eq!(reply["error"], "bad-request");
         }
+    }
+
+    #[test]
+    fn a_send_over_the_item_cap_is_a_400() {
+        let send = |count: usize| -> Vec<u8> {
+            let items: Vec<Json> = (0..count).map(|_| json!({ "text": "a" })).collect();
+            json!({ "mode": "column", "items": items })
+                .to_string()
+                .into_bytes()
+        };
+        let capped = send(MAX_ITEMS);
+        assert_eq!(router().handle("POST", "/flow", &auth(), &capped).0, 200);
+
+        let over = send(MAX_ITEMS + 1);
+        let (status, reply) = router().handle("POST", "/flow", &auth(), &over);
+        assert_eq!(status, 400);
+        assert_eq!(reply["error"], "bad-request");
     }
 
     #[test]
@@ -803,6 +943,71 @@ mod tests {
             .call()
             .unwrap_err();
         assert_eq!(status_of(missing).0, 404);
+    }
+
+    /// A body the caller declares but never sends must not buy it a 4 MiB
+    /// buffer, so the refusal precedes the read.
+    #[test]
+    fn a_declared_body_over_the_cap_is_refused_before_it_arrives() {
+        use std::io::Write;
+        let server = tiny_http::Server::http(("127.0.0.1", 0)).expect("ephemeral port");
+        let port = server.server_addr().to_ip().expect("ip listener").port();
+        std::thread::spawn(move || serve(server, router()));
+
+        let mut socket = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let head = format!(
+            "POST /flow HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Bridge-Token: tok\r\n\
+             Content-Length: {}\r\n\r\n",
+            MAX_BODY + 1
+        );
+        socket.write_all(head.as_bytes()).unwrap();
+
+        // Not one body byte follows.
+        let mut answer = [0u8; 15];
+        socket
+            .read_exact(&mut answer)
+            .expect("answered without waiting for the body");
+        assert_eq!(&answer, b"HTTP/1.1 400 Ba");
+    }
+
+    /// A session file names a port this process holds, so a launch that cannot
+    /// publish leaves none behind rather than the previous run's.
+    #[test]
+    fn a_launch_retracts_the_previous_runs_session_before_publishing() {
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("relaunch");
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+        let session = dir.join("ebb.session.json");
+        let stale = || json!({ "port": 1, "token": "dead-token", "pid": 1 });
+        let read_session = || -> Json {
+            serde_json::from_str(&std::fs::read_to_string(&session).unwrap()).unwrap()
+        };
+
+        create_dir_private(&dir).unwrap();
+        write_private_json(&session, &stale()).unwrap();
+        let (server, token) = bind_and_publish("0.6.1").expect("the bridge comes up");
+        assert_eq!(read_session()["token"], token);
+        assert_ne!(read_session()["port"], 1, "the dead port is replaced");
+        drop(server);
+
+        // The identity write fails, so this launch never reaches its own session
+        // write, let alone a port it could answer on.
+        write_private_json(&session, &stale()).unwrap();
+        std::fs::create_dir(dir.join("ebb.json.tmp")).unwrap();
+        assert!(
+            bind_and_publish("0.6.1").is_none(),
+            "a failed publish is no start"
+        );
+        assert!(
+            !session.exists(),
+            "the dead run's advertisement is retracted"
+        );
+
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Drives the outbound leg against a stand-in CardMirror, so the posted

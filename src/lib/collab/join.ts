@@ -19,7 +19,7 @@ import { resolveFlowsDir } from "@/lib/persistence/flowsDir";
 import { loadRecents } from "@/lib/persistence/recents";
 
 import { projectDoc } from "./doc";
-import { collabSettings, type CollabSettings } from "./enabled";
+import { collabLive, collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
 import { broadcastName } from "./machineName";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
@@ -75,7 +75,7 @@ async function findExisting(fs: FlowFs, roundId: string): Promise<string | null>
 /** Null when shared editing is off; throws with a reason the corner can show. */
 export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     const settings = (deps.settings ?? collabSettings)();
-    if (!settings.enabled) return null;
+    if (!collabLive()) return null;
 
     const ticket = deps.ticket ? parseTicket(deps.ticket) : null;
     if (deps.ticket && !ticket) throw new Error("That does not look like an ebb ticket");
@@ -103,7 +103,11 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
                     return;
                 }
                 // The host opens with the whole document, which is the round.
-                if (msg.type === "state") resolve(msg.doc);
+                // The round the ticket named, at that: a host that answers with
+                // a different one is offering a round this side was not invited
+                // to, and taking it would write this peer into that round's
+                // record and clobber the open round's own.
+                if (msg.type === "state" && msg.doc.roundId === host.roundId) resolve(msg.doc);
             });
             conn.onClose(() => reject(new Error("The host hung up")));
             conn.send(
@@ -121,7 +125,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         // The same rule every later message goes through: the host's own
         // reasoning is theirs, and a note this install left with them on an
         // earlier round is not a partner's.
-        const doc = incomingDoc(raw, endpointId);
+        const doc = incomingDoc(raw, endpointId, host.endpointId);
         const io = deps.fs ?? (await getFlowFs());
         const existing = await findExisting(io, doc.roundId);
 

@@ -39,7 +39,6 @@
         "clsx": "^2.1.1",
         "dompurify": "^3.4.12",
         "exceljs": "^4.4.0",
-        "fflate": "^0.8.3",
         "handsontable": "^18.0.0",
         "marked": "^18.0.7",
         "motion": "^12.42.2",
@@ -71,7 +70,7 @@
     },
     "overrides": {
         "next": {
-            "postcss": "^8.5.10"
+            "postcss": "^8.5.18"
         }
     }
 }

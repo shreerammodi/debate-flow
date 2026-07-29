@@ -22,7 +22,7 @@ import { getCurrentVersion } from "@/lib/update/adapter";
 
 import { addContact, contactName, contactOf, type Contact } from "./contacts";
 import { projectDoc } from "./doc";
-import { collabSettings } from "./enabled";
+import { collabLive, collabSettings } from "./enabled";
 import { announceInvite } from "./inbox";
 import type { InviteNotice } from "./invite";
 import { startInviteListener, type InviteListener } from "./inviteListener";
@@ -156,13 +156,14 @@ export function currentSession(): CollabSession | null {
 
 /**
  * Opens a session for the round already loaded. Returns null when shared
- * editing is off, which is the whole gate: nothing below this line runs.
+ * editing is not offered here, which is the whole gate: nothing below this
+ * line runs.
  */
 export async function startForRound(
     round: FlowRound,
     knownPeers: string[] = [],
 ): Promise<CollabSession | null> {
-    if (!collabSettings().enabled) return null;
+    if (!collabLive()) return null;
     if (session?.roundId === round.id) return session;
     // A session speaks for one round, so opening another one ends it.
     if (session) await endSession();
@@ -242,6 +243,15 @@ export async function startForRound(
  * Re-dials the peers a round remembers, which is what makes a reconnect cost
  * no ticket and no interaction. A round nobody has shared stays offline.
  *
+ * Opening a flow is not consent to be reachable, so a round with remembered
+ * peers is only re-dialled while Listen for invites is on. That switch is the
+ * one that answers "may ebb be on the network with nobody asking", and an
+ * endpoint bound because a file was double-clicked is exactly that: it would
+ * mint the local network prompt during startup and put this install back on
+ * the LAN, on an identity every past peer holds, for a round the debater only
+ * meant to read. With it off, Share this round is what starts the session,
+ * and it dials the same remembered peers on the way up.
+ *
  * Called for every flow that opens, including the ones nobody shares, because
  * this is also where a session for the round being left is ended. A session
  * outliving its round is not a stale chip: the replica is a singleton and has
@@ -251,6 +261,7 @@ export async function startForRound(
  */
 export async function resumeSession(round: FlowRound): Promise<CollabSession | null> {
     if (session && session.roundId !== round.id) await endSession();
+    if (!collabSettings().listen) return null;
     const peers = knownRoundPeers(round.id);
     if (peers.length === 0) return null;
     return startForRound(round, peers);
@@ -328,8 +339,9 @@ export function saveContact(endpointId: string, contact: Contact): void {
 /**
  * Binds or releases the idle listener to match the world: it is up exactly
  * when shared editing and Listen for invites are both on and no session is
- * holding the endpoint. Called on boot, when either switch moves, and at both
- * ends of a session.
+ * holding the endpoint, carrying the relay setting the switches say now.
+ * Called on boot, when any of the three switches moves, and at both ends of a
+ * session.
  */
 export async function syncInviteWatch(): Promise<void> {
     // Binding an endpoint takes a moment, so callers are serialized rather
@@ -339,6 +351,10 @@ export async function syncInviteWatch(): Promise<void> {
         .then(async () => {
             const settings = collabSettings();
             const wanted = settings.enabled && settings.listen && !session && !starting;
+            // The relay is chosen when the endpoint binds, so withdrawing that
+            // consent only takes effect by letting this one go and binding
+            // again. A listener nobody is talking to loses nothing by it.
+            if (wanted && listener && listener.relay !== settings.relay) await dropListener();
             if (wanted !== (listener !== null)) {
                 if (!wanted) {
                     await dropListener();
@@ -347,6 +363,7 @@ export async function syncInviteWatch(): Promise<void> {
                         listener = await startInviteListener({
                             createLink: createPeerLinkFor,
                             contacts: () => useFlowStore.getState().contacts,
+                            openRoundId: () => useFlowStore.getState().round?.id ?? null,
                             onInvite: (notice: InviteNotice) => announceInvite(notice),
                         });
                     } catch {

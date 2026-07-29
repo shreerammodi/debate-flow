@@ -12,8 +12,23 @@
  * reported instead, because that is the one loss a debater cannot see.
  */
 
+import { isRank } from "./rank";
 import { compareStamps, type Stamp } from "./stamp";
 import type { CollabCell, CollabDoc, CollabSheet, Register } from "./types";
+
+/**
+ * A round is a debate flow, and a flow is a bounded object.
+ *
+ * Nothing here evicts and nothing collects a tombstone, so every distinct key a
+ * peer has ever sent is retained for the life of the round, written to the
+ * sidecar beside every autosave, and walked again on every message and every
+ * repair tick. The line cap on the transport bounds one message and not how
+ * many. Growth stops at these; a key this replica already holds still merges,
+ * so refusing to grow costs no value the two sides had already agreed on.
+ */
+const MAX_SHEETS = 512;
+const MAX_CELLS = 200_000;
+const MAX_REGISTERS = 4_096;
 
 export interface DroppedCell {
     sheetId: string;
@@ -44,8 +59,13 @@ function mergeRegisters(
     b: Record<string, Register>,
 ): Record<string, Register> {
     const out: Record<string, Register> = { ...a };
+    let room = MAX_REGISTERS - Object.keys(out).length;
     for (const [path, reg] of Object.entries(b)) {
         const mine = out[path];
+        if (!mine) {
+            if (room <= 0) continue;
+            room -= 1;
+        }
         out[path] = mine && compareStamps(mine.stamp, reg.stamp) >= 0 ? mine : reg;
     }
     return out;
@@ -72,11 +92,24 @@ function mergeSheet(
     incoming: CollabSheet,
     dropped: DroppedCell[],
 ): CollabSheet {
-    if (!local) return incoming;
-    const cells: Record<string, CollabCell> = { ...local.cells };
+    // A sheet the far side holds and this replica does not merges from nothing
+    // rather than being taken whole, so the ceiling and the rank check below
+    // cover a fresh sheet too, and the sheet is named by the key it arrived
+    // under: `incoming.id` need not agree with it, and two sheets projecting
+    // under one id silently swallow every later local edit to one of them.
+    const base = local ?? { id: sheetId, fields: {}, deleted: null, cells: {} };
+    const cells: Record<string, CollabCell> = { ...base.cells };
+    let room = MAX_CELLS - Object.keys(cells).length;
     const buried: DroppedCell[] = [];
     for (const [key, remote] of Object.entries(incoming.cells)) {
         const mine = cells[key];
+        if (!mine) {
+            // A rank this build cannot order throws on the next local insert
+            // into that column and would come back from the sidecar after a
+            // restart, so a cell carrying one never joins the round at all.
+            if (room <= 0 || !isRank(remote.rank)) continue;
+            room -= 1;
+        }
         const merged = mine ? mergeCell(mine, remote) : remote;
         cells[key] = merged;
         // A cell this replica held alive, with text, that the merge just
@@ -102,8 +135,8 @@ function mergeSheet(
     dropped.push(...buried);
     return {
         id: sheetId,
-        fields: mergeRegisters(local.fields, incoming.fields),
-        deleted: firstDelete(local.deleted, incoming.deleted),
+        fields: mergeRegisters(base.fields, incoming.fields),
+        deleted: firstDelete(base.deleted, incoming.deleted),
         cells,
     };
 }
@@ -111,8 +144,14 @@ function mergeSheet(
 export function merge(local: CollabDoc, incoming: CollabDoc): MergeResult {
     const dropped: DroppedCell[] = [];
     const sheets: Record<string, CollabSheet> = { ...local.sheets };
+    let room = MAX_SHEETS - Object.keys(sheets).length;
     for (const [sheetId, remote] of Object.entries(incoming.sheets)) {
-        sheets[sheetId] = mergeSheet(sheetId, sheets[sheetId], remote, dropped);
+        const mine = sheets[sheetId];
+        if (!mine) {
+            if (room <= 0) continue;
+            room -= 1;
+        }
+        sheets[sheetId] = mergeSheet(sheetId, mine, remote, dropped);
     }
     return {
         doc: {

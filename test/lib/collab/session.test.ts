@@ -10,7 +10,13 @@ import {
     type WireMessage,
 } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
-import { startCollabSession, type CollabPeer, type CollabSession } from "@/lib/collab/session";
+import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
+import {
+    HANDSHAKE_MS,
+    startCollabSession,
+    type CollabPeer,
+    type CollabSession,
+} from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
 import { getPresences } from "@/lib/grid/presenceBridge";
@@ -53,8 +59,30 @@ async function settle(): Promise<void> {
     for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
+/** Time the test owns, so a backoff or a deadline is a step rather than a wait. */
+function manualClock() {
+    let pending: { fn: () => void; at: number }[] = [];
+    let now = 0;
+    return {
+        schedule(fn: () => void, ms: number) {
+            const entry = { fn, at: now + ms };
+            pending.push(entry);
+            return () => {
+                pending = pending.filter((p) => p !== entry);
+            };
+        },
+        advance(ms: number) {
+            now += ms;
+            const due = pending.filter((p) => p.at <= now);
+            pending = pending.filter((p) => p.at > now);
+            for (const p of due) p.fn();
+        },
+    };
+}
+
 beforeEach(() => {
     net.reset();
+    forgetRoundPeers();
     useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true });
     shared = makeFlowRound({});
 });
@@ -135,27 +163,6 @@ describe("startCollabSession", () => {
 });
 
 describe("a link that drops mid-round", () => {
-    /** Time the test owns, so a backoff is a step rather than a wait. */
-    function manualClock() {
-        let pending: { fn: () => void; at: number }[] = [];
-        let now = 0;
-        return {
-            schedule(fn: () => void, ms: number) {
-                const entry = { fn, at: now + ms };
-                pending.push(entry);
-                return () => {
-                    pending = pending.filter((p) => p !== entry);
-                };
-            },
-            advance(ms: number) {
-                now += ms;
-                const due = pending.filter((p) => p.at <= now);
-                pending = pending.filter((p) => p.at > now);
-                for (const p of due) p.fn();
-            },
-        };
-    }
-
     /** A link that hands back every connection it dials, so a test can cut one. */
     function watched(endpointId: string, dialled: PeerConn[]): PeerLinkFactory {
         return async (config) => {
@@ -376,6 +383,48 @@ describe("a link that drops mid-round", () => {
         await again.stop();
     });
 
+    // The cut used to live in the session closure alone, while the round's own
+    // peer list - which reaches the sidecar and comes back off it - only ever
+    // grew. The next open dialled the peer again and admitted them on
+    // membership, so Disconnect read as permanent and was a per-session mute.
+    it("keeps a disconnected peer out of what the round remembers, so the cut survives the next open", async () => {
+        const clock = manualClock();
+        // What opening a round does before a session starts: the record exists
+        // and is empty, because no sidecar for it does.
+        setRoundPeers(shared.id, []);
+        const host = (await open(ALEX, { schedule: clock.schedule }))!;
+        const guest = (await open("sam", {
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(host.peers()).toHaveLength(1);
+        expect(knownRoundPeers(shared.id)).toEqual(["sam"]);
+
+        host.disconnect("sam");
+        await settle();
+        expect(knownRoundPeers(shared.id)).toEqual([]);
+        await host.stop();
+        await guest.stop();
+
+        // What the next open is: a fresh session dialling and admitting off the
+        // round's record. Nothing there names the peer, and they hold no
+        // ticket, so the refusal is silent on both paths.
+        const reopened = (await open(ALEX, {
+            dial: knownRoundPeers(shared.id),
+            schedule: clock.schedule,
+        }))!;
+        const back = (await open("sam", { dial: [ALEX], schedule: clock.schedule }))!;
+        await settle();
+        expect(net.calls.filter((c) => c.op === "dial" && c.endpointId === "sam")).toEqual([]);
+        expect(reopened.peers()).toEqual([]);
+        expect(back.peers()).toEqual([]);
+
+        await reopened.stop();
+        await back.stop();
+    });
+
     // Resume is symmetric, so both sides reach out. Two connections landing in
     // one slot left whichever lost the map entry open, unreachable, unclosed,
     // and still counted as a peer by the far side.
@@ -493,6 +542,59 @@ describe("what a dialler is told", () => {
         );
         expect(err!.message).toBe("That peer refused the connection");
         expect(err!.message).not.toContain("555");
+    });
+});
+
+describe("a dialler that never greets", () => {
+    /** Opens a connection to the host and says nothing at all on it. */
+    async function silent(from: string) {
+        const link = await net.create(from)({ discovery: "mdns", relay: true });
+        const conn = await link.dial(ALEX);
+        const state = { closed: false };
+        conn.onClose(() => {
+            state.closed = true;
+        });
+        return state;
+    }
+
+    // Every refusal in the admission path is inside the greeting handler, so a
+    // connection that never enters it was never refused and never closed. A
+    // stranger who knows the EndpointId could hold one slot per dial, for the
+    // whole round, with nothing on the debater's screen to say so.
+    it("is closed once the deadline passes", async () => {
+        const clock = manualClock();
+        const host = (await open(ALEX, { schedule: clock.schedule }))!;
+        const stranger = await silent(STRANGER);
+        await settle();
+        expect(stranger.closed).toBe(false);
+
+        clock.advance(HANDSHAKE_MS);
+        await settle();
+        expect(stranger.closed).toBe(true);
+        // Nothing was admitted, so nothing was on the peer list to lose.
+        expect(host.peers()).toEqual([]);
+
+        await host.stop();
+    });
+
+    it("does not take an admitted peer with it when the deadline comes round", async () => {
+        const clock = manualClock();
+        const host = (await open(ALEX, { schedule: clock.schedule }))!;
+        const guest = (await open(SAM, {
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ALEX],
+            schedule: clock.schedule,
+        }))!;
+        await settle();
+        expect(host.peers()).toHaveLength(1);
+
+        clock.advance(HANDSHAKE_MS * 2);
+        await settle();
+        expect(host.peers()).toHaveLength(1);
+        expect(guest.peers()).toHaveLength(1);
+
+        await host.stop();
+        await guest.stop();
     });
 });
 

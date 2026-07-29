@@ -14,6 +14,7 @@ import { seedDoc } from "@/lib/collab/doc";
 import { merge, type DroppedCell } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { knownRoundCoaches, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
 import {
     startCollabSession,
     type CollabSession,
@@ -116,6 +117,9 @@ beforeEach(() => {
     useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true, contacts: {} });
     shared = round();
     sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
+    // What opening a round does before a session starts. The record is where a
+    // read-only grant lives, so every test here starts with an empty one.
+    setRoundPeers(shared.id, []);
 });
 
 async function open(
@@ -274,6 +278,29 @@ describe("what a coach may do to the round", () => {
         });
         await host.stop();
     });
+
+    it("cannot claim the cell the host is typing in, while a partner can", async () => {
+        // A claim refuses the local debater's keystroke, so it is a write under
+        // another name. A coach that could make one would lock the host out of
+        // the cell they are mid-speech in.
+        const viewer = await hostAndGuest("coach");
+        viewer.guest.setPresence({ sheetId, col: 1, row: 3 });
+        await settle();
+        expect(getPresences()[0]).toMatchObject({ endpointId: RAE, col: 1, row: 3 });
+        expect(getPresences()[0].editing).toBe(false);
+        await viewer.host.stop();
+        await viewer.guest.stop();
+
+        net.reset();
+        clock.reset();
+        setPresences([]);
+        const editor = await hostAndGuest("partner", SAM);
+        editor.guest.setPresence({ sheetId, col: 1, row: 3 });
+        await settle();
+        expect(getPresences()[0]).toMatchObject({ endpointId: SAM, editing: true });
+        await editor.host.stop();
+        await editor.guest.stop();
+    });
 });
 
 describe("a coach that comes back", () => {
@@ -317,10 +344,10 @@ describe("a coach that comes back", () => {
         expect(hostSide.texts(sheetId)).not.toContain("coach typed");
     });
 
-    it("comes back a partner when nobody saved them, which is what the round remembers", async () => {
-        // Documented, not solved: a peer the round knows and the contact table
-        // does not is a partner. Read-only is a fat-finger guard, and the way
-        // to make it outlive a session is to save the contact.
+    it("comes back a partner when the round never marked them read-only", async () => {
+        // Membership with no mark beside it is a partner, which is the common
+        // case: a round remembers everyone it was shared with, and only a
+        // read-only grant is a restriction worth carrying.
         const host = await open(ALEX, replicaFor(shared, ALEX), {
             dial: [RAE],
             contacts: () => useFlowStore.getState().contacts,
@@ -328,5 +355,129 @@ describe("a coach that comes back", () => {
         await open(RAE, replicaFor(shared, RAE), { dial: [ALEX] });
         await settle();
         expect(host.peers()[0].role).toBe("partner");
+    });
+
+    // The contact table used to hold the only record of the restriction while
+    // the round held the record of the membership, so a debater who removed the
+    // contact - the gesture that most looks like withdrawing trust - promoted
+    // the coach they meant to demote.
+    it("is still a coach after the debater removes their contact", async () => {
+        useFlowStore.setState({ contacts: { [RAE]: { name: "Coach", role: "coach" } } });
+        const first = await hostAndGuest("coach");
+        expect(first.host.peers()[0].role).toBe("coach");
+        expect(knownRoundCoaches(shared.id)).toEqual([RAE]);
+        const remembered = knownRoundPeers(shared.id);
+        await first.guest.stop();
+        await first.host.stop();
+
+        useFlowStore.setState({ contacts: {} });
+        net.reset();
+        clock.reset();
+        // What the next open is: the peers and their marks come back off the
+        // sidecar, and the contact table holds nothing about this peer.
+        setRoundPeers(shared.id, remembered, [RAE]);
+        const hostSide = replicaFor(shared, ALEX);
+        const host = await open(ALEX, hostSide, {
+            dial: knownRoundPeers(shared.id),
+            contacts: () => useFlowStore.getState().contacts,
+        });
+        const coachSide = replicaFor(shared, RAE);
+        const coach = await open(RAE, coachSide, { dial: [ALEX] });
+        await settle();
+
+        expect(host.peers()[0].role).toBe("coach");
+        expect(coach.role()).toBe("coach");
+        coachSide.edit(sheetId, 0, 0, "coach typed");
+        coach.notifyLocalChange();
+        await settle();
+        expect(hostSide.texts(sheetId)).not.toContain("coach typed");
+
+        await host.stop();
+        await coach.stop();
+    });
+
+    it("is still a coach when nobody ever saved them, because the round graded them", async () => {
+        // The grant was made on this round, by a ticket this host minted. The
+        // round is where it belongs, not in a table a 20-second toast fills in.
+        const first = await hostAndGuest("coach");
+        expect(knownRoundCoaches(shared.id)).toEqual([RAE]);
+        const remembered = knownRoundPeers(shared.id);
+        await first.guest.stop();
+        await first.host.stop();
+
+        net.reset();
+        clock.reset();
+        setRoundPeers(shared.id, remembered, [RAE]);
+        const host = await open(ALEX, replicaFor(shared, ALEX), {
+            dial: knownRoundPeers(shared.id),
+            contacts: () => useFlowStore.getState().contacts,
+        });
+        const coach = await open(RAE, replicaFor(shared, RAE), { dial: [ALEX] });
+        await settle();
+
+        expect(host.peers()[0].role).toBe("coach");
+        expect(coach.role()).toBe("coach");
+
+        await host.stop();
+        await coach.stop();
+    });
+});
+
+describe("a coach on a link the host dialled", () => {
+    /** A host that reopened a round it shared read-only, and dials the coach. */
+    async function hostDialsCoach() {
+        setRoundPeers(shared.id, [RAE], [RAE]);
+        // The coach comes up first and cannot reach a host that is not
+        // listening yet, so the link that lands is the host's own dial.
+        const coachSide = replicaFor(shared, RAE);
+        const coach = await open(RAE, coachSide, { dial: [ALEX] });
+        const hostSide = replicaFor(shared, ALEX);
+        const host = await open(ALEX, hostSide, {
+            dial: knownRoundPeers(shared.id),
+            contacts: () => useFlowStore.getState().contacts,
+        });
+        await settle();
+        return { host, coach, hostSide, coachSide };
+    }
+
+    // The comment on the dial path assumed the dialler is always a guest, and
+    // hardcoded read-only off. The host dials too - every remembered peer when
+    // it reopens a round, and a contact on invite - so on those links the host
+    // applied the document of a peer it had granted read only.
+    it("has its writes dropped, the same as on a link the host answered", async () => {
+        const { host, coach, hostSide, coachSide } = await hostDialsCoach();
+        expect(host.peers()).toHaveLength(1);
+        expect(host.peers()[0].role).toBe("coach");
+
+        coachSide.edit(sheetId, 0, 0, "coach typed");
+        coach.notifyLocalChange();
+        await settle();
+        expect(hostSide.texts(sheetId)).not.toContain("coach typed");
+
+        await host.stop();
+        await coach.stop();
+    });
+
+    it("cannot claim a cell on that link either", async () => {
+        const { host, coach } = await hostDialsCoach();
+        coach.setPresence({ sheetId, col: 2, row: 4 });
+        await settle();
+
+        expect(getPresences()[0]).toMatchObject({ endpointId: RAE, col: 2, row: 4 });
+        expect(getPresences()[0].editing).toBe(false);
+
+        await host.stop();
+        await coach.stop();
+    });
+
+    it("still reads the host's edits, which is the whole point of the role", async () => {
+        const { host, coach, hostSide, coachSide } = await hostDialsCoach();
+        hostSide.edit(sheetId, 0, 0, "host typed");
+        host.notifyLocalChange();
+        await settle();
+        expect(coachSide.texts(sheetId)).toContain("host typed");
+
+        await host.stop();
+        await coach.stop();
     });
 });

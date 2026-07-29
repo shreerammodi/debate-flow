@@ -73,7 +73,8 @@ describe("admit", () => {
     });
 
     it("accepts a known peer with no secret at all, which is what makes reconnect silent", () => {
-        const got = admit(hello({ endpointId: "sam" }), policy({ knownPeers: ["sam"] }), "sam");
+        const known = policy({ knownPeers: ["sam"], roles: { sam: "partner" } });
+        const got = admit(hello({ endpointId: "sam" }), known, "sam");
         expect(got).toEqual({ ok: true, role: "partner", spendSecret: false });
     });
 
@@ -161,6 +162,36 @@ describe("admit", () => {
     it("remembers what a peer was admitted as, so a reconnect cannot upgrade it", () => {
         const known = policy({ knownPeers: ["sam"], roles: { sam: "coach" } });
         expect(admit(hello({ endpointId: "sam", role: "partner" }), known, "sam")).toEqual({
+            ok: true,
+            role: "coach",
+            spendSecret: false,
+        });
+    });
+
+    // The round's record of membership is durable and a grant is not, so a
+    // grade that went missing must not resolve outward. Every path that admits
+    // a peer records what it granted; this is what a key that reached the list
+    // some other way gets.
+    it("grants the narrower role to a known peer nobody graded", () => {
+        const ungraded = policy({ pending: null, knownPeers: ["sam"], roles: {} });
+        expect(admit(hello({ endpointId: "sam" }), ungraded, "sam")).toEqual({
+            ok: true,
+            role: "coach",
+            spendSecret: false,
+        });
+    });
+
+    // `roles` is indexed by a string the far side's key produced, and a plain
+    // index walks the prototype chain: a function is neither a role nor absent,
+    // so `?? "coach"` would not fire and the grant would read as partner.
+    it("reads a grant nobody made as no grant, not as whatever the prototype says", () => {
+        const proto = policy({ pending: null, knownPeers: ["toString", "constructor"] });
+        expect(admit(hello({ endpointId: "toString" }), proto, "toString")).toEqual({
+            ok: true,
+            role: "coach",
+            spendSecret: false,
+        });
+        expect(admit(hello({ endpointId: "constructor" }), proto, "constructor")).toEqual({
             ok: true,
             role: "coach",
             spendSecret: false,

@@ -181,12 +181,21 @@ export const EVENTS: Record<EventId, EventDef> = {
     },
 };
 
-export function getEvent(id?: EventId): EventDef {
-    return EVENTS[id ?? "policy"];
+/**
+ * The event a round names.
+ *
+ * A round's `event` is a replicated register, so its value is whatever a peer
+ * put on the wire, and every caller here indexes a static table with the
+ * result. An id this build does not define reads as policy, the same fallback
+ * a file that predates named events already gets. `in` would not do: it walks
+ * the prototype chain, so `constructor` would pass and index nothing.
+ */
+export function getEvent(id?: string): EventDef {
+    return Object.hasOwn(EVENTS, id ?? "") ? EVENTS[id as EventId] : EVENTS.policy;
 }
 
 /** The event's side naming, falling back to the aff/neg the model stores. */
-export function sideLabels(id?: EventId): Record<Side, SideLabel> {
+export function sideLabels(id?: string): Record<Side, SideLabel> {
     return getEvent(id).sides ?? AFF_NEG_SIDES;
 }
 

@@ -120,6 +120,8 @@ async function pair(round: FlowRound): Promise<{ alex: Instance; sam: Instance }
         attachSync({
             conn,
             endpointId: self.id,
+            // Two instances only, so the peer across either link is the other.
+            from: self.id === "alex" ? "sam" : "alex",
             doc: () => self.doc,
             apply: (incoming) => {
                 const result = merge(self.doc, incoming);

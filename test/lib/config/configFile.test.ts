@@ -107,6 +107,15 @@ describe("toAppConfig validation", () => {
         expect(cfg.keymapOverrides).toEqual({ [aCommandId]: "g g" });
     });
 
+    it("drops a keymap entry naming a prototype member rather than a command", () => {
+        // `constructor` and `toString` are on every object, so a hand-edited
+        // file naming one must not read as a command.
+        const cfg = toAppConfig({
+            keymap: JSON.parse('{"constructor":"Meta+q","toString":"Meta+p"}'),
+        });
+        expect(cfg.keymapOverrides).toEqual({});
+    });
+
     it("still reads the pre-nesting flat keymap shape so upgrades keep bindings", () => {
         // Files written by earlier versions stored bindings as flat dotted keys
         // under [keymap]; reading must recover them, not drop them.

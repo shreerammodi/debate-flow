@@ -24,7 +24,11 @@ export interface HostPolicy {
     pending: { secret: string; role: Role } | null;
     /** Peers already admitted once, which need no secret again. */
     knownPeers: string[];
-    /** What an already-known peer was admitted as. Absent means partner. */
+    /**
+     * What an already-known peer was admitted as. Absent means read-only: the
+     * round's record of membership is durable and a grant is not, so the
+     * direction a missing grade resolves in is inward.
+     */
     roles: Record<string, Role>;
 }
 
@@ -98,6 +102,19 @@ function secretMatches(a: string, b: string): boolean {
 const SILENT: Admission = { ok: false, reason: REFUSED, silent: true };
 
 /**
+ * What this host granted a peer, or nothing at all.
+ *
+ * An EndpointId arrives off the wire and a plain index walks the prototype
+ * chain, so `constructor` and `toString` answer with a function that is neither
+ * a role nor absent - which reads as a grant nobody made and fails open.
+ */
+export function grantedRole(policy: HostPolicy, peer: string): Role | undefined {
+    return Object.prototype.hasOwnProperty.call(policy.roles, peer)
+        ? policy.roles[peer]
+        : undefined;
+}
+
+/**
  * `remoteId` is the endpoint the transport authenticated: iroh proved the far
  * side holds that key before a byte of this message existed. `msg.endpointId`
  * is a string the far side typed. They must agree, or the peer is claiming to
@@ -113,9 +130,11 @@ export function admit(msg: WireMessage, policy: HostPolicy, remoteId: string): A
 
     let granted: Admission;
     if (policy.knownPeers.includes(remoteId)) {
-        // A peer this round already knew but never graded is a partner: they
-        // were admitted to it before, and the round remembers only that.
-        granted = { ok: true, role: policy.roles[remoteId] ?? "partner", spendSecret: false };
+        // A peer the round remembers and nobody graded gets the narrower
+        // grant. Every path that admits one records what it granted, so this
+        // is the backstop for a key that reached the list some other way,
+        // where the safe answer is the role that writes nothing.
+        granted = { ok: true, role: grantedRole(policy, remoteId) ?? "coach", spendSecret: false };
     } else if (policy.pending && msg.ticket && secretMatches(msg.ticket, policy.pending.secret)) {
         // The role the host granted, never the one the guest asked for.
         granted = { ok: true, role: policy.pending.role, spendSecret: true };

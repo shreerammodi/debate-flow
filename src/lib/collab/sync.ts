@@ -43,6 +43,12 @@ export interface SyncDeps {
     readOnly?: boolean;
     /** This peer's own EndpointId, which its notes travel under. */
     endpointId: string;
+    /**
+     * The far side's EndpointId, taken from the connection rather than from
+     * anything a message claims: iroh proved the far side holds that key, and
+     * it is what binds an inbound note to the peer who wrote it.
+     */
+    from: string;
     now?: () => number;
     schedule?: (fn: () => void, ms: number) => () => void;
 }
@@ -127,14 +133,14 @@ export function attachSync(deps: SyncDeps): PeerSync {
                     // received, and the vector cannot describe that hole
                     // either. Handing a peer a write of their own back costs a
                     // message and settles; the alternative loses it.
-                    deps.apply(incomingDoc(msg.doc, deps.endpointId));
+                    deps.apply(incomingDoc(msg.doc, deps.endpointId, deps.from));
                     return;
                 case "state": {
                     if (deps.readOnly) return;
                     // What the sender holds is what it has seen, so the reply
                     // is everything above that.
                     const theirs = vectorOf(msg.doc);
-                    deps.apply(incomingDoc(msg.doc, deps.endpointId));
+                    deps.apply(incomingDoc(msg.doc, deps.endpointId, deps.from));
                     sendDelta(theirs);
                     return;
                 }

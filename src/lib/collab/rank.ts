@@ -14,6 +14,15 @@ const BASE = DIGITS.length;
 const SEED_WIDTH = 6;
 /** Gap left between two seeded rows, in rank units. */
 const SEED_STEP = 32;
+/**
+ * The longest rank this build will order. Nested inserts at one position add
+ * about one digit per five, so a column would need thousands of them to reach
+ * this, and `midpoint` recurses once per digit: a rank a peer made long enough
+ * exhausts the stack on the victim's next insert there.
+ */
+const MAX_RANK = 1024;
+/** The base-62 alphabet above, as the shape a whole rank has to be. */
+const RANK_DIGITS = /^[0-9A-Za-z]+$/;
 
 function encodeFixedWidth(value: number): string {
     let out = "";
@@ -60,4 +69,22 @@ function midpoint(a: string, b: string | null): string {
 /** A rank strictly between two live neighbours. `null` means no neighbour. */
 export function rankBetween(before: string | null, after: string | null): string {
     return midpoint(before ?? "", after);
+}
+
+/**
+ * A rank this build can order.
+ *
+ * A cell's rank arrives inside a peer's document, and `midpoint` asserts the
+ * invariants above by throwing rather than by repairing: a rank ending in the
+ * zero digit refuses every later insert in that column, mid-keystroke, and the
+ * replica would carry it across a restart. So a peer's cell is checked where it
+ * enters, and one this build cannot order never becomes part of the round.
+ */
+export function isRank(value: unknown): value is string {
+    return (
+        typeof value === "string" &&
+        value.length <= MAX_RANK &&
+        !value.endsWith("0") &&
+        RANK_DIGITS.test(value)
+    );
 }

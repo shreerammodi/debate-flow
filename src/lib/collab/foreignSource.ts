@@ -9,6 +9,14 @@
  * Nothing new has to be recorded to know this. The meta that carried the
  * source was written by somebody, and the replica already stamps every meta
  * write with the actor who made it.
+ *
+ * That actor is a claim, not a proof: it travels inside the peer's own document
+ * and nothing signs a register, so a modified client can stamp a meta write
+ * with this machine's id and its token then reads as local. The guard is
+ * therefore worth exactly what a stale local source is worth - it stops an
+ * honest partner's token being handed to the wrong CardMirror, and it is not a
+ * boundary. Whatever the bridge does with a token it is given has to be safe on
+ * its own account.
  */
 
 import { liveCells } from "./doc";

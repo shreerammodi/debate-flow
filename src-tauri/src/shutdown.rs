@@ -179,8 +179,9 @@ pub fn request_all<R: Runtime>(app: &AppHandle<R>) {
     let Some(attempt) = claim(&labels, Action::ExitProcess) else {
         return;
     };
-    // Every window must see this, so it stays a broadcast rather than a
-    // single `target_window` emit.
+    // Every window must see this, so it stays a broadcast. A label-scoped
+    // listener still receives one, which is what lets the per-window flush
+    // above name a single window without cutting this off.
     let _ = app.emit("app:flush", ());
     arm_timeout(app, attempt);
 }

@@ -93,9 +93,11 @@ export default function AppRoot() {
                 //
                 // The session is desktop-only, like every other effect in this
                 // app that needs the shell: shared editing is an iroh endpoint
-                // and a browser cannot bind one. The peers it would re-dial are
-                // the ones this round was shared with, which cost no ticket and
-                // no interaction.
+                // and a browser cannot bind one. Opening a flow is not consent
+                // to be reachable either, so the resume itself only re-dials
+                // while Listen for invites is on - the rule the runtime holds,
+                // and why this call is made for every flow regardless: it is
+                // also where the session for the round being left ends.
                 void recoverReplica(r, serializeFlow(r))
                     .then(() => (collabLive() ? resumeSession(r) : null))
                     .catch((err: unknown) => {

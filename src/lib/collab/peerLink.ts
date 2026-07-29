@@ -100,12 +100,19 @@ function isRole(value: unknown): value is Role {
     return value === "partner" || value === "coach";
 }
 
+/**
+ * A stamp a clock could have produced. `NaN`, `Infinity` and 2^53 are all
+ * `typeof "number"`, and every one of them either wins the total order below
+ * forever or pins the local clock where a later write cannot climb past it.
+ */
 function isStamp(value: unknown): value is Stamp {
     return (
         isRecord(value) &&
-        typeof value.ms === "number" &&
-        typeof value.counter === "number" &&
-        typeof value.actor === "string"
+        Number.isSafeInteger(value.ms) &&
+        (value.ms as number) >= 0 &&
+        Number.isSafeInteger(value.counter) &&
+        (value.counter as number) >= 0 &&
+        isField(value.actor)
     );
 }
 
@@ -137,18 +144,30 @@ function isHelloAck(m: Record<string, unknown>): m is HelloAck {
 }
 
 /**
+ * `JSON.parse` makes `__proto__` an own enumerable key, so a peer's map key
+ * survives `Object.entries` and reaches a bracket assignment on a plain object
+ * literal. `[[Set]]` finds `Object.prototype`'s accessor there and swaps that
+ * record's own prototype: the entry is then invisible to every reader of the
+ * map, and the next read of a real field on it throws. No map in a document has
+ * a use for the name.
+ */
+function isCleanMap(value: unknown): value is Record<string, unknown> {
+    return isRecord(value) && !Object.hasOwn(value, "__proto__");
+}
+
+/**
  * A document's outline rather than its contents. The merge is written to
- * survive a register it does not recognize, but the vector walks `round` and
- * `sheets` the moment the message lands and throws when either is absent.
+ * survive a register it does not recognize, but the vector walks `round`,
+ * `sheets` and every sheet's own maps the moment the message lands and throws
+ * when one of them is absent or carries a prototype key.
  */
 function isDocMessage(m: Record<string, unknown>): m is DocMessage {
     if (m.type !== "state" && m.type !== "delta") return false;
     const doc = m.doc;
-    return (
-        isRecord(doc) &&
-        typeof doc.roundId === "string" &&
-        isRecord(doc.round) &&
-        isRecord(doc.sheets)
+    if (!isRecord(doc) || typeof doc.roundId !== "string") return false;
+    if (!isCleanMap(doc.round) || !isCleanMap(doc.sheets)) return false;
+    return Object.values(doc.sheets).every(
+        (sheet) => isRecord(sheet) && isCleanMap(sheet.fields) && isCleanMap(sheet.cells),
     );
 }
 

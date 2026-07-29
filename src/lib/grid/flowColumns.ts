@@ -67,10 +67,15 @@ export function crossExColumns(event: EventDef, firstSide: Side): SpeechCol[] {
  */
 export function columnsForFlowSheet(round: FlowRound, sheet: FlowSheet): SpeechCol[] {
     const event = getEvent(round.event);
-    const firstSide = round.firstSide ?? "aff";
+    // A round's `firstSide` and a sheet's `group` are both replicated
+    // registers, so both hold whatever a peer put on the wire, and both index
+    // a static table below. Anything that is not the one named side is the
+    // other, which is the fallback a file that predates the field gets.
+    const firstSide: Side = round.firstSide === "neg" ? "neg" : "aff";
     if (sheet.kind === "cx") return crossExColumns(event, firstSide);
     const order = speechOrder(event, firstSide);
-    const startId = sheet.startSpeechId ?? event[sheet.group][0].id;
+    const group: Side = sheet.group === "neg" ? "neg" : "aff";
+    const startId = sheet.startSpeechId ?? event[group][0].id;
     const idx = order.findIndex((c) => c.id === startId);
     return idx === -1 ? order : order.slice(idx);
 }

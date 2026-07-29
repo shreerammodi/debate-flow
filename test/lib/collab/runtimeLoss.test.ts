@@ -47,6 +47,9 @@ function round(): FlowRound {
 
 beforeEach(async () => {
     warnings.length = 0;
+    // startForRound asks collabLive(), and isDesktop() reads this global: the
+    // suite stands in for the shell the same way it stands in for the endpoint.
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     await endSession();
     useFlowStore.setState({
         collabEnabled: true,

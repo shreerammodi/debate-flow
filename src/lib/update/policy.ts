@@ -25,7 +25,9 @@ export function parseManifest(json: unknown): UpdateManifest {
         throw new Error("Invalid manifest: missing platforms");
     }
 
-    const platforms: Record<string, UpdatePlatformEntry> = {};
+    // Keys come from the manifest, and on an ordinary object literal a
+    // `__proto__` entry re-points the prototype instead of adding a platform.
+    const platforms = Object.create(null) as Record<string, UpdatePlatformEntry>;
     for (const [key, value] of Object.entries(raw.platforms)) {
         if (!isPlatformEntry(value)) {
             throw new Error(`Invalid manifest: malformed platform "${key}"`);

@@ -75,12 +75,22 @@ export function widestRow(data: (string | null)[][]): number {
 }
 
 /**
+ * Ceiling on grid width. A row's length comes from whatever wrote the sheet, so
+ * a file or a peer can claim a hundred thousand columns; the grid, the print
+ * view and the exporter each materialize rows x width cells from it, and that
+ * product is what no amount of memory survives. Real orientations derive at
+ * most a dozen columns, so nothing a debater typed lives past this.
+ */
+export const MAX_GRID_WIDTH = 256;
+
+/**
  * The grid's actual column count: the wider of the derived columns and the
  * stored data, so overflow columns from a narrowed orientation survive a
- * speaking-order swap instead of being truncated on load.
+ * speaking-order swap instead of being truncated on load, bounded by
+ * MAX_GRID_WIDTH so a claimed width cannot become an allocation.
  */
 export function gridWidth(cols: unknown[], data: (string | null)[][]): number {
-    return Math.max(cols.length, widestRow(data));
+    return Math.min(Math.max(cols.length, widestRow(data)), MAX_GRID_WIDTH);
 }
 
 /** Fresh arrays sized rows x cols for loading into the grid. */

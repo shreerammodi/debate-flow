@@ -12,6 +12,12 @@
  * already type-checked it; a file can be truncated by a full disk, mangled by a
  * sync client, or hand-edited. Failing at this boundary with the path to the bad
  * value beats rendering half a round.
+ *
+ * Size is part of strict. Types alone say nothing about how much a well-formed
+ * file can ask for, and the two grid dimensions are independent, so both the
+ * text length and the cells a round claims are bounded here - at the boundary,
+ * where a refusal is a message with a path, rather than at the allocation,
+ * where it is a dead webview.
  */
 
 import { EVENTS } from "@/lib/format/events";
@@ -125,7 +131,21 @@ function checkCellMeta(value: unknown, path: string): void {
     }
 }
 
-function checkSheet(value: unknown, path: string): void {
+/** A cell-meta key is the cell's coordinate, which is how it is looked up. */
+const CELL_KEY = /^\d+,\d+$/;
+
+/**
+ * Ceiling on the cells one round can claim, counted per sheet as its rows times
+ * its widest row. Every consumer materializes that product - the grid pads to
+ * it, the print view builds a table of it, the exporter walks it - and the two
+ * dimensions are independent, so a sheet of one 100,000-column row followed by
+ * 100,000 single-cell rows asks for 10^10 cells from under a megabyte of file.
+ * A fat real round is a few hundred thousand cells.
+ */
+export const MAX_ROUND_CELLS = 2_000_000;
+
+/** Validate one sheet, returning the cells the grid pads it to. */
+function checkSheet(value: unknown, path: string): number {
     const s = obj(value, path);
     str(s.id, `${path}.id`);
     str(s.title, `${path}.title`);
@@ -137,8 +157,10 @@ function checkSheet(value: unknown, path: string): void {
     optStr(s.startSpeechId, `${path}.startSpeechId`);
 
     if (!Array.isArray(s.data)) fail(`${path}.data`, "is not an array");
+    let widest = 0;
     s.data.forEach((row, r) => {
         if (!Array.isArray(row)) fail(`${path}.data[${r}]`, "is not a row");
+        widest = Math.max(widest, row.length);
         row.forEach((cell, c) => {
             if (cell !== null && typeof cell !== "string") {
                 fail(`${path}.data[${r}][${c}]`, "is not text or null");
@@ -147,14 +169,21 @@ function checkSheet(value: unknown, path: string): void {
     });
 
     // Sparse and optional: an older sheet may predate cell metadata entirely.
+    // A key reaches the grid as a row and a column, and a decoration can sit on
+    // a padded cell past the stored rows, so the form is checked and the range
+    // is not.
     if (!optional(s.meta)) {
         const meta = obj(s.meta, `${path}.meta`);
-        for (const key of Object.keys(meta)) checkCellMeta(meta[key], `${path}.meta["${key}"]`);
+        for (const key of Object.keys(meta)) {
+            if (!CELL_KEY.test(key)) fail(`${path}.meta["${key}"]`, 'is not a "row,col" cell');
+            checkCellMeta(meta[key], `${path}.meta["${key}"]`);
+        }
     }
+    return s.data.length * widest;
 }
 
 /** Validate a parsed round, throwing with the path to the first bad value. */
-function checkRound(value: unknown, path: string): FlowRound {
+export function checkRound(value: unknown, path: string): FlowRound {
     const r = obj(value, path);
     str(r.id, `${path}.id`);
     finiteNum(r.createdAt, `${path}.createdAt`);
@@ -168,13 +197,30 @@ function checkRound(value: unknown, path: string): FlowRound {
     }
     checkScouting(r.scouting, `${path}.scouting`);
     if (!Array.isArray(r.sheets)) fail(`${path}.sheets`, "is not an array");
-    r.sheets.forEach((s, i) => checkSheet(s, `${path}.sheets[${i}]`));
+    let cells = 0;
+    r.sheets.forEach((s, i) => {
+        cells += checkSheet(s, `${path}.sheets[${i}]`);
+    });
+    if (cells > MAX_ROUND_CELLS) {
+        fail(`${path}.sheets`, `hold more than ${MAX_ROUND_CELLS} cells`);
+    }
     return value as FlowRound;
 }
 
 // --- Reading -----------------------------------------------------------------
 
+/**
+ * Ceiling on flow file text. A parse costs several times the text in live
+ * objects and the shell holds a copy of its own, so a file this large is
+ * refused before the parse rather than after it. Six of them sit in the recents
+ * list the start screen reads on every launch.
+ */
+export const MAX_FLOW_TEXT_CHARS = 64 * 1024 * 1024;
+
 function parseEnvelope(text: string): Obj {
+    if (text.length > MAX_FLOW_TEXT_CHARS) {
+        throw new Error("Not a flow file: it is too large to be one");
+    }
     let parsed: unknown;
     try {
         parsed = JSON.parse(text);

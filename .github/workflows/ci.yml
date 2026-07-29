@@ -5,6 +5,13 @@ on:
         branches: [main]
     pull_request:
 
+# Nothing in this workflow writes to the repository, and every job runs code
+# this repo does not author: npm install scripts and a build.rs per crate.
+# Naming the scope keeps that code away from a write-capable token whatever the
+# organization default happens to be.
+permissions:
+    contents: read
+
 jobs:
     web:
         name: Web (test + lint + build)
@@ -51,3 +58,37 @@ jobs:
             # all invisible to cargo check, and all load-bearing for not losing
             # a round.
             - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+    # A gate on what a change pulls in, not a periodic scan: advisories move
+    # without the code moving, and the weekly Dependabot run in
+    # .github/dependabot.yml is what covers the calendar.
+    advisory:
+        name: Dependency advisories
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 24
+            - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+            # Both audits read a lock file and query a database, so neither needs
+            # `npm ci` nor a build. Skipping the install is half the point: this
+            # job runs no package's install script.
+            #
+            # The threshold is critical, not high. Every high open against this
+            # tree is unreachable - brace-expansion and uuid sit under exceljs
+            # code paths the xlsx export never calls, sharp under a next image
+            # pipeline `images: { unoptimized: true }` never reaches - and npm's
+            # only offered fixes are major downgrades (exceljs 3, next 14,
+            # eslint 10). A gate that is red on every push is a gate nobody
+            # reads, and it would hide the first critical when one lands.
+            - run: npm audit --audit-level=critical
+            # cargo audit fails on vulnerabilities and only warns on
+            # unmaintained/unsound, which is why `--deny warnings` is absent: the
+            # GTK3 bindings WebKitGTK pulls in on Linux carry 18 such warnings
+            # that nothing in this repo can clear. The version is pinned and
+            # `--locked` so the gate itself cannot drift under us.
+            - name: Audit the Cargo lock file
+              run: |
+                  cargo install cargo-audit --locked --version 0.22.2
+                  cargo audit --file src-tauri/Cargo.lock

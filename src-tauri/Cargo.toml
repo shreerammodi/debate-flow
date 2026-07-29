@@ -43,13 +43,26 @@ parking_lot = "0.12"
 # Shared editing. iroh dials a peer by public key and hole punches to it, which
 # is the only design that reaches two homes behind NAT. mDNS is a separate
 # crate so the same-room case needs no internet at all; the DNS and DHT lookup
-# crates are deliberately not dependencies, so that code is not in the binary
-# and an idle ebb cannot publish itself anywhere.
-iroh = "1"
+# crates are deliberately not registered, so an idle ebb cannot publish itself
+# anywhere.
+#
+# Default features minus `portmapper`, which is the whole reason for spelling
+# them out. Port mapping asks the router over UPnP/NAT-PMP/PCP to open an
+# inbound hole at this socket and probes for a gateway by SSDP multicast, and a
+# local-first app does not reconfigure the debater's network to be reachable.
+# The endpoint disables it explicitly as well, so the setting survives a
+# feature list that drifts back to defaults.
+iroh = { version = "1", default-features = false, features = [
+    "metrics",
+    "fast-apple-datapath",
+    "tls-ring",
+] }
 iroh-mdns-address-lookup = "0.4"
 # iroh is async, so the collab module owns one runtime. The rest of the shell
-# stays synchronous, the way tiny_http does on its own thread.
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync"] }
+# stays synchronous, the way tiny_http does on its own thread. `time` is what
+# bounds a wait on a peer: an unadmitted dial and an unreachable dial are both
+# deadlined rather than held forever.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
 
 # Signed auto-updates. The updater verifies the Ed25519 signature internally and
 # discards anything it can't verify; `process` provides the relaunch used to
@@ -73,7 +86,7 @@ wmi = "=0.18.1"
 
 [dev-dependencies]
 # The loopback transport tests drive real endpoints, which needs a test runtime.
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
 
 [features]
 # This feature is used for production builds where the developer tools are

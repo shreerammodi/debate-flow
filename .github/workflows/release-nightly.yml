@@ -4,7 +4,9 @@ name: Nightly desktop build
 # and publishes them to a single rolling prerelease tagged `nightly`. This is
 # the channel for people who want to run what is on main without building it
 # themselves; it is not an update channel. Nightly builds carry no updater
-# artifacts, so an installed nightly can never be offered to a stable client.
+# artifacts, so no nightly is ever served as an update to anyone - and because
+# the updater endpoint stays pointed at the stable channel, an installed nightly
+# moves on to the next tagged release.
 on:
     push:
         branches: [main]
@@ -16,8 +18,10 @@ concurrency:
     group: nightly
     cancel-in-progress: true
 
-permissions:
-    contents: write
+# Every job below names the scope it needs. The gate runs the test suite and npm
+# install scripts and writes nothing, so it holds a read-only token; only the
+# three jobs that touch the release can write.
+permissions: {}
 
 jobs:
     # The nightly is "what is on main and passing", so the gate runs against
@@ -25,6 +29,8 @@ jobs:
     gate:
         name: Test + lint
         runs-on: ubuntu-22.04
+        permissions:
+            contents: read
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +50,8 @@ jobs:
     prepare:
         needs: gate
         runs-on: ubuntu-22.04
+        permissions:
+            contents: write
         outputs:
             release_id: ${{ steps.recreate.outputs.release_id }}
         steps:
@@ -63,7 +71,7 @@ jobs:
                   This nightly release is automatically built and generated on every commit to main that passes tests.
 
                   > [!WARNING]
-                  > **This is a nightly build, not a tagged release. We recommend using tagged releases, and nightly builds will not auto-update.**
+                  > **This is a nightly build, not a tagged release. We recommend using tagged releases; a nightly updates itself to the next tagged release rather than to a newer nightly.**
                   >
                   > For releases meant to be used in a round, please see the [ebb website](https://ebb.smodi.net).
                   EOF
@@ -100,6 +108,8 @@ jobs:
                       args: ""
 
         runs-on: ${{ matrix.platform }}
+        permissions:
+            contents: write
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -193,6 +203,8 @@ jobs:
     publish:
         needs: build
         runs-on: ubuntu-22.04
+        permissions:
+            contents: write
         steps:
             - name: Publish the nightly
               env:

@@ -9,7 +9,7 @@
 import type { CellMeta, FlowSheet } from "@/lib/model/flow";
 
 import { liveCells, seedSheet, sheetWidth } from "./doc";
-import { rankBetween } from "./rank";
+import { isRank, rankBetween } from "./rank";
 import type { Clock, Stamp } from "./stamp";
 import { cellKey, type CollabCell, type CollabDoc, type CollabSheet, type Json } from "./types";
 
@@ -75,9 +75,17 @@ function freshRank(
     after: string | null,
     actor: string,
 ): string {
+    // Only ranks this build can order: `nextAbove` hands one back as the
+    // ceiling, and `rankBetween` asserts its invariants by throwing, which
+    // would land mid-keystroke. A replica written before that check reached the
+    // merge can still hold one.
     const taken: string[] = [];
-    for (const cell of Object.values(sheet.cells)) if (cell.col === col) taken.push(cell.rank);
-    for (const cell of Object.values(pending)) if (cell.col === col) taken.push(cell.rank);
+    for (const cell of Object.values(sheet.cells)) {
+        if (cell.col === col && isRank(cell.rank)) taken.push(cell.rank);
+    }
+    for (const cell of Object.values(pending)) {
+        if (cell.col === col && isRank(cell.rank)) taken.push(cell.rank);
+    }
 
     /** The lowest rank the column holds above `floor`, or null for open sky. */
     function nextAbove(floor: string): string | null {
@@ -86,9 +94,13 @@ function freshRank(
         return best;
     }
 
-    const ceiling =
-        before !== null && after !== null && before >= after ? nextAbove(before) : after;
-    let rank = rankBetween(before, ceiling);
+    // A neighbour a replica written before that check still holds cannot be
+    // subdivided either, so an insert aimed at it takes the open position
+    // rather than throwing under the debater's keystroke.
+    const floor = isRank(before) ? before : null;
+    const roof = isRank(after) ? after : null;
+    const ceiling = floor !== null && roof !== null && floor >= roof ? nextAbove(floor) : roof;
+    let rank = rankBetween(floor, ceiling);
     while (sheet.cells[cellKey(col, rank, actor)] || pending[cellKey(col, rank, actor)]) {
         // Step above the spent rank, staying below whatever occupies the next
         // position, so the new cell keeps the row the caller asked for.

@@ -15,9 +15,16 @@
 
 import { setPresences } from "@/lib/grid/presenceBridge";
 
-import type { Contacts } from "./contacts";
+import { contactOf, type Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
-import { admit, helloFrom, refusalMessage, REFUSED, type HostPolicy } from "./handshake";
+import {
+    admit,
+    grantedRole,
+    helloFrom,
+    refusalMessage,
+    REFUSED,
+    type HostPolicy,
+} from "./handshake";
 import { INVITED, inviteFrom, type InviteNotice } from "./invite";
 import type { DroppedCell } from "./merge";
 import {
@@ -30,6 +37,7 @@ import {
 } from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Presence } from "./presence";
 import { retryForever, type Retry } from "./reconnect";
+import { forgetRoundPeer, knownRoundCoaches, rememberRoundRole } from "./roundPeers";
 import { attachSync, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -60,8 +68,9 @@ export interface CollabSession {
     /** Dials a peer this round already trusts, with no ticket. */
     invite(endpointId: string): Promise<void>;
     /**
-     * Drops one peer and keeps the rest. Deliberate, so it lasts the session:
-     * that peer is not redialled, and it is not let back in if it dials.
+     * Drops one peer and keeps the rest. Deliberate, so it outlasts the link
+     * and the app: that peer is not redialled, it is not let back in if it
+     * dials, and the round stops remembering it.
      */
     disconnect(endpointId: string): void;
     /**
@@ -112,11 +121,8 @@ export interface CollabSessionDeps {
     displayName?: string;
     /**
      * The contact table. It decides whether a dial this session cannot admit
-     * is an invite worth showing, and it is where an already-known peer's role
-     * comes from: the round file remembers who to re-dial but not what they
-     * were admitted as, so without this a coach the debater saved comes back
-     * as a partner the next time the round is opened. Absent means every
-     * refusal is silent and every known peer is a partner.
+     * is an invite worth showing, and it grades a peer the round remembers
+     * with no read-only mark of its own. Absent means every refusal is silent.
      */
     contacts?: () => Contacts;
     onInvite?: (notice: InviteNotice) => void;
@@ -129,6 +135,13 @@ interface Live {
     /** Which side dialled, which is what decides a duplicate. */
     outbound: boolean;
 }
+
+/**
+ * How long a connection may stay open without greeting. Wide enough for a
+ * relay to carry the first line across a bad hotel network, and short enough
+ * that a stranger who dials in a loop holds a bounded number of slots.
+ */
+export const HANDSHAKE_MS = 10_000;
 
 /**
  * Whether a dial ended in the far side taking the invite rather than joining.
@@ -151,20 +164,30 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     });
     const endpointId = await link.endpointId();
 
+    const dial = [...(deps.dial ?? [])];
+    const readOnlyPeers = knownRoundCoaches(deps.roundId);
+    /**
+     * Every peer the round remembers is graded, rather than left to a default:
+     * membership with no grade beside it is the one thing that hands a coach
+     * the wider role, and a peer nobody restricted is still a partner. The
+     * contact table comes second because setting a role there is the debater
+     * deciding by hand, and it is read once: a contact edited mid-round grades
+     * the next session rather than this one.
+     */
+    const roles: Record<string, Role> = {};
+    for (const id of dial) roles[id] = readOnlyPeers.includes(id) ? "coach" : "partner";
+    for (const [id, contact] of Object.entries(deps.contacts?.() ?? {})) roles[id] = contact.role;
+
     const policy: HostPolicy = {
         roundId: deps.roundId,
         pending: null,
-        knownPeers: [...(deps.dial ?? [])],
-        // Read once, at the start: a role is what a peer was admitted as for
-        // this session, and a contact edited mid-round grades the next one.
-        roles: Object.fromEntries(
-            Object.entries(deps.contacts?.() ?? {}).map(([id, contact]) => [id, contact.role]),
-        ),
+        knownPeers: dial,
+        roles,
     };
     const live = new Map<string, Live>();
     /** Peers this side reached out to, and so is the one to reach out again. */
     const dialled = new Set<string>();
-    /** Peers the debater cut loose, which stay cut for the session. */
+    /** Peers the debater cut loose, which stay cut however they come back. */
     const gone = new Set<string>();
     /**
      * The dial loop running for each peer this side is trying to reach again.
@@ -286,7 +309,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // one is not a position: a row below zero or a sheet named by
             // nothing would sit there unmatched until the peer left.
             if (msg.cell !== null && !isCellRef(msg.cell)) return;
-            onPosition(peer.endpointId, msg.cell, msg.type === "presence");
+            // A read-only peer has no editor, so it points and never claims. A
+            // claim refuses the debater's keystroke, which is a write under
+            // another name and outside what this side granted.
+            onPosition(peer.endpointId, msg.cell, msg.type === "presence" && !readOnly);
         });
         const sync = attachSync({
             conn,
@@ -306,6 +332,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             },
             readOnly,
             endpointId,
+            from: peer.endpointId,
             schedule: deps.schedule,
         });
         live.set(peer.endpointId, { conn, sync, peer, outbound });
@@ -341,9 +368,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         // one. Without disarming, the first delta that arrived afterwards
         // would read as a malformed hello and close a healthy link.
         let greeted = false;
+        // Every refusal below is reached by the far side choosing to speak, so
+        // a dialler that opens a connection and says nothing is never refused
+        // and holds its slot until the session ends. The clock is what bounds
+        // a peer that has not authenticated yet.
+        const ungreeted = schedule(() => {
+            if (!greeted) conn.close();
+        }, HANDSHAKE_MS);
         conn.onMessage((msg) => {
             if (greeted) return;
             greeted = true;
+            ungreeted();
 
             // A peer the debater disconnected does not get back in by
             // dialling. Answered here rather than at the accept, because a
@@ -381,6 +416,9 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             if (verdict.spendSecret) policy.pending = null;
             if (!policy.knownPeers.includes(remoteId)) policy.knownPeers.push(remoteId);
             policy.roles[remoteId] = verdict.role;
+            // Beside the round's own membership, not only in this closure: a
+            // grant the contact table never saw has to survive the next open.
+            rememberRoundRole(deps.roundId, remoteId, verdict.role);
             // The role goes back with the ack because the guest has no other
             // way to know it: it asked to be a partner and the ticket decided.
             conn.send({ type: "helloAck", ok: true, name: deps.displayName, role: verdict.role });
@@ -431,13 +469,19 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     conn,
                     {
                         endpointId: target,
-                        // The host holds the file and is never read-only. The
-                        // role in the ack is this side's, not theirs.
-                        role: "partner",
+                        // The role in the ack is this side's, not theirs. A
+                        // guest's one peer is the host, which holds the file
+                        // and is graded by nobody.
+                        role: grantedRole(policy, target) ?? "partner",
                         connectionType: conn.connectionType(),
                         name: typeof msg.name === "string" ? msg.name : undefined,
                     },
-                    false,
+                    // The host dials too - every remembered peer when it
+                    // reopens a round, and a contact on invite - so the side
+                    // that dialled is not always the guest. What this side
+                    // granted is what it drops writes against, on a link it
+                    // opened as much as on one it answered.
+                    grantedRole(policy, target) === "coach",
                     true,
                 );
                 resolve();
@@ -521,7 +565,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // A contact is admitted by EndpointId, so it joins the known list
             // before the dial rather than presenting a secret.
             if (!policy.knownPeers.includes(target)) policy.knownPeers.push(target);
-            // Inviting is deliberate, so it undoes a deliberate disconnect.
+            // Graded as it joins the list: a member with no grade beside it is
+            // refused the wider role. An invitation goes by the contact table,
+            // and a contact nobody restricted is a partner.
+            const invited = contactOf(deps.contacts?.() ?? {}, target)?.role ?? "partner";
+            policy.roles[target] = invited;
+            // Inviting is deliberate, so it undoes a deliberate disconnect on
+            // the round's record as well as on this session's.
+            rememberRoundRole(deps.roundId, target, invited);
             gone.delete(target);
             try {
                 await dialPeer(target);
@@ -533,10 +584,14 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         },
 
         disconnect(target) {
-            // Deliberate, so it outlasts the link. The redial in onClose is
-            // for a link that dropped on its own; a peer the debater cut loose
-            // stays gone for the session, whichever side dials next.
+            // Deliberate, so it outlasts the link and the app. The redial in
+            // onClose is for a link that dropped on its own; a peer the debater
+            // cut loose stays gone, whichever side dials next.
             gone.add(target);
+            // And out of the round's own record, which is otherwise
+            // append-only. Without this the next open re-dials them off the
+            // sidecar and admits them on membership alone.
+            forgetRoundPeer(deps.roundId, target);
             retries.get(target)?.stop();
             retries.delete(target);
             const entry = live.get(target);

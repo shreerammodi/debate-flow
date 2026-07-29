@@ -7,9 +7,11 @@ import { applyOp, type OpContext } from "@/lib/collab/ops";
 import type { PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { recoverReplica } from "@/lib/collab/persist";
-import { forgetRoundPeers, knownRoundPeers } from "@/lib/collab/roundPeers";
+import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
 import { applyRemoteDoc } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
+import { setSidecarFs } from "@/lib/collab/sidecarFs";
+import { createSidecarFs } from "@/lib/collab/sidecarFsMemory";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
@@ -57,6 +59,13 @@ async function hostWithTicket(): Promise<string> {
 }
 
 beforeEach(async () => {
+    // A join is a route that starts a session, so it asks collabLive(), which
+    // is the desktop shell as well as the switch. The suite drives the protocol
+    // over an in-process transport and has to stand in for the shell - and then
+    // pin the sidecar to memory, because the port picks its adapter off the
+    // same signal and the Tauri one has no shell to invoke here.
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    setSidecarFs(createSidecarFs());
     net.reset();
     forgetRoundPeers();
     useFlowStore.setState({
@@ -166,6 +175,41 @@ describe("joinRound", () => {
                 fs,
             }),
         ).rejects.toThrow();
+    });
+
+    // A ticket names one round. The host scopes every hello to the round it is
+    // holding; the guest had no counterpart, so it took whatever came back and
+    // keyed the file, the peer record and the navigation off that.
+    it("refuses a document for a round the ticket did not name", async () => {
+        const link = await net.create(ALEX)({ discovery: "mdns", relay: true });
+        const elsewhere = seedDoc(makeFlowRound({}));
+        await link.listen((conn) => {
+            conn.onMessage(() => {
+                conn.send({ type: "state", doc: elsewhere });
+                conn.close();
+            });
+        });
+        // A round is open in this window, and its peer set is module-global.
+        setRoundPeers("round_open", ["kim"]);
+
+        await expect(
+            joinRound({
+                ticket: encodeTicket({
+                    endpointId: ALEX,
+                    roundId: shared.id,
+                    role: "partner",
+                    secret: "s".repeat(24),
+                    relay: true,
+                }),
+                createLink: net.create("sam"),
+                appVersion: "0.11.0",
+                fs,
+            }),
+        ).rejects.toThrow(/hung up/i);
+        // Neither the round it offered nor the round that is open picked up a
+        // peer, and the open one still knows its own.
+        expect(knownRoundPeers(elsewhere.roundId)).toEqual([]);
+        expect(knownRoundPeers("round_open")).toEqual(["kim"]);
     });
 
     it("reaches no network at all while shared editing is off", async () => {

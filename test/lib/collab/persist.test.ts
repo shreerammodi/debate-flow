@@ -29,6 +29,9 @@ function fakeFs(): FakeSidecarFs {
 
 let fs: FakeSidecarFs;
 let round: FlowRound;
+/** Real-shaped ids: the sidecar drops anything that is not one, on the way in. */
+const SAM = "5".repeat(64);
+const KIM = "c".repeat(64);
 
 beforeEach(() => {
     fs = fakeFs();
@@ -51,7 +54,13 @@ describe("recoverReplica", () => {
         doc.round.event = { value: "pf", stamp: { ms: 7, counter: 0, actor: "sam" } };
         fs.files.set(
             round.id,
-            serializeSidecar({ roundId: round.id, flowHash: hashText(text), peers: [], doc }),
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(text),
+                peers: [],
+                coaches: [],
+                doc,
+            }),
         );
         await recoverReplica(round, text);
         expect(getReplica()!.round.event.value).toBe("pf");
@@ -62,7 +71,13 @@ describe("recoverReplica", () => {
         doc.round.event = { value: "pf", stamp: { ms: 7, counter: 0, actor: "sam" } };
         fs.files.set(
             round.id,
-            serializeSidecar({ roundId: round.id, flowHash: "stale000", peers: [], doc }),
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: "stale000",
+                peers: [],
+                coaches: [],
+                doc,
+            }),
         );
         await recoverReplica(round, serializeFlow(round));
         expect(getReplica()!.round.event.value).toBe("policy");
@@ -93,11 +108,12 @@ describe("recoverReplica", () => {
             serializeSidecar({
                 roundId: round.id,
                 flowHash: hashText(text),
-                peers: ["sam", "kim"],
+                peers: [SAM, KIM],
+                coaches: [],
                 doc: seedDoc(round),
             }),
         );
-        expect(await recoverReplica(round, text)).toEqual(["sam", "kim"]);
+        expect(await recoverReplica(round, text)).toEqual([SAM, KIM]);
     });
 
     it("reports nobody for a round that was never shared", async () => {
@@ -111,7 +127,8 @@ describe("recoverReplica", () => {
             serializeSidecar({
                 roundId: round.id,
                 flowHash: hashText(text),
-                peers: ["sam"],
+                peers: [SAM],
+                coaches: [],
                 doc: seedDoc(round),
             }),
         );
@@ -139,14 +156,36 @@ describe("persistReplica", () => {
             serializeSidecar({
                 roundId: round.id,
                 flowHash: hashText(text),
-                peers: ["sam"],
+                peers: [SAM],
+                coaches: [],
                 doc: seedDoc(round),
             }),
         );
         await recoverReplica(round, text);
         await persistReplica(round, text);
         const written = parseSidecar(fs.files.get(round.id)!, round.id, hashText(text));
-        expect(written!.peers).toEqual(["sam"]);
+        expect(written!.peers).toEqual([SAM]);
+    });
+
+    // The grant lived only in the contact table, so removing a coach there
+    // promoted them to partner the next time the round opened.
+    it("carries a read-only grant forward, so a coach is not promoted on the next open", async () => {
+        const text = serializeFlow(round);
+        fs.files.set(
+            round.id,
+            serializeSidecar({
+                roundId: round.id,
+                flowHash: hashText(text),
+                peers: [SAM, KIM],
+                coaches: [KIM],
+                doc: seedDoc(round),
+            }),
+        );
+        await recoverReplica(round, text);
+        await persistReplica(round, text);
+        const written = parseSidecar(fs.files.get(round.id)!, round.id, hashText(text));
+        expect(written!.peers).toEqual([SAM, KIM]);
+        expect(written!.coaches).toEqual([KIM]);
     });
 
     it("heals a drifted sheet before it writes", async () => {

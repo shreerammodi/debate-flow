@@ -121,6 +121,21 @@ describe("migrateFromIndexedDb", () => {
         expect(localStorage.getItem(DONE_KEY)).toBeNull();
     });
 
+    it("keeps the database when a record is not a round this build can render", async () => {
+        // The node model that predates version 3. normalizeFlow would fill it out
+        // into a structurally valid, empty round, so the read-back guard cannot
+        // catch it: the content is dropped before the write.
+        await seedDb([
+            { id: "legacy", createdAt: 1, updatedAt: 2, nodes: [{ text: "perm" }] },
+            makeFlowRound({}),
+        ]);
+
+        await expect(migrateFromIndexedDb(FLOWS_DIR, fs)).rejects.toThrow(/record\.scouting/);
+        expect(await dbExists()).toBe(true);
+        expect([...fs.files.keys()].filter((p) => p.endsWith(".ebb"))).toEqual([]);
+        expect(localStorage.getItem(DONE_KEY)).toBeNull();
+    });
+
     it("runs once; a second launch finds nothing to do", async () => {
         await seedDb([makeFlowRound({})]);
         expect(await migrateFromIndexedDb(FLOWS_DIR, fs)).not.toBeNull();

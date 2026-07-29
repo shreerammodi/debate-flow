@@ -4,9 +4,11 @@ import {
     BOLD_CLASS,
     CARD_CLASS,
     classNameToMeta,
+    gridWidth,
     GROUP_CLASS,
     HIGHLIGHT_CLASS,
     KICKED_CLASS,
+    MAX_GRID_WIDTH,
     metaToClassName,
     padGrid,
     toggleClassToken,
@@ -89,5 +91,29 @@ describe("trimGrid / padGrid", () => {
         ]);
         expect(out[0]).not.toBe(src[0]);
         expect(padGrid([["a", "b", "c"]], 2, 1)).toEqual([["a", "b"]]);
+    });
+});
+
+describe("gridWidth", () => {
+    it("takes the wider of the derived columns and the stored rows", () => {
+        expect(gridWidth([1, 2, 3], [["a"]])).toBe(3);
+        expect(gridWidth([1], [["a", "b", "c", "d"]])).toBe(4);
+    });
+
+    it("bounds a claimed width, because the grid materializes rows times width", () => {
+        // The two dimensions are independent and both come from the file: one
+        // very wide row beside many single-cell rows is a product no machine
+        // can allocate, from a file well under a megabyte.
+        const hostile = [
+            Array.from({ length: 10_000 }, () => ""),
+            ...Array.from({ length: 300 }, () => [""]),
+        ];
+
+        const width = gridWidth([8], hostile);
+        expect(width).toBe(MAX_GRID_WIDTH);
+
+        const padded = padGrid(hostile, width, 250);
+        expect(padded).toHaveLength(hostile.length);
+        expect(padded[0]).toHaveLength(MAX_GRID_WIDTH);
     });
 });

@@ -12,5 +12,9 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 
 export function renderRfdHtml(text: string): string {
-    return DOMPurify.sanitize(marked.parse(text) as string);
+    // Nothing in an RFD navigates. The app's own outbound links go through the
+    // scoped opener; a peer's note is markdown from a trust boundary, and a
+    // top-level navigation is the one thing the CSP does not restrain, so a
+    // click on their link would replace the flowing app with their page.
+    return DOMPurify.sanitize(marked.parse(text) as string, { FORBID_ATTR: ["href"] });
 }

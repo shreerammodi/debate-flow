@@ -3,10 +3,14 @@
  *
  * Ebb kept every round in a single-table Dexie database before flows became
  * files. That data is a user's tournament history, so the sweep runs itself: it
- * writes each round into the flows folder, reads every file back and parses it,
- * and only then deletes the database. Any failure leaves the source untouched,
- * because a half-finished migration that has already dropped its input is the
- * one outcome worse than not migrating at all.
+ * checks every record against the file format, writes each round into the flows
+ * folder, reads every file back and parses it, and only then deletes the
+ * database. Any failure leaves the source untouched, because a half-finished
+ * migration that has already dropped its input is the one outcome worse than
+ * not migrating at all. A record the format rejects is such a failure: the
+ * shape a v3 round needs is the shape this build can render, and normalizing
+ * anything else produces an empty round that the read-back cannot tell from a
+ * real one.
  *
  * The raw IndexedDB API is used rather than Dexie so the dependency can go.
  * Soft-deleted rounds are written to a trash subfolder instead of discarded:
@@ -14,9 +18,9 @@
  * user's.
  */
 
-import { normalizeFlow, type FlowRound } from "@/lib/model/flow";
+import { normalizeFlow } from "@/lib/model/flow";
 
-import { parseFlowFile, serializeFlow } from "./flowFile";
+import { checkRound, parseFlowFile, serializeFlow } from "./flowFile";
 import { getFlowFs, type FlowFs } from "./flowFs";
 import { joinPath, suggestFilename } from "./flowPaths";
 import { loadRecents, promoteRecent, saveRecents } from "./recents";
@@ -128,22 +132,29 @@ export async function migrateFromIndexedDb(
     const io = fs ?? (await getFlowFs());
     const trashDir = joinPath(targetDir, "trash");
 
-    const written: { path: string; live: boolean }[] = [];
-    for (const record of records) {
+    // Check every record before writing any of them. normalizeFlow fills
+    // defaults rather than validating, so a record whose shape this build cannot
+    // represent becomes an empty round stamped version 3, which the read-back
+    // below then parses happily: the content is gone before the write, so the
+    // guard cannot see it. A throw here leaves the database whole.
+    const rounds = records.map((record) => {
         const trashed =
             typeof record === "object" &&
             record !== null &&
             "deletedAt" in record &&
             record.deletedAt != null;
-
         // normalizeFlow drops deletedAt; the subfolder carries that fact now.
-        const round = normalizeFlow(record as FlowRound);
+        return { round: normalizeFlow(checkRound(record, "record")), live: !trashed };
+    });
+
+    const written: { path: string; live: boolean }[] = [];
+    for (const { round, live } of rounds) {
         const path = await io.createFlow(
-            trashed ? trashDir : targetDir,
+            live ? targetDir : trashDir,
             suggestFilename(round),
             serializeFlow(round),
         );
-        written.push({ path, live: !trashed });
+        written.push({ path, live });
     }
 
     // Read every file back before dropping the source. A write that reported

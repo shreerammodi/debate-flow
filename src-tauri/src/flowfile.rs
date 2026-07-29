@@ -9,9 +9,17 @@
 //! The filesystem plugin is deliberately not used. Its scope model cannot
 //! express "whatever path the user picked, remembered across restarts" without
 //! persisting an ever-growing path allowlist to disk, which is a poor trade
-//! against granting the webview a general filesystem API. These five commands
+//! against granting the webview a general filesystem API. These six commands
 //! are the whole surface instead, and the recents path is fixed here rather than
 //! passed in, so it cannot be steered from JS.
+//!
+//! Path arguments are not uniform across this surface, and none of them is
+//! trusted for being picker-derived. `read_flow_file` and `write_flow_file`
+//! take whole paths on purpose, and those paths reach them from argv, from the
+//! `?path=` query param and from `recents.json` as much as from a native
+//! picker. `create_flow_file` takes a directory plus a name, and the name is
+//! the one fragment a remote peer can steer, so it is reduced to a bare
+//! filename before it is joined.
 
 use std::fs;
 use std::io::Write;
@@ -73,7 +81,16 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     let tmp = dir.join(format!(".{name}.tmp"));
 
     let write = || -> std::io::Result<()> {
-        let mut f = fs::File::create(&tmp)?;
+        // A leftover temp path may be a symlink someone planted. The unlink
+        // drops the link itself rather than the file it points at, and
+        // `create_new` refuses to open through one that appears in between.
+        // The final rename never follows a link, so this is the only step that
+        // needs the guard.
+        let _ = fs::remove_file(&tmp);
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         f.write_all(contents.as_bytes())?;
         f.sync_all()
     };
@@ -127,6 +144,16 @@ pub const CONFLICT: &str = "conflict:";
 /// as an error.
 #[tauri::command]
 pub fn read_flow_file(path: String) -> Result<Option<FlowSnapshot>, String> {
+    /// A flow is pretty-printed JSON of one round; a fat real one is a few MB.
+    /// The whole file becomes a String, an IPC copy and a parsed object tree, so
+    /// the size has to be refused before the bytes are read. Matches
+    /// `MAX_FLOW_TEXT_CHARS` on the parse side.
+    const MAX_FLOW_BYTES: u64 = 64 * 1024 * 1024;
+    // A missing file falls through to the read below, which reports it as None.
+    if fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_FLOW_BYTES {
+        return Err(format!("{path} is too large to be a flow"));
+    }
+
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -173,15 +200,25 @@ pub fn write_flow_file(
 /// Create a flow without ever overwriting one, returning the path actually
 /// used. Deduping here rather than in JS keeps the check and the create in one
 /// step, so two flows made in the same second cannot race onto one filename.
+///
+/// `name` is reduced to its last component before it is joined, because it is
+/// the one path fragment this shell accepts that a remote peer can steer: a
+/// joined round's suggested filename is derived from the host's document. An
+/// absolute `name` would otherwise replace `dir` outright, and a `..` one would
+/// climb out of it, so `dir` is a boundary only once the reduction has run.
 #[tauri::command]
 pub fn create_flow_file(dir: String, name: String, contents: String) -> Result<String, String> {
     let dir = PathBuf::from(dir);
     fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
 
-    let stem = name
-        .strip_suffix(&format!(".{EXT}"))
-        .unwrap_or(&name)
-        .to_string();
+    let name = Path::new(&name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Not a flow name")?;
+    let stem = name.strip_suffix(&format!(".{EXT}")).unwrap_or(name);
+    if stem.is_empty() {
+        return Err("Not a flow name".into());
+    }
 
     for n in 1..1000 {
         let candidate = if n == 1 {
@@ -314,11 +351,74 @@ mod tests {
         assert_eq!(fs::read_to_string(&second).unwrap(), "b");
     }
 
+    /// `dir` is a boundary, not a suggestion. A joined round's suggested name
+    /// is derived from a remote peer's document, and `Path::join` treats an
+    /// absolute name as a replacement for `dir` and concatenates a climbing one
+    /// verbatim, so the reduction has to happen before the join.
+    #[test]
+    fn create_cannot_escape_the_directory() {
+        let dir = tmpdir("escape");
+        let d = dir.to_string_lossy().into_owned();
+
+        for (name, want) in [
+            ("../../../../tmp/climb", "climb.ebb"),
+            ("/tmp/absolute", "absolute.ebb"),
+            ("sub/nested", "nested.ebb"),
+        ] {
+            let path = create_flow_file(d.clone(), name.into(), "x".into()).unwrap();
+            assert_eq!(Path::new(&path).parent(), Some(dir.as_path()), "{name}");
+            assert!(path.ends_with(want), "{name} landed at {path}");
+        }
+
+        // Nothing usable is left after reduction, so the create is refused
+        // rather than silently rewritten into some other name.
+        for name in ["..", "/", "", ".", ".ebb"] {
+            let err = create_flow_file(d.clone(), name.into(), "x".into()).unwrap_err();
+            assert_eq!(err, "Not a flow name", "{name}");
+        }
+    }
+
+    /// The temp sibling is created, never opened through. A link planted at
+    /// that path by another process running as the user would otherwise carry
+    /// the flow's bytes into whatever it points at.
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_refuses_a_planted_temp_symlink() {
+        let dir = tmpdir("tmplink");
+        let target = dir.join("secret");
+        fs::write(&target, "secret").unwrap();
+        std::os::unix::fs::symlink(&target, dir.join(".round.ebb.tmp")).unwrap();
+
+        let path = dir.join("round.ebb");
+        write_atomic(&path, "flow").unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "secret");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "flow");
+    }
+
     #[test]
     fn reading_a_missing_flow_is_not_an_error() {
         let dir = tmpdir("missing");
         let path = dir.join("gone.ebb").to_string_lossy().into_owned();
         assert!(read_flow_file(path).unwrap().is_none());
+    }
+
+    /// The cap is checked by stat, so it costs nothing on a real flow and the
+    /// oversized case never allocates the string it is protecting against.
+    #[test]
+    fn reading_refuses_a_file_too_large_to_be_a_flow() {
+        let dir = tmpdir("oversize");
+        let path = dir.join("huge.ebb");
+        // Sparse, so the test does not actually write 64 MiB.
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+
+        let Err(err) = read_flow_file(path.to_string_lossy().into_owned()) else {
+            panic!("read a file past the cap");
+        };
+        assert!(err.ends_with("is too large to be a flow"), "{err}");
     }
 
     #[test]

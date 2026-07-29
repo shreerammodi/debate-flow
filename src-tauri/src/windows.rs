@@ -22,6 +22,7 @@ use std::sync::LazyLock;
 
 use parking_lot::Mutex;
 use serde::Serialize;
+use tauri::webview::NewWindowResponse;
 use tauri::{
     AppHandle, Emitter, Manager, Runtime, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
@@ -116,24 +117,39 @@ pub fn emit_target<R: Runtime, S: Serialize + Clone>(
     }
 }
 
-/// Whether the webview may navigate to `url`.
+/// Whether the webview may open `url`, for a navigation and for a new window
+/// alike.
 ///
-/// Tauri permits every navigation by default, and a peer's RFD note reaches the
-/// preview as sanitized HTML that keeps its `http(s)` anchors. A click that
-/// replaced the window would put a remote page inside a webview holding this
-/// app's whole IPC surface, so a remote page is refused. Only that case is:
-/// every scheme the shell uses to load what ebb shipped is left alone, since an
-/// allowlist of internal schemes would break the first one it failed to
-/// anticipate. A link meant for the browser never arrives here - `openExternal`
-/// hands it to the opener plugin, whose own allowlist bounds it.
-fn navigable(url: &Url) -> bool {
+/// Tauri permits both by default, and a peer's RFD note reaches the preview as
+/// sanitized HTML that keeps its `http(s)` hrefs. A click that replaced the
+/// window would put a page inside a webview holding this app's whole IPC
+/// surface, so only what ebb serves is allowed. Every other scheme is left
+/// alone: an allowlist of internal schemes would break the first one it failed
+/// to anticipate, and the schemes the shell loads its own pages over vary by
+/// platform. A link meant for the browser never arrives here - `openExternal`
+/// calls `preventDefault` and hands it to the opener plugin, whose own
+/// allowlist bounds it.
+///
+/// `dev` is threaded rather than read here so the production answer is provable
+/// in a test whatever profile the suite is built under.
+fn navigable_in(url: &Url, dev: bool) -> bool {
     match url.scheme() {
-        "http" | "https" => matches!(
-            url.host_str(),
-            Some("tauri.localhost" | "localhost" | "127.0.0.1")
-        ),
+        "http" | "https" => match url.host_str() {
+            // Windows serves the bundle over this host.
+            Some("tauri.localhost") => true,
+            // The dev server, and only while there is one. In a bundle a
+            // loopback URL is some other process's server, so allowing it would
+            // let a peer's note offer a one-click trip to any local port - the
+            // CardMirror bridge included.
+            Some("localhost" | "127.0.0.1" | "[::1]") => dev,
+            _ => false,
+        },
         _ => true,
     }
+}
+
+fn navigable(url: &Url) -> bool {
+    navigable_in(url, cfg!(dev))
 }
 
 fn build<R: Runtime>(app: &AppHandle<R>, url: WebviewUrl) -> tauri::Result<WebviewWindow<R>> {
@@ -146,6 +162,16 @@ fn build<R: Runtime>(app: &AppHandle<R>, url: WebviewUrl) -> tauri::Result<Webvi
         .fullscreen(false)
         .disable_drag_drop_handler()
         .on_navigation(navigable)
+        // A separate hook from `on_navigation`, and unset it means Windows lets
+        // WebView2 open and navigate the window itself, so `window.open` would
+        // carry data straight out past both this guard and `connect-src`.
+        .on_new_window(|url, _| {
+            if navigable(&url) {
+                NewWindowResponse::Allow
+            } else {
+                NewWindowResponse::Deny
+            }
+        })
         .build()
 }
 
@@ -247,28 +273,48 @@ pub fn drain_boot_open<R: Runtime>(window: WebviewWindow<R>) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn allowed(raw: &str) -> bool {
-        navigable(&Url::parse(raw).expect("parse"))
+    fn allowed(raw: &str, dev: bool) -> bool {
+        navigable_in(&Url::parse(raw).expect("parse"), dev)
     }
 
-    /// The bundle and the dev server are how ebb loads its own pages, so
-    /// refusing either would leave a blank window rather than a hardened one.
+    /// Refusing what ebb serves would leave a blank window rather than a
+    /// hardened one. The custom scheme production uses on macOS and Linux falls
+    /// through to the catch-all arm, so it holds in either profile.
     #[test]
-    fn the_app_can_navigate_to_what_it_shipped() {
-        assert!(allowed("tauri://localhost/index.html"));
-        assert!(allowed("http://tauri.localhost/index.html"));
-        assert!(allowed("http://localhost:1280/index.html"));
-        assert!(allowed("http://127.0.0.1:1280/index.html"));
+    fn the_app_can_open_what_it_shipped() {
+        for dev in [true, false] {
+            assert!(allowed("tauri://localhost/index.html", dev));
+            assert!(allowed("http://tauri.localhost/index.html", dev));
+        }
+        assert!(allowed("http://localhost:1280/index.html", true));
     }
 
-    /// A peer's RFD note keeps its anchors, and a click that replaced the
-    /// window would hand a remote page this app's whole IPC surface.
+    /// A peer's RFD note keeps its `http(s)` hrefs, and a click that replaced
+    /// the window would hand that page this app's whole IPC surface.
     #[test]
     fn a_remote_page_is_refused() {
-        assert!(!allowed("https://example.com/"));
-        assert!(!allowed("http://example.com/"));
-        // A host that merely ends in the local one is a different host.
-        assert!(!allowed("https://tauri.localhost.example.com/"));
-        assert!(!allowed("https://localhost.example.com/"));
+        for dev in [true, false] {
+            assert!(!allowed("https://example.com/", dev));
+            assert!(!allowed("http://example.com/", dev));
+            // A host that merely ends in a permitted one is a different host.
+            assert!(!allowed("https://tauri.localhost.example.com/", dev));
+            assert!(!allowed("https://localhost.example.com/", dev));
+        }
+    }
+
+    /// In a bundle a loopback URL is some other process's server, and the
+    /// CardMirror bridge is one of them. A peer's note may not offer a debater
+    /// a one-click trip to a local port.
+    #[test]
+    fn a_shipped_build_refuses_loopback() {
+        for raw in [
+            "http://localhost:1280/index.html",
+            "http://127.0.0.1:53821/flow",
+            "http://[::1]:53821/flow",
+            "https://127.0.0.1/",
+        ] {
+            assert!(!allowed(raw, false), "{raw} must be refused in a bundle");
+            assert!(allowed(raw, true), "{raw} must work against the dev server");
+        }
     }
 }

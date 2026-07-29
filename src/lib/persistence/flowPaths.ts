@@ -84,6 +84,9 @@ function slug(s: string): string {
  * flow is created before any scouting exists, so the second form is what most
  * files are born with; the name never changes afterwards, because a file that
  * renames itself underneath the user breaks every reference to it.
+ *
+ * Every part is slugged, the event included: a joined round carries whatever
+ * the host's document said, and this result is a bare filename, never a path.
  */
 export function suggestFilename(round: {
     event?: EventId;
@@ -95,9 +98,8 @@ export function suggestFilename(round: {
     const neg = teamCode(sc.negSchool ?? "", sc.neg.first, sc.neg.second);
     const teams = aff && neg ? `${aff} vs ${neg}` : aff || neg;
     const parts = [sc.tournament, sc.round, teams].map((p) => slug(p ?? "")).filter(Boolean);
-    const name = parts.length
-        ? parts.join("-").slice(0, MAX_STEM).replace(/-+$/, "")
-        : `${round.event ?? "policy"}-${localDate(round.createdAt)}`;
+    const fallback = `${slug(round.event ?? "") || "policy"}-${localDate(round.createdAt)}`;
+    const name = (parts.length ? parts.join("-") : fallback).slice(0, MAX_STEM).replace(/-+$/, "");
     return withEbbExt(name);
 }
 

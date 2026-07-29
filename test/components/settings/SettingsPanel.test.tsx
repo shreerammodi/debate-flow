@@ -428,6 +428,26 @@ describe("SettingsPanel", () => {
             await user.click(screen.getByTestId("collab-enabled-toggle"));
             expect(screen.getByTestId("contact-row-alex")).toBeTruthy();
         });
+
+        // Palette only, for all five: a printable-key chord would reach a
+        // command that dials the network from inside the grid.
+        it("offers none of the shared editing commands in the Keyboard pane", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ collabEnabled: true });
+            renderSettingsPanel();
+            await gotoKeyboard(user);
+
+            expect(screen.getByTestId("cmd-edit.undo")).toBeTruthy();
+            for (const id of [
+                "collab.share",
+                "collab.shareView",
+                "collab.join",
+                "collab.invite",
+                "collab.end",
+            ]) {
+                expect(screen.queryByTestId(`cmd-${id}`)).toBeNull();
+            }
+        });
     });
 
     // The Updates pane calls useUpdate(), which throws unless a UpdateProvider is

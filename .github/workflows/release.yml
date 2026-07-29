@@ -10,9 +10,9 @@ on:
             - "v*"
     workflow_dispatch:
 
-# Allow the workflow to create the release and upload assets.
-permissions:
-    contents: write
+# Every job below names the scope it needs, so a job added later starts with no
+# token at all rather than inheriting write.
+permissions: {}
 
 jobs:
     release:
@@ -31,6 +31,12 @@ jobs:
                       args: ""
 
         runs-on: ${{ matrix.platform }}
+        # tauri-action creates the release and uploads the installers with this
+        # job's token, so the job that runs npm install scripts and a build.rs
+        # per crate is unavoidably the one that can write. Narrowing it further
+        # means not using tauri-action.
+        permissions:
+            contents: write
         steps:
             # workflow_dispatch can be pointed at any ref. Everything below names
             # the release after `github.ref_name`, so a dispatch against a branch
@@ -118,11 +124,18 @@ jobs:
     publish:
         needs: release
         runs-on: ubuntu-22.04
+        # Undrafts the release and force-updates the `release` branch.
+        permissions:
+            contents: write
         steps:
             - name: Publish the release
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
+                  # A tag name reaches the shell as text, and git's ref rules
+                  # permit `$`, backtick, `;`, and `&`. Read it as a variable so
+                  # whoever can push a tag cannot also run a command here.
+                  TAG: ${{ github.ref_name }}
+              run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
 
             # Vercel's production branch is `release`, not `main`, so the web
             # build ships the same commit the desktop installers were cut from

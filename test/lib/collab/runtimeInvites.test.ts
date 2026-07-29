@@ -68,6 +68,9 @@ function listens(): number {
 }
 
 beforeEach(async () => {
+    // startForRound asks collabLive(), so every route in this file needs a
+    // shell to be offered at all. isDesktop() reads this global.
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     await endSession();
     net.reset();
     corners.length = 0;
@@ -415,5 +418,60 @@ describe("opening another flow while a session is live", () => {
         // a write in the new round reaches nothing at all.
         expect(() => notifyLocalChange()).not.toThrow();
         expect(currentSession()).toBeNull();
+    });
+});
+
+/**
+ * The one route onto the network that no debater asks for: a flow that was
+ * shared once carries its peers in its sidecar forever, and opening it again -
+ * from Finder, from a file association, from a second launch - runs this.
+ *
+ * The first block is the positive control. An empty recorder only means the
+ * gate held if the same call fills it when both switches are on, so those
+ * assertions are what give the off cases their meaning.
+ */
+describe("resuming a round that was shared before", () => {
+    beforeEach(async () => {
+        // The beforeEach above ends any session, which binds the idle listener
+        // again. Starting from nothing bound is what lets the recorder speak
+        // for the resume alone.
+        useFlowStore.setState({ collabListenEnabled: false });
+        await syncInviteWatch();
+        useFlowStore.setState({ collabListenEnabled: true });
+        net.reset();
+        rememberRoundPeers(round.id, ["sam"]);
+    });
+
+    it("binds an endpoint and dials the remembered peer, with both switches on", async () => {
+        expect(await resumeSession(round)).not.toBeNull();
+        expect(net.calls.filter((c) => c.op === "listen").map((c) => c.endpointId)).toEqual([ME]);
+        expect(net.calls.filter((c) => c.op === "dial").map((c) => c.endpointId)).toEqual(["sam"]);
+    });
+
+    it("binds nothing and dials nobody while shared editing is off", async () => {
+        useFlowStore.setState({ collabEnabled: false });
+        expect(await resumeSession(round)).toBeNull();
+        expect(net.calls).toEqual([]);
+    });
+
+    // A .ebb shared in October must not put this install back on the network
+    // in March because it was double-clicked. The macOS local network prompt
+    // belongs to the moment a debater asks to be reachable, never to startup.
+    it("binds nothing and dials nobody while Listen for invites is off", async () => {
+        useFlowStore.setState({ collabListenEnabled: false });
+        expect(await resumeSession(round)).toBeNull();
+        expect(net.calls).toEqual([]);
+    });
+
+    // The replica is a singleton, so the round being left has to lose its
+    // session whatever the switches say - that is why the guard sits after it.
+    it("still ends the session for the round being left while Listen for invites is off", async () => {
+        expect(await startForRound(round)).not.toBeNull();
+        useFlowStore.setState({ collabListenEnabled: false });
+
+        expect(await resumeSession(makeFlowRound({}))).toBeNull();
+
+        expect(currentSession()).toBeNull();
+        expect(useCollabStore.getState().status).toBe("off");
     });
 });

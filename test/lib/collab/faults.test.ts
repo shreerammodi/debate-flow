@@ -101,6 +101,9 @@ async function pair(round: FlowRound) {
         return attachSync({
             conn,
             endpointId: self.id,
+            // The harness runs alex against sam and nothing else, so the peer on
+            // the far side of either link is the other one.
+            from: self.id === "alex" ? "sam" : "alex",
             doc: () => self.doc,
             apply: (incoming) => {
                 const result = merge(self.doc, incoming);

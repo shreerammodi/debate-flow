@@ -95,6 +95,7 @@ function setup(over: { readOnly?: boolean } = {}) {
         },
         readOnly: over.readOnly,
         endpointId: "me",
+        from: "them",
         now: clock.now,
         schedule: clock.schedule,
     });

@@ -17,7 +17,12 @@ import type { FlowRound } from "@/lib/model/flow";
 import { collabSettings } from "./enabled";
 import { hashText } from "./hash";
 import { getReplica, healReplica, replicaRoundId, seedReplica } from "./replica";
-import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
+import {
+    knownRoundCoaches,
+    knownRoundPeers,
+    rememberRoundPeers,
+    setRoundPeers,
+} from "./roundPeers";
 import { parseSidecar, serializeSidecar } from "./sidecar";
 import { getSidecarFs } from "./sidecarFs";
 import type { CollabDoc } from "./types";
@@ -39,9 +44,12 @@ export async function recoverReplica(round: FlowRound, flowText: string): Promis
         // A broken config directory is not a reason to refuse to open a round.
     }
     seedReplica(round, "", recovered?.doc ?? null);
-    // Remembered rather than replaced: a round taken from an invitation knows
-    // its host before any sidecar for it exists.
-    rememberRoundPeers(round.id, recovered?.peers ?? []);
+    // A recovered sidecar replaces the set, read-only grants included, because
+    // it is the only record of them. Without one the round keeps what it
+    // already knows: one taken from an invitation knows its host before any
+    // sidecar for it exists.
+    if (recovered) setRoundPeers(round.id, recovered.peers, recovered.coaches);
+    else rememberRoundPeers(round.id, []);
     return knownRoundPeers(round.id);
 }
 
@@ -66,7 +74,13 @@ export async function adoptJoinedDoc(
         const fs = await getSidecarFs();
         await fs.write(
             doc.roundId,
-            serializeSidecar({ roundId: doc.roundId, flowHash: hashText(flowText), peers, doc }),
+            serializeSidecar({
+                roundId: doc.roundId,
+                flowHash: hashText(flowText),
+                peers,
+                coaches: [],
+                doc,
+            }),
         );
     } catch {
         // The round is on disk; only the head start on its replica is lost.
@@ -88,6 +102,7 @@ export async function persistReplica(round: FlowRound, flowText: string): Promis
                 roundId: round.id,
                 flowHash: hashText(flowText),
                 peers: knownRoundPeers(round.id),
+                coaches: knownRoundCoaches(round.id),
                 doc,
             }),
         );

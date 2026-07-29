@@ -35,6 +35,15 @@ describe("parseManifest", () => {
         expect(() => parseManifest(null)).toThrow();
         expect(() => parseManifest("nope")).toThrow();
     });
+
+    it("keeps a platform key from re-pointing the map's prototype", () => {
+        const m = parseManifest({
+            ...valid,
+            platforms: JSON.parse('{"__proto__":{"signature":"sig","url":"https://example.com"}}'),
+        });
+        expect(Object.getPrototypeOf(m.platforms)).toBeNull();
+        expect(Object.keys(m.platforms)).toEqual(["__proto__"]);
+    });
 });
 
 describe("isNewerVersion", () => {

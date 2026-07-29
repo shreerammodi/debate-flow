@@ -48,10 +48,24 @@ export function liveCells(sheet: CollabSheet, col: number): CollabCell[] {
         .sort(compareCells);
 }
 
+/**
+ * The widest a sheet gets. A cell's `col` arrives inside a peer's document and
+ * becomes the bound of every loop that walks a sheet's columns: the projection
+ * here, the grid patch, and the local row insert and remove. One cell naming a
+ * column index far out asks for more array slots than the machine has memory
+ * for, and the loop never returns. A flow is a speech per column.
+ */
+const MAX_COL = 512;
+
 /** One past the highest column index the sheet holds a cell in. */
 export function sheetWidth(sheet: CollabSheet): number {
     let width = 0;
-    for (const cell of Object.values(sheet.cells)) width = Math.max(width, cell.col + 1);
+    for (const cell of Object.values(sheet.cells)) {
+        // A cell outside the range projects nowhere, which is already what a
+        // cell nobody can see looks like.
+        if (!Number.isInteger(cell.col) || cell.col < 0 || cell.col >= MAX_COL) continue;
+        width = Math.max(width, cell.col + 1);
+    }
     return width;
 }
 

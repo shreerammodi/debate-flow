@@ -14,6 +14,10 @@ import type { CollabCell, CollabDoc, CollabSheet, Register } from "./types";
 export type Vector = Record<string, Stamp>;
 
 function raise(into: Vector, stamp: Stamp): void {
+    // An actor comes off the wire and is used as a key here. `__proto__` would
+    // swap this vector's own prototype instead of recording a stamp, and every
+    // later lookup in it would resolve through the stamp that replaced it.
+    if (stamp.actor === "__proto__") return;
     const held = into[stamp.actor];
     if (!held || compareStamps(stamp, held) > 0) into[stamp.actor] = stamp;
 }

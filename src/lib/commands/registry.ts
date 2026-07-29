@@ -157,6 +157,7 @@ export const COLLAB_COMMANDS: readonly CommandId[] = [
     "collab.share",
     "collab.shareView",
     "collab.join",
+    "collab.invite",
     "collab.end",
 ];
 
