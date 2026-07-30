@@ -89,9 +89,10 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       `runtimeInvites.test.ts`, under the positive control the other four
       have. Switching the master off while a session is already running tears
       it down rather than waiting for the next route to ask
-      (`useInviteWatch.ts:42-47`, `test/lib/collab/useInviteWatch.test.tsx`);
-      a switch thrown while one is still binding is not covered, because the
-      gate is read before the await and the handle is assigned after it.
+      (`useInviteWatch.ts:42-47`, `test/lib/collab/useInviteWatch.test.tsx`),
+      and one thrown while a session is still binding is caught on the far side
+      of the await, so a bind that completes after the switch went off ends
+      itself instead of coming up with the switch off.
       DNS-based peer discovery stays disabled in every state, so an idle ebb
       publishes nothing about itself.
     - A peer link carries one round and nothing else: no folder listing, no path

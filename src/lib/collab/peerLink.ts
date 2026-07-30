@@ -152,36 +152,93 @@ function isCleanMap(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * An entry the merge and the vector dereference the moment a document lands:
- * `mergeRegisters` compares a register's stamp and `vectorOf` walks every cell's
- * two, so an entry that is null or carries no stamp throws where nothing catches
- * it. Checked for shape rather than for a stamp a clock could have produced,
- * because the order is deliberately written to survive a count it does not
- * recognize.
+ * The characters one replicated value may carry.
+ *
+ * A flow cell is a line of a speech and a decision is a paragraph of one, so
+ * this is a couple of hundred lines past anything a debater types into either.
+ * Its size is set by the other end: `MAX_ROUND_BYTES` across the 512 sheets a
+ * round can hold, halved again for the half of a sheet its grid keeps, is
+ * 48 KiB - the smallest a sheet's rows are ever projected under - and a
+ * character is up to three bytes there. A value this admits has to fit inside
+ * that, or it is a value the file then cannot carry.
  */
-function isEntry(value: unknown, ...stamps: string[]): boolean {
-    return isRecord(value) && stamps.every((key) => isRecord(value[key]));
+const MAX_VALUE = 16 * 1024;
+
+/**
+ * A value the file can carry: short enough for the budget the projection spends
+ * on it, and shallow enough to write at all. `JSON.parse` accepts nesting far
+ * past what `JSON.stringify` will walk, and every writer below this line is a
+ * stringify - the flow file, the sidecar, the next delta - so a value that
+ * cannot be written back out is refused here rather than thrown in the save
+ * path.
+ */
+function fits(value: unknown): boolean {
+    try {
+        return (JSON.stringify(value) ?? "").length <= MAX_VALUE;
+    } catch {
+        return false;
+    }
 }
 
 /**
- * A document's outline rather than its contents. The merge is written to
- * survive a register it does not recognize, but the vector walks `round`,
- * `sheets` and every sheet's own maps the moment the message lands and throws
- * when one of them is absent or carries a prototype key.
+ * A register the merge and the projection each dereference the moment a
+ * document lands: `mergeRegisters` compares its stamp and the projection writes
+ * its value into the file whole. Checked for shape rather than for a stamp a
+ * clock could have produced, because the order is deliberately written to
+ * survive a count it does not recognize.
+ */
+function isRegister(value: unknown): boolean {
+    return isRecord(value) && isRecord(value.stamp) && fits(value.value);
+}
+
+/**
+ * A cell as every reader of one already assumes it is.
+ *
+ * `vectorOf` walks both stamps the moment a document lands, `firstDelete`
+ * compares `deleted` against the local cell's, `mergeSheet` trims `text` to
+ * name a burial, and the projection reads `meta` before it checks it and then
+ * writes it to the file whole. A cell that is missing one of them is admitted
+ * into the replica, kept in the sidecar, and throws in every later projection
+ * or merge of that round: a denial the restart meant to clear it carries back
+ * in. An absent `deleted` is the quiet one - it reads as neither alive nor
+ * deleted, so the cell projects nowhere until the next delete throws on it.
+ */
+function isCell(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        isRecord(value.textStamp) &&
+        isRecord(value.metaStamp) &&
+        (value.deleted === null || isRecord(value.deleted)) &&
+        (value.text === null || typeof value.text === "string") &&
+        isCleanMap(value.meta) &&
+        fits(value.text) &&
+        fits(value.meta)
+    );
+}
+
+/**
+ * A document as the merge, the vector and the projection all read it. The merge
+ * is written to survive a register it does not recognize, but the vector walks
+ * `round`, `sheets` and every sheet's own maps the moment the message lands and
+ * throws when one of them is absent or carries a prototype key. A sheet's own
+ * `deleted` is the same shape as a cell's and is read the same way: absent, it
+ * takes the debater's sheet out of every projection of the round and out of the
+ * file the autosave writes next.
  */
 function isDocMessage(m: Record<string, unknown>): m is DocMessage {
     if (m.type !== "state" && m.type !== "delta") return false;
     const doc = m.doc;
     if (!isRecord(doc) || typeof doc.roundId !== "string") return false;
     if (!isCleanMap(doc.round) || !isCleanMap(doc.sheets)) return false;
-    if (!Object.values(doc.round).every((reg) => isEntry(reg, "stamp"))) return false;
+    if (!Object.values(doc.round).every(isRegister)) return false;
     return Object.values(doc.sheets).every(
         (sheet) =>
             isRecord(sheet) &&
+            (sheet.deleted === null || isRecord(sheet.deleted)) &&
             isCleanMap(sheet.fields) &&
             isCleanMap(sheet.cells) &&
-            Object.values(sheet.fields).every((reg) => isEntry(reg, "stamp")) &&
-            Object.values(sheet.cells).every((cell) => isEntry(cell, "textStamp", "metaStamp")),
+            Object.values(sheet.fields).every(isRegister) &&
+            Object.values(sheet.cells).every(isCell),
     );
 }
 

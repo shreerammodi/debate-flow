@@ -173,6 +173,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   nightly does not update itself. It does: it reads the same update feed a
   tagged build reads, so it offers you the next tagged release. What stays true
   is the other direction - a nightly is never served as an update to anyone.
+- A link in an RFD renders as its text rather than as a link. A note is
+  markdown, and a click on a link in one used to replace the whole flowing app
+  with that page, taking an unsaved round with it - which a partner or a coach
+  could put there as easily as you could. Links you paste for your own
+  reference still read the same; they no longer navigate.
 
 ## [0.7.2] - 2026-07-25
 

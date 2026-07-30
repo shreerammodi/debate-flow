@@ -31,11 +31,18 @@ export const FLOW_FILE_VERSION = 3;
  *
  * A round projected from a replica carries register values a peer chose, and
  * the parser below refuses several of them. A file this parser cannot read back
- * is a round the debater loses for good, so the write refuses first.
+ * is a round the debater loses for good, so the write refuses first - by type,
+ * by cell count, and by the size the read caps at. The projection spends
+ * `MAX_ROUND_BYTES` so a peer cannot reach that last one; reaching it anyway
+ * fails the autosave loudly and leaves the file already on disk readable.
  */
 export function serializeFlow(round: FlowRound): string {
     checkRound(round, "round");
-    return JSON.stringify({ version: FLOW_FILE_VERSION, round }, null, 2) + "\n";
+    const text = JSON.stringify({ version: FLOW_FILE_VERSION, round }, null, 2) + "\n";
+    if (text.length > MAX_FLOW_TEXT_CHARS) {
+        fail("round", `is longer than the ${MAX_FLOW_TEXT_CHARS} characters a flow file holds`);
+    }
+    return text;
 }
 
 // --- Validation --------------------------------------------------------------
@@ -188,6 +195,63 @@ export function paddedCells(rows: readonly unknown[][]): number {
     let widest = 0;
     for (const row of rows) widest = Math.max(widest, row.length);
     return rows.length * widest;
+}
+
+/**
+ * Ceiling on the bytes one round's own values can claim of the file.
+ *
+ * `MAX_ROUND_CELLS` bounds how many cells a round holds and nothing bounds how
+ * long one is, and a peer chooses both, so a round inside the cell ceiling
+ * still serializes past the size a reopen accepts - and a round the app wrote
+ * and cannot reopen is the whole round gone. Three quarters of the read cap;
+ * the rest is the envelope and the slack in counting a value high.
+ *
+ * Bytes and not characters, because the shell refuses the file by the bytes on
+ * disk before the parse refuses it by the characters they decode to, and one
+ * character is up to three bytes: a round of Chinese counted in characters
+ * would pass a budget under the parse cap and still be a file the shell will
+ * not hand back.
+ */
+export const MAX_ROUND_BYTES = 48 * 1024 * 1024;
+
+/**
+ * What the indent, the separators and the newline of one line of the file cost
+ * on top of the value sitting on it. A cell is six levels in, so twelve spaces
+ * and a comma; counted high, because a budget that binds early costs a peer
+ * rows and one that binds late costs the debater the file.
+ */
+const FILE_LINE = 16;
+
+/**
+ * What one value costs the flow file: its own JSON in UTF-8, plus a line's
+ * worth of structure for every line it spans. An empty grid is almost nothing
+ * to hold and megabytes to write, so a budget counting only the values would
+ * still read as unspent at the size the reader refuses. `MAX_ROUND_BYTES`
+ * counts these, and the projection that writes a round spends the same number
+ * as its budget, so both ask here rather than restating the format.
+ *
+ * Counted rather than encoded, and a scalar - which is what a cell is - never
+ * built in its indented form: every cell of every sheet is priced on every
+ * projection, and a `TextEncoder` pass would allocate the round to answer.
+ */
+export function fileBytes(value: unknown): number {
+    const text =
+        value !== null && typeof value === "object"
+            ? (JSON.stringify(value, null, 2) ?? "null")
+            : (JSON.stringify(value) ?? "null");
+    let bytes = text.length;
+    let lines = 1;
+    for (let i = 0; i < text.length; i += 1) {
+        const code = text.charCodeAt(i);
+        if (code < 0x80) {
+            if (code === 10) lines += 1;
+            continue;
+        }
+        // A surrogate pair is charged six where it takes four, which is the
+        // side of the count a budget belongs on.
+        bytes += code < 0x800 ? 1 : 2;
+    }
+    return bytes + lines * FILE_LINE;
 }
 
 /** Validate one sheet, returning the cells the grid pads it to. */

@@ -13,12 +13,13 @@ import { deltaSince, isEmptyDelta, vectorOf } from "@/lib/collab/delta";
 import { projectDoc, seedDoc, sheetWidth } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
-import { parseWireMessage, type WireMessage } from "@/lib/collab/peerLink";
+import { parseWireMessage, type PeerLinkConfig, type WireMessage } from "@/lib/collab/peerLink";
+import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { createClock, type Stamp } from "@/lib/collab/stamp";
 import { cellKey, type CollabCell, type CollabDoc, type CollabSheet } from "@/lib/collab/types";
 import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
-import { parseFlowFile, serializeFlow } from "@/lib/persistence/flowFile";
+import { MAX_FLOW_TEXT_CHARS, parseFlowFile, serializeFlow } from "@/lib/persistence/flowFile";
 
 /** Far above any stamp the victim's own clock has reached, and a safe integer. */
 const HIGH: Stamp = { ms: 9_000_000_000_000, counter: 0, actor: "attacker" };
@@ -466,9 +467,13 @@ describe("what a peer's registers can do to the file the round is saved as", () 
         expect(reopened.scouting.decision).toBeUndefined();
     });
 
-    it("leaves it openable when a cell's text and decoration are not either", () => {
+    it("leaves it openable when a cell's decoration is not a decoration", () => {
         const round = roundWithData();
         const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        // A decoration is a map of keys the file may not know, so the transport
+        // checks it is a map and no more; whether the file can hold it is the
+        // projection's question. A cell's `text` is refused at the transport
+        // instead, because the merge trims it to report a burial.
         const reopened = savedAndReopened(round, {
             roundId: round.id,
             round: {},
@@ -478,7 +483,6 @@ describe("what a peer's registers can do to the file the round is saved as", () 
                     fields: {},
                     deleted: null,
                     cells: {
-                        num: hostileCell({ col: 0, rank: "21", text: 5 as unknown as string }),
                         deco: hostileCell({
                             col: 1,
                             rank: "21",
@@ -649,5 +653,132 @@ describe("a document map whose values are not what the merge reads", () => {
         expect(
             onWire(line(`{"scouting":{"value":{"judge":"x"},"stamp":${stamp}}}`, sheet("{}"))),
         ).not.toBeNull();
+    });
+});
+
+describe("a cell missing a field every reader of one dereferences", () => {
+    const stamp = JSON.stringify(HIGH);
+    /** One delta carrying one cell, exactly as the bytes arrive. */
+    const withCell = (cell: string, sheet = '"deleted":null,') =>
+        `{"type":"delta","doc":{"roundId":"r","round":{},"sheets":{"s":{"id":"s","fields":{},${sheet}"cells":{"0|a1|x":${cell}}}}}}`;
+    const cell = (over: string) =>
+        `{"col":0,"rank":"a1","actor":"x","text":"t","meta":{},"textStamp":${stamp},"metaStamp":${stamp},"deleted":null${over}}`;
+    /** The same cell with one field taken out of it. */
+    const without = (field: string) => {
+        const parsed = JSON.parse(cell("")) as Record<string, unknown>;
+        delete parsed[field];
+        return JSON.stringify(parsed);
+    };
+
+    it("is refused at the transport rather than admitted and thrown on later", () => {
+        // Absence, which the suite's hostile cells were all built to avoid:
+        // every one started from a complete base. `meta` throws in every
+        // projection of the round, `deleted` throws on the next delete of the
+        // same key, and both are retained in the replica and carried back in
+        // from the sidecar, so the round stays dead across a restart.
+        for (const field of ["meta", "text", "deleted", "textStamp", "metaStamp"]) {
+            expect(onWire(withCell(without(field))), field).toBeNull();
+        }
+        expect(onWire(withCell(cell("")))).not.toBeNull();
+    });
+
+    it("is refused when the field is present but is not what is read", () => {
+        for (const over of [
+            ',"meta":null',
+            ',"meta":5',
+            ',"meta":[]',
+            ',"meta":"bold"',
+            ',"text":5',
+            ',"text":{}',
+            ',"deleted":7',
+        ]) {
+            expect(onWire(withCell(cell(over))), over).toBeNull();
+        }
+    });
+
+    it("takes a sheet with no delete field with it, which empties the round", () => {
+        // `firstDelete` hands back the absent one, so the merged sheet is
+        // neither alive nor deleted: `projectDoc` filters it out and the next
+        // autosave writes a round without the debater's own sheet in it.
+        expect(onWire(withCell(cell(""), ""))).toBeNull();
+        expect(onWire(withCell(cell(""), '"deleted":7,'))).toBeNull();
+    });
+
+    it("never reaches the far side of a live link", async () => {
+        const config: PeerLinkConfig = { discovery: "mdns", relay: true };
+        const net = createMemoryNet();
+        const host = await net.create("alex")(config);
+        const guest = await net.create("sam")(config);
+        const heard: WireMessage[] = [];
+        await host.listen((peer) => peer.onMessage((m) => heard.push(m)));
+        const side = await guest.dial("alex");
+
+        const poison = JSON.parse(withCell(without("meta"))) as WireMessage;
+        side.send(poison);
+        expect(heard).toEqual([]);
+        side.send(JSON.parse(withCell(cell(""))) as WireMessage);
+        expect(heard).toHaveLength(1);
+    });
+});
+
+describe("how many bytes a peer can put in the file", () => {
+    /** Just inside what the transport admits for one value. */
+    const FAT = "x".repeat(15 * 1024);
+
+    it("admits one value of it, which is what leaves the total a peer's to pick", () => {
+        const stamp = JSON.stringify(HIGH);
+        const cell = (text: string) =>
+            `{"type":"delta","doc":{"roundId":"r","round":{},"sheets":{"s":{"id":"s","fields":{},"deleted":null,"cells":{"0|a1|x":{"col":0,"rank":"a1","actor":"x","text":${JSON.stringify(text)},"meta":{},"textStamp":${stamp},"metaStamp":${stamp},"deleted":null}}}}}}`;
+        expect(onWire(cell(FAT))).not.toBeNull();
+        // Past the cap, which is set so one admitted value still fits the
+        // smallest share of the file a sheet's rows are ever projected under.
+        expect(onWire(cell("x".repeat(17 * 1024)))).toBeNull();
+    });
+
+    it("cannot leave the round too large to open again", () => {
+        const round = roundWithData();
+        const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        const typed = Array.from({ length: 220 }, (_, r) =>
+            Array.from({ length: 8 }, (_, c) => `arg ${r}.${c}`),
+        );
+        flow.data = typed;
+        // 4,800 cells the transport takes one message at a time, 73 MB against
+        // the 64 MiB the parse refuses and the 64 MiB of bytes the shell
+        // refuses ahead of it. Unbudgeted, the autosave landed a file the next
+        // open could not read, and the flow file is the round.
+        const cells: Record<string, CollabCell> = {};
+        for (let i = 0; i < 1_600; i++) {
+            for (const col of [0, 1, 2]) {
+                cells[`${col}r${i}`] = hostileCell({ col, rank: `${i}1`, text: FAT });
+            }
+        }
+        const merged = merge(seedDoc(round), {
+            roundId: round.id,
+            round: {},
+            sheets: { hoard: { id: "hoard", fields: {}, deleted: null, cells } },
+        }).doc;
+
+        const text = serializeFlow(projectDoc(merged, round));
+        expect(text.length).toBeLessThanOrEqual(MAX_FLOW_TEXT_CHARS);
+        expect(new Blob([text]).size).toBeLessThanOrEqual(MAX_FLOW_TEXT_CHARS);
+        const reopened = parseFlowFile(text);
+        // The debater's flow is written whole: the bytes are shared the way the
+        // cells are, and a real sheet is orders under its share.
+        expect(reopened.sheets.find((s) => s.id === flow.id)!.data).toEqual(typed);
+        // Clamped, not dropped, and the replica still holds every cell.
+        const hoard = reopened.sheets.find((s) => s.id === "hoard")!;
+        expect(hoard.data.length).toBeGreaterThan(0);
+        expect(hoard.data.length).toBeLessThan(1_600);
+        expect(Object.keys(merged.sheets.hoard.cells)).toHaveLength(4_800);
+    });
+
+    it("refuses to write a round longer than the read accepts", () => {
+        const round = roundWithData();
+        const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        // The last line of defence, reached only by a bug in the budget above
+        // it: a file the app writes and then refuses to read is the round gone,
+        // and a failed autosave leaves the copy already on disk readable.
+        flow.data = [["x".repeat(MAX_FLOW_TEXT_CHARS)]];
+        expect(() => serializeFlow(round)).toThrow(/longer than/);
     });
 });

@@ -12,9 +12,13 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 
 export function renderRfdHtml(text: string): string {
-    // Nothing in an RFD navigates. The app's own outbound links go through the
-    // scoped opener; a peer's note is markdown from a trust boundary, and a
-    // top-level navigation is the one thing the CSP does not restrain, so a
-    // click on their link would replace the flowing app with their page.
+    // No RFD link navigates, whoever wrote it. A peer's note is markdown from a
+    // trust boundary and a top-level navigation is the one thing the CSP does
+    // not restrain, so their link would replace the flowing app with their
+    // page. The debater's own link is stripped too, rather than left as a
+    // click that the shell's navigation guard refuses on the desktop and that
+    // walks away from an unsaved round in a browser. The app's own outbound
+    // links go through the scoped opener instead, which is where a link that
+    // should reach a browser belongs.
     return DOMPurify.sanitize(marked.parse(text) as string, { FORBID_ATTR: ["href"] });
 }

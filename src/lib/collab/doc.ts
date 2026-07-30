@@ -19,6 +19,8 @@ import {
 import type { Scouting } from "@/lib/model/types";
 import {
     MAX_ROUND_CELLS,
+    MAX_ROUND_BYTES,
+    fileBytes,
     holdsCellMeta,
     holdsScouting,
     paddedCells,
@@ -96,6 +98,63 @@ function projectedCells(sheet: CollabSheet): number {
     return width * height;
 }
 
+/** What one padded, empty grid slot costs the file: a line holding `null`. */
+const EMPTY_CELL = fileBytes(null);
+
+/**
+ * What a sheet costs the file, derived from the document for the reason
+ * `projectedCells` is: `projectDoc` spends its budget before the rectangle
+ * exists. Every slot the grid pads to is a line whether a cell sits on it or
+ * not, and every live cell, decoration and register adds what the file writes
+ * for it. Counted over the whole sheet, high rather than exactly, so what a
+ * sheet is charged depends on the document alone.
+ */
+function projectedBytes(sheet: CollabSheet, cells: number): number {
+    let bytes = cells * EMPTY_CELL;
+    for (const cell of Object.values(sheet.cells)) {
+        if (cell.deleted !== null) continue;
+        if (typeof cell.text === "string") bytes += fileBytes(cell.text);
+        if (Object.keys(cell.meta).length > 0) bytes += fileBytes(cell.meta);
+    }
+    for (const [path, reg] of Object.entries(sheet.fields)) {
+        bytes += path.length + fileBytes(reg.value);
+    }
+    return bytes;
+}
+
+/**
+ * The shape a map of registers describes, in the bytes the file allows it.
+ *
+ * Every path here is a peer's and so is every value, `MAX_REGISTERS` bounds how
+ * many of them there are and nothing bounds how long, and all of them are
+ * written: a path this build does not know is forwarded whole so a newer build
+ * still reads it. Cheapest first, so a peer holding four thousand spare paths on
+ * the debater's sheet spends what is left over rather than the title, and by
+ * path when two cost the same, so two replicas holding one document drop the
+ * same ones. Written in the map's own order, so a peer's spending does not
+ * shuffle the file's keys. Returns the bytes left.
+ */
+function fitShape(
+    fields: Record<string, Register>,
+    bytes: number,
+    out: Record<string, unknown>,
+): number {
+    const costed = Object.entries(fields)
+        .map(([path, reg]) => ({ path, cost: path.length + fileBytes(reg.value) }))
+        .sort((a, b) => a.cost - b.cost || (a.path < b.path ? -1 : 1));
+    const kept = new Set<string>();
+    let spare = bytes;
+    for (const { path, cost } of costed) {
+        if (cost > spare) continue;
+        spare -= cost;
+        kept.add(path);
+    }
+    for (const [path, reg] of Object.entries(fields)) {
+        if (kept.has(path)) setPath(out, path, reg.value);
+    }
+    return spare;
+}
+
 export function seedSheet(sheet: FlowSheet, stamp: Stamp): CollabSheet {
     const leaves: Record<string, Json> = {};
     for (const [key, value] of Object.entries(sheet)) {
@@ -152,13 +211,23 @@ export function seedDoc(round: FlowRound): CollabDoc {
  * number. A round the parser refuses is a round the debater loses, so a value
  * the file cannot hold falls back to what a file predating that field gets.
  *
- * `room` is the cells of the round's budget this sheet may claim; see
- * `projectDoc`. One sheet on its own cannot reach the default, because MAX_COL
- * times MAX_ROWS is under it.
+ * `room` is the cells of the round's budget this sheet may claim and `bytes`
+ * the bytes of it; see `projectDoc`. A sheet on its own cannot reach the cell
+ * default, because MAX_COL times MAX_ROWS is under it, but it can reach the
+ * byte default, because a peer picks how long every cell is.
  */
-export function projectSheet(sheet: CollabSheet, room = MAX_ROUND_CELLS): FlowSheet {
+export function projectSheet(
+    sheet: CollabSheet,
+    room = MAX_ROUND_CELLS,
+    bytes = MAX_ROUND_BYTES,
+): FlowSheet {
+    // Half the sheet's bytes to its registers and half kept for the grid: the
+    // merge lets a peer hold four thousand register paths on the debater's own
+    // sheet, and spending the whole share on those would write the sheet with
+    // no rows in it at all.
+    const forShape = Math.floor(bytes / 2);
     const shape: Record<string, unknown> = {};
-    for (const [path, reg] of Object.entries(sheet.fields)) setPath(shape, path, reg.value);
+    let spare = bytes - forShape + fitShape(sheet.fields, forShape, shape);
 
     const width = sheetWidth(sheet);
     const columns: CollabCell[][] = [];
@@ -178,14 +247,26 @@ export function projectSheet(sheet: CollabSheet, room = MAX_ROUND_CELLS): FlowSh
     const meta: Record<string, CellMeta> = {};
     for (let row = 0; row < height; row++) {
         const line: (string | null)[] = [];
+        const decorated: [string, CellMeta][] = [];
+        let cost = 0;
         for (let col = 0; col < width; col++) {
             const cell = columns[col][row];
-            line.push(typeof cell?.text === "string" ? cell.text : null);
+            const text = typeof cell?.text === "string" ? cell.text : null;
+            line.push(text);
+            cost += text === null ? EMPTY_CELL : fileBytes(text);
             if (cell && Object.keys(cell.meta).length > 0 && holdsCellMeta(cell.meta)) {
-                meta[`${row},${col}`] = cell.meta as CellMeta;
+                const key = `${row},${col}`;
+                decorated.push([key, cell.meta as CellMeta]);
+                cost += key.length + fileBytes(cell.meta);
             }
         }
+        // A row past what the sheet's bytes buy comes off the bottom for
+        // the same reason a row past `room` does. The whole row or none of it:
+        // half a row of a speech reads as text the debater deleted.
+        if (cost > spare) break;
+        spare -= cost;
         data.push(line);
+        for (const [key, value] of decorated) meta[key] = value;
     }
     const projected: FlowSheet = {
         ...(shape as Omit<FlowSheet, "id" | "data" | "meta">),
@@ -213,50 +294,86 @@ export function projectSheet(sheet: CollabSheet, room = MAX_ROUND_CELLS): FlowSh
  * Without that, one cell arriving from a partner re-derives every sheet in the
  * round, up to thirty times a second while they type.
  *
- * This is also where the file's cell ceiling is spent, because the ceiling is a
- * total across sheets while the merge's `MAX_CELLS` is per sheet: two sheets a
- * peer grew to the widest and tallest this build projects sum past it, and then
- * every autosave of that round is refused for as long as the round holds them.
- * The budget belongs here and not in the merge - what the merge accepts must
- * not depend on the replica's own other sheets, or two peers holding different
- * sheets would accept different cells and diverge. A projection is local: the
- * replica still holds every cell it was sent, and only the file is bounded.
+ * This is also where the file's two ceilings are spent, because both are totals
+ * across sheets while the merge's `MAX_CELLS` is per sheet: two sheets a peer
+ * grew to the widest and tallest this build projects sum past the cell ceiling,
+ * and a few thousand cells of a few kilobytes sum past the bytes a reopen
+ * accepts. Either way every autosave of that round is then refused for as long
+ * as the round holds them. The budgets belong here and not in the merge - what
+ * the merge accepts must not depend on the replica's own other sheets, or two
+ * peers holding different sheets would accept different cells and diverge. A
+ * projection is local: the replica still holds every cell it was sent, and only
+ * the file is bounded.
  *
- * Cheapest sheet first, each offered everything still unspent, so a round the
- * format holds is projected exactly as it would be with no budget at all: the
- * budget only ever runs out on a sheet larger than every sheet before it. A
- * sheet is therefore clamped only once the sheets no larger than it have spent
- * the whole two million, which at the 512-sheet ceiling takes 3,907 cells each
- * - a 325-row sheet of twelve speeches. A fat real round is a few hundred rows
- * by a dozen speeches per sheet, three orders of magnitude below that.
+ * Cheapest sheet first, each held to an equal share of what is left, so a round
+ * the format holds is projected exactly as it would be with no budget at all: a
+ * sheet that needs less than its share leaves the remainder to the rest, and
+ * the budget only binds once the sheets have asked for more than two million
+ * cells, or forty-eight million bytes, between them. A sheet is then held to
+ * its share rather than to nothing, so no number of sheets a peer invents can
+ * empty one of the debater's: at the 512-sheet ceiling the smallest shares are
+ * 3,906 cells and 96 KiB, of which the grid keeps 48 KiB and one value of the
+ * largest the transport admits still fits, and a fat real round is a few
+ * hundred rows by a dozen speeches per sheet.
  */
 export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc): FlowRound {
     const shape: Record<string, unknown> = {};
-    for (const [path, reg] of Object.entries(doc.round)) setPath(shape, path, reg.value);
+    // The round's own registers come off the top, up to half: they are a peer's
+    // to write too and the file carries them whether or not it carries a single
+    // sheet, so the sheets keep the other half the way a grid keeps half of its
+    // own sheet's.
+    const forShape = Math.floor(MAX_ROUND_BYTES / 2);
+    let unspentBytes = MAX_ROUND_BYTES - forShape + fitShape(doc.round, forShape, shape);
     const already = new Map(base.sheets.map((s) => [s.id, s]));
-    // What each sheet costs the file: the reused ones from the copy already
-    // projected, the rest derived. Cheapest first, then by id, so two peers
-    // holding the same document write the same file - `order` would not do,
-    // being a register a peer writes.
+    // Every sheet costs what the document says it costs, never what the copy
+    // already projected came back as. Costing a reused sheet from that copy
+    // would feed a clamp back into itself, keeping a sheet small long after the
+    // round that crowded it out is gone, and would read a local value into a
+    // decision two replicas holding the same document have to make alike.
+    // Cheapest first, then by id: `order` would not do, being a register a peer
+    // writes.
     const costed = Object.values(doc.sheets)
         .filter((s) => s.deleted === null)
         .map((sheet) => {
-            const untouched =
-                settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined;
-            const cost = untouched ? paddedCells(untouched.data) : projectedCells(sheet);
-            return { sheet, untouched, cost };
+            const cost = projectedCells(sheet);
+            return {
+                sheet,
+                untouched: settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined,
+                cost,
+                bytes: projectedBytes(sheet, cost),
+            };
         })
         .sort((a, b) => a.cost - b.cost || (a.sheet.id < b.sheet.id ? -1 : 1));
 
     let unspent = MAX_ROUND_CELLS;
+    let unserved = costed.length;
     const sheets = costed
-        .map(({ sheet, untouched, cost }) => {
-            if (untouched && cost <= unspent) {
+        .map(({ sheet, untouched, cost, bytes }) => {
+            const share = Math.min(cost, Math.floor(unspent / unserved));
+            const byteShare = Math.floor(unspentBytes / unserved);
+            unserved -= 1;
+            // Charged what the document says the sheet costs, capped at the
+            // share, whether it spends that or is clamped under it. Charging
+            // what came back would mean measuring the projection, and counting
+            // a sheet high only ever hands the next one less of a budget no
+            // real round reaches.
+            unspentBytes -= Math.min(bytes, byteShare);
+            // Reused only when the copy already projected is the whole sheet.
+            // One that came back clamped would otherwise be handed back
+            // unchanged, keeping the sheet small after the round that crowded
+            // it out is gone and leaving a replica that once clamped writing a
+            // different file than one that never did.
+            if (
+                untouched &&
+                cost <= share &&
+                bytes <= byteShare &&
+                paddedCells(untouched.data) === cost
+            ) {
                 unspent -= cost;
                 return untouched;
             }
-            // Clamped to what is left, and counted as what it came back as.
-            const projected = projectSheet(sheet, unspent);
+            // Clamped to its share, and counted as what it came back as.
+            const projected = projectSheet(sheet, share, byteShare);
             unspent -= paddedCells(projected.data);
             return projected;
         })

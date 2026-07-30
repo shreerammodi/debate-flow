@@ -22,6 +22,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -54,6 +55,22 @@ const MAX_LINE: usize = 4 * 1024 * 1024;
 /// the EndpointId cannot spend past. A round is a partner, a few guests and a
 /// coach; anything near this number is not a debate.
 const MAX_CONNS: usize = 32;
+
+/// One in-flight connection, counted from the moment the accept loop hands it
+/// to a task until that task ends.
+///
+/// The map alone cannot bound what a stranger spends: an entry appears only
+/// once the peer has opened its stream and sent a line, so a dialler that
+/// completes the handshake and then says nothing is invisible to a count of the
+/// map, and holds a connection and a task for the whole hello deadline. Only
+/// dial rate would bound those.
+struct Pending(Arc<AtomicUsize>);
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// How long a connection has to open its stream and finish its first line.
 ///
@@ -157,7 +174,6 @@ struct Conn {
     tx: mpsc::Sender<String>,
     conn: Connection,
     writer: tokio::task::JoinHandle<()>,
-    reader: tokio::task::JoinHandle<()>,
     /// The window this connection's events go to, and the only window that may
     /// write to it or hang up on it. A dial knows its window from the call that
     /// made it. An accepted connection has none until a window claims it,
@@ -173,9 +189,9 @@ impl Conn {
     /// host refused would hold its connection and keep pumping messages into
     /// the webview until it chose to hang up.
     ///
-    /// The reader is left to end itself. Closing the connection is what wakes
-    /// it, and it is the only thing that reports the close upward, so aborting
-    /// it here is a race: win it and the webview is never told the peer went
+    /// The reader is not held at all. Closing the connection is what wakes it,
+    /// and it is the only thing that reports the close upward, so aborting it
+    /// would be a race: win it and the webview is never told the peer went
     /// away, and the chip reads connected over a connection that is gone.
     fn close(self) {
         self.conn.close(0u32.into(), b"closed");
@@ -474,7 +490,7 @@ fn spawn_conn(
     let reader_conn = conn.clone();
     let reader_conns = state_conns.clone();
     let mut route = owner.clone();
-    let reader = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut recv = BufReader::new(recv);
         let mut first = true;
         loop {
@@ -532,7 +548,6 @@ fn spawn_conn(
             tx,
             conn,
             writer,
-            reader,
             owner,
         },
     );
@@ -665,12 +680,15 @@ fn start(
         let endpoint = endpoint.clone();
         let conns = conns.clone();
         let hello = state.hello;
+        let pending = Arc::new(AtomicUsize::new(0));
         runtime.spawn(async move {
             while let Some(incoming) = endpoint.accept().await {
-                // Refused here, before a task exists to hold it. The cap is
-                // what a stranger who learned the EndpointId cannot spend
-                // past, and refusing costs one packet.
-                if conns.lock().len() >= MAX_CONNS {
+                // Refused before a task exists to hold it, and refusing costs
+                // one packet. Both populations count: an established peer sits
+                // in the map, one still finishing its handshake sits nowhere,
+                // and counting only the map would leave the cheapest connection
+                // to make the one thing a stranger can spend without limit.
+                if conns.lock().len() + pending.load(Ordering::Relaxed) >= MAX_CONNS {
                     incoming.refuse();
                     continue;
                 }
@@ -682,7 +700,11 @@ fn start(
                 let events = events.clone();
                 let conns = conns.clone();
                 let endpoint = endpoint.clone();
+                pending.fetch_add(1, Ordering::Relaxed);
+                let counted = Pending(pending.clone());
                 tokio::spawn(async move {
+                    // Held until this task ends, however it ends.
+                    let _counted = counted;
                     let Ok(conn) = incoming.await else { return };
                     let Ok(Ok((send, recv))) = timeout(hello, conn.accept_bi()).await else {
                         conn.close(2u32.into(), b"no stream");
@@ -1775,6 +1797,34 @@ mod loopback {
             "a full endpoint refuses the next dial"
         );
         assert_eq!(events.peers().len(), MAX_CONNS, "nothing past the cap");
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// The cheapest connection a stranger can make is the one that completes
+    /// the handshake and opens no stream: it reaches no map entry, so a cap
+    /// counting only the map would let it be made without limit while each one
+    /// still holds a connection and a task for the whole hello deadline.
+    #[test]
+    fn a_handshake_that_opens_no_stream_still_counts_against_the_cap() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+        let addr = live_addr(&state);
+
+        let quiet = Guest::new();
+        let mut held = Vec::new();
+        for _ in 0..MAX_CONNS {
+            held.push(quiet.connect_only(addr.clone()));
+        }
+
+        // Nothing has sent a line, so the map is still empty and only the
+        // pending count stands between a stranger and the endpoint.
+        assert!(events.peers().is_empty(), "no peer has spoken");
+        assert!(
+            quiet.try_dial(addr).is_err(),
+            "a stranger holding the cap in handshakes takes no more"
+        );
 
         stop(&state, "session").expect("stop");
     }

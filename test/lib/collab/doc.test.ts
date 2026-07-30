@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { liveCells, projectDoc, projectSheet, seedDoc, sheetWidth } from "@/lib/collab/doc";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createClock, ORIGIN_STAMP } from "@/lib/collab/stamp";
-import { cellKey } from "@/lib/collab/types";
+import { cellKey, type CollabDoc } from "@/lib/collab/types";
 import { compareSheets, makeFlowRound, makeFlowSheet, type FlowRound } from "@/lib/model/flow";
 import { MAX_ROUND_CELLS, paddedCells } from "@/lib/persistence/flowFile";
 
@@ -198,4 +198,101 @@ describe("the round's cell budget", () => {
             expect(paddedCells(sheet.data)).toBeLessThan(MAX_ROUND_CELLS / 512);
         }
     });
+
+    /**
+     * The debater's round plus `count` sheets a peer made, each holding one cell
+     * far from the origin. That is the cheap shape: two cells on the wire, and a
+     * projection of every slot above and left of them.
+     */
+    function crowdedBy(count: number): CollabDoc {
+        const round = realisticRound();
+        for (let n = 0; n < count; n++) {
+            const sheet = makeFlowSheet({ title: `p${n}`, group: "neg", order: 100 + n });
+            // Ids a peer chooses, sorting before the debater's own.
+            sheet.id = `aaa-peer-${String(n).padStart(4, "0")}`;
+            round.sheets.push(sheet);
+        }
+        let doc = seedDoc(round);
+        const ctx: OpContext = { actor: "them", clock: createClock("them", () => 9_000) };
+        for (let n = 0; n < count; n++) {
+            doc = applyOp(
+                doc,
+                {
+                    kind: "cellText",
+                    sheetId: `aaa-peer-${String(n).padStart(4, "0")}`,
+                    col: 400,
+                    row: 1_500,
+                    text: "far",
+                },
+                ctx,
+            );
+        }
+        return doc;
+    }
+
+    // Sheets are cheap to make and the budget is shared, so the question is what
+    // happens to the debater's own sheet when a peer asks for everything. It may
+    // be held to its share; it may never be emptied, and a peer must not get to
+    // decide which sheet loses by naming its own ids first.
+    it("holds a sheet to its share rather than letting a peer crowd it out", () => {
+        const doc = crowdedBy(12);
+        const base = makeFlowRound({});
+        const projected = projectDoc(doc, base);
+
+        const mine = projected.sheets.filter((s) => !s.id.startsWith("aaa-peer-"));
+        expect(mine).toHaveLength(6);
+        for (const sheet of mine) {
+            // Whole, because 220x8 is far under an equal share of the budget.
+            expect(sheet.data).toHaveLength(220);
+        }
+        // Every peer sheet asked for 1500x400 and none of them got the round.
+        const theirs = projected.sheets.filter((s) => s.id.startsWith("aaa-peer-"));
+        expect(theirs).toHaveLength(12);
+        for (const sheet of theirs) expect(sheet.data.length).toBeGreaterThan(0);
+        const total = projected.sheets.reduce((n, s) => n + paddedCells(s.data), 0);
+        expect(total).toBeLessThanOrEqual(MAX_ROUND_CELLS);
+        // Exercising the budget means materializing a round the size of the
+        // ceiling, which is slower than an ordinary unit test and is the point.
+    }, 30_000);
+
+    // The budget decides what reaches the file, so two replicas that have seen
+    // the same messages have to decide it the same way, and a round must not
+    // shrink a little more every time it is written.
+    it("projects the same round whether or not this replica has projected before", () => {
+        const doc = crowdedBy(12);
+        const base = makeFlowRound({});
+
+        const cold = projectDoc(doc, base);
+        const warm = projectDoc(doc, projectDoc(doc, base), doc);
+        expect(JSON.stringify(warm.sheets)).toBe(JSON.stringify(cold.sheets));
+
+        const again = projectDoc(doc, cold, doc);
+        expect(JSON.stringify(again.sheets)).toBe(JSON.stringify(cold.sheets));
+    }, 30_000);
+
+    // A clamp is a fact about one round of a shared document, not about the
+    // sheet. Reading a reused sheet's cost off the copy already projected would
+    // make it one: the sheet would stay small once the peer's sheets were gone,
+    // and a replica that never clamped would write a different file.
+    it("gives a sheet back its rows once the sheets that crowded it are gone", () => {
+        const crowded = crowdedBy(12);
+        const clamped = projectDoc(crowded, makeFlowRound({}));
+        const victim = "aaa-peer-0000";
+        const wasClamped = clamped.sheets.find((s) => s.id === victim);
+        expect(wasClamped?.data.length).toBeLessThan(1_501);
+
+        // The crowd leaves, and the surviving sheet is the very same object, so
+        // the reuse path is the one under test.
+        const alone: CollabDoc = {
+            ...crowded,
+            sheets: Object.fromEntries(
+                Object.entries(crowded.sheets).filter(
+                    ([id]) => id === victim || !id.startsWith("aaa-peer-"),
+                ),
+            ),
+        };
+        const after = projectDoc(alone, clamped, alone);
+        const freed = after.sheets.find((s) => s.id === victim);
+        expect(freed?.data).toHaveLength(1_501);
+    }, 30_000);
 });
