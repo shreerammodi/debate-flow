@@ -29,15 +29,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Plain-text config file sync: notify watches it for external edits, toml_edit
 # rewrites it in place so hand-added comments and formatting survive.
-notify = "6"
-toml_edit = { version = "0.22", features = ["serde"] }
+notify = "8"
+toml_edit = { version = "0.25", features = ["serde"] }
 # cardmirror-bridge transport. Both legs are loopback-only, so ureq is built
 # without its TLS feature and no certificate stack enters the binary. tiny_http
 # is a blocking server driven from one dedicated thread, which keeps the shell
 # free of an async runtime. subtle supplies the constant-time token compare.
 tiny_http = "0.12"
-ureq = { version = "2", default-features = false }
-rand = "0.8"
+ureq = { version = "3", default-features = false }
+rand = "0.10"
 subtle = "2"
 parking_lot = "0.12"
 # Shared editing. iroh dials a peer by public key and hole punches to it, which
