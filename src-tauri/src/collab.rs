@@ -429,10 +429,9 @@ async fn read_capped_line<R: AsyncBufRead + Unpin>(reader: &mut R, cap: usize) -
 /// refused, which takes the connection with it. Nothing above this module has
 /// heard of the peer yet, so nothing there would ever close it.
 async fn read_hello<R: AsyncBufRead + Unpin>(reader: &mut R, cap: usize, within: Duration) -> Line {
-    match timeout(within, read_capped_line(reader, cap)).await {
-        Ok(line) => line,
-        Err(_) => Line::Refused,
-    }
+    timeout(within, read_capped_line(reader, cap))
+        .await
+        .unwrap_or(Line::Refused)
 }
 
 /// Pumps one connection's bidirectional stream in both directions.

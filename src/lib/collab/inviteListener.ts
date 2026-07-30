@@ -15,13 +15,13 @@
  * which window owns one at the moment it accepts: the round only arrives in
  * the hello. So a hello naming the round this window has open is left entirely
  * alone - it belongs to whichever window is sharing that round - and a peer
- * this listener never answered is hung up on only after a deadline it goes
- * quiet through. An immediate hang-up would drop a peer another window had
- * just admitted; leaving it open forever would let anyone holding this
- * EndpointId pin a connection for the life of the process. The deadline is a
- * stopgap for this one path: the durable cap on unauthenticated inbound
- * connections belongs to the shell, which is the only place that sees one that
- * no window is told about.
+ * this listener never answered is hung up on once a deadline passes. An
+ * immediate hang-up would drop a peer another window had just admitted;
+ * leaving it open forever would let anyone holding this EndpointId pin a
+ * connection for the life of the process. The deadline is a stopgap for this
+ * one path: the durable cap on unauthenticated inbound connections belongs to
+ * the shell, which is the only place that sees one that no window is told
+ * about.
  *
  * Two switches gate it, not one. The master switch, exactly like a session;
  * and Listen for invites, which is its own setting because this is the only
@@ -35,6 +35,7 @@ import { collabSettings, type CollabSettings } from "./enabled";
 import { INVITED, inviteFrom, type InviteNotice } from "./invite";
 import type { PeerLinkFactory } from "./peerLink";
 import { HANDSHAKE_MS } from "./session";
+import { defaultSchedule } from "./sync";
 
 export interface InviteListenerDeps {
     createLink: PeerLinkFactory;
@@ -68,35 +69,26 @@ export async function startInviteListener(
     const link = await deps.createLink({ discovery: "mdns", relay: settings.relay });
     const endpointId = await link.endpointId();
     let stopped = false;
-    const schedule =
-        deps.schedule ??
-        ((fn, ms) => {
-            const id = setTimeout(fn, ms);
-            return () => clearTimeout(id);
-        });
+    const schedule = deps.schedule ?? defaultSchedule;
 
     await link.listen((conn) => {
         if (stopped) return;
         let greeted = false;
         /**
-         * Nothing beyond one greeting has been heard, so no other window is
-         * talking on this connection. A stranger who dials and is refused in
-         * silence would otherwise hold it, and its tasks, for as long as ebb
-         * runs: with no session in this window there is no other clock on it.
-         * The deadline is what releases them, rather than an immediate hang-up,
-         * because one accepted connection reaches every window and the peer may
-         * be one another window is admitting.
+         * A connection this listener is holding is released when the deadline
+         * passes, whatever the peer said on it. Traffic beyond the greeting is
+         * never another window's admitted peer: the shell addresses an owned
+         * connection's messages to the window that claimed it, so a second
+         * line reaching here is a peer nobody owns, which is exactly what the
+         * deadline bounds. Letting that line hold the connection open would
+         * hand anyone with this EndpointId every inbound slot the shell has.
+         * A close this window is not entitled to make is refused by the
+         * shell's owner check and costs it only its own handle.
          */
-        let alone = true;
-        const deadline = schedule(() => {
-            if (alone) conn.close();
-        }, HANDSHAKE_MS);
+        const deadline = schedule(() => conn.close(), HANDSHAKE_MS);
         conn.onClose(() => deadline());
         conn.onMessage((msg) => {
-            if (greeted) {
-                alone = false;
-                return;
-            }
+            if (greeted) return;
             greeted = true;
             // No round is held here, so an offer is about someone else's. The
             // round this window has open is the one exception: a peer arriving

@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 import { type CollabPeerView, type CollabStatus, useCollabStore } from "@/lib/store/useCollabStore";
 import { cn } from "@/lib/utils";
 
@@ -32,10 +33,6 @@ function peerCountLabel(count: number): string {
 }
 
 export interface SessionChipProps {
-    /** Drops one peer from the session. The button appears only when given. */
-    onDisconnectPeer?: (endpointId: string) => void;
-    /** Ends the whole session. The button appears only when given. */
-    onEndSession?: () => void;
     className?: string;
 }
 
@@ -50,11 +47,7 @@ export interface SessionChipProps {
  * a plain panel, never a dialog: nothing here blocks the grid, autofocuses, or
  * traps focus, because a debater mid-speech cannot afford either.
  */
-export default function SessionChip({
-    onDisconnectPeer,
-    onEndSession,
-    className,
-}: SessionChipProps) {
+export default function SessionChip({ className }: SessionChipProps) {
     const status = useCollabStore((s) => s.status);
     const peers = useCollabStore((s) => s.peers);
     const selfRole = useCollabStore((s) => s.selfRole);
@@ -125,18 +118,16 @@ export default function SessionChip({
                                         <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
                                             {peer.name}
                                         </span>
-                                        {onDisconnectPeer && (
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="xs"
-                                                data-testid="collab-peer-disconnect"
-                                                aria-label={`Disconnect ${peer.name}`}
-                                                onClick={() => onDisconnectPeer(peer.endpointId)}
-                                            >
-                                                Disconnect
-                                            </Button>
-                                        )}
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="xs"
+                                            data-testid="collab-peer-disconnect"
+                                            aria-label={`Disconnect ${peer.name}`}
+                                            onClick={() => void disconnectPeer(peer.endpointId)}
+                                        >
+                                            Disconnect
+                                        </Button>
                                     </div>
                                     <div className="text-muted-foreground flex items-center gap-1.5 text-[10px]">
                                         <span
@@ -155,18 +146,16 @@ export default function SessionChip({
                                 </div>
                             ))
                         )}
-                        {onEndSession && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="xs"
-                                className="text-warn justify-start"
-                                data-testid="collab-end-session"
-                                onClick={onEndSession}
-                            >
-                                End session
-                            </Button>
-                        )}
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            className="text-warn justify-start"
+                            data-testid="collab-end-session"
+                            onClick={() => void endSession()}
+                        >
+                            End session
+                        </Button>
                     </div>
                 )}
             </div>

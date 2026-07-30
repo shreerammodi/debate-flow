@@ -19,7 +19,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use serde::Serialize;
 use serde_json::{json, Value as Json};
 use subtle::ConstantTimeEq;
 use tauri::{AppHandle, Manager, State};
@@ -52,7 +51,6 @@ const MAX_HANDSHAKE: u64 = 64 * 1024;
 /// the caller sees its own timeout instead of our error body.
 const RENDERER_TIMEOUT: Duration = Duration::from_millis(2500);
 const OUTBOUND_TIMEOUT: Duration = Duration::from_millis(3000);
-const PING_TIMEOUT: Duration = Duration::from_millis(1500);
 
 // --- Handshake files -----------------------------------------------------------
 
@@ -120,31 +118,21 @@ fn create_dir_private(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-#[cfg(unix)]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     // Unlink, then refuse an existing path: `create` would open and write
     // through a symlink planted at this path, and `mode` would then only fix
     // the permissions of whatever it landed on. Losing the race to a re-planted
     // link fails the write instead of following it.
     let _ = std::fs::remove_file(path);
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(bytes)
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let _ = std::fs::remove_file(path);
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
     file.write_all(bytes)
 }
 
@@ -413,26 +401,10 @@ fn random_token() -> String {
 
 /// 16 hex characters naming one in-flight renderer round trip.
 fn random_id() -> String {
-    use std::fmt::Write;
-    let bytes: [u8; 8] = rand::random();
-    bytes
-        .iter()
-        .fold(String::with_capacity(16), |mut out, byte| {
-            let _ = write!(out, "{byte:02x}");
-            out
-        })
+    format!("{:016x}", rand::random::<u64>())
 }
 
 // --- Outbound to CardMirror ----------------------------------------------------
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CardMirrorStatus {
-    registered: bool,
-    running: bool,
-    app_version: Option<String>,
-    schema: Option<u32>,
-}
 
 /// Where CardMirror is listening and the token to get in with.
 struct Peer {
@@ -472,14 +444,6 @@ fn read_peer() -> Option<(Json, Option<Peer>)> {
     Some((identity, session))
 }
 
-fn ping(peer: &Peer) -> bool {
-    ureq::get(&format!("http://127.0.0.1:{}/ping", peer.port))
-        .set("X-Bridge-Token", &peer.token)
-        .timeout(PING_TIMEOUT)
-        .call()
-        .is_ok()
-}
-
 fn post(path: &str, body: &Json) -> Result<Json, String> {
     let (_, session) = read_peer().ok_or("not-registered")?;
     let peer = session.ok_or("not-running")?;
@@ -507,32 +471,6 @@ fn post(path: &str, body: &Json) -> Result<Json, String> {
     };
     let text = text.map_err(|_| "bad-response".to_string())?;
     serde_json::from_str(&text).map_err(|_| "bad-response".to_string())
-}
-
-#[tauri::command]
-pub fn cardmirror_status() -> Result<CardMirrorStatus, String> {
-    let Some((identity, session)) = read_peer() else {
-        return Ok(CardMirrorStatus {
-            registered: false,
-            running: false,
-            app_version: None,
-            schema: None,
-        });
-    };
-    // Registered but silent is CardMirror being closed, a normal state the
-    // settings UI shows as such rather than as a failure.
-    Ok(CardMirrorStatus {
-        registered: true,
-        running: session.is_some_and(|peer| ping(&peer)),
-        app_version: identity
-            .get("appVersion")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        schema: identity
-            .get("schema")
-            .and_then(Json::as_u64)
-            .and_then(|n| u32::try_from(n).ok()),
-    })
 }
 
 #[tauri::command]
@@ -1018,8 +956,6 @@ mod tests {
         let dir = scratch_dir("peer");
         std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
 
-        let absent = cardmirror_status().unwrap();
-        assert!(!absent.registered && !absent.running);
         assert_eq!(
             cardmirror_jump("cmsrc1".into()),
             Err("not-registered".into())
@@ -1060,11 +996,6 @@ mod tests {
         write_private_json(&dir.join("cardmirror.json"), &identity).unwrap();
         write_private_json(&dir.join("cardmirror.session.json"), &session).unwrap();
 
-        let live = cardmirror_status().unwrap();
-        assert!(live.registered && live.running);
-        assert_eq!(live.app_version.as_deref(), Some("3.2.0"));
-        assert_eq!(live.schema, Some(1));
-
         let jumped = cardmirror_jump("cmsrc1abc".into()).unwrap();
         assert_eq!(
             jumped["error"], "doc-not-open",
@@ -1073,23 +1004,20 @@ mod tests {
         cardmirror_insert("Perm solves".into(), "cite".into(), true).unwrap();
 
         let calls = log.lock().clone();
-        assert_eq!(calls.len(), 3, "{calls:?}");
-        assert_eq!(calls[0]["url"], "/ping");
-        assert_eq!(calls[1]["url"], "/jump");
-        assert_eq!(calls[1]["token"], "peer-token");
-        assert_eq!(calls[1]["body"], json!({ "source": "cmsrc1abc" }));
-        assert_eq!(calls[2]["url"], "/insert");
+        assert_eq!(calls.len(), 2, "{calls:?}");
+        assert_eq!(calls[0]["url"], "/jump");
+        assert_eq!(calls[0]["token"], "peer-token");
+        assert_eq!(calls[0]["body"], json!({ "source": "cmsrc1abc" }));
+        assert_eq!(calls[1]["url"], "/insert");
         assert_eq!(
-            calls[2]["body"],
+            calls[1]["body"],
             json!({ "text": "Perm solves", "role": "cite", "newParagraph": true, "omitted": false })
         );
 
         // CardMirror gates every route but /ping on a per-app consent
         // decision, and rejects an unidentified caller outright.
-        assert_eq!(calls[1]["appId"], APP_ID, "/jump identifies ebb");
-        assert_eq!(calls[2]["appId"], APP_ID, "/insert identifies ebb");
-        // /ping is spec'd identity-free: discovery precedes identity.
-        assert_eq!(calls[0]["appId"], Json::Null, "/ping stays identity-free");
+        assert_eq!(calls[0]["appId"], APP_ID, "/jump identifies ebb");
+        assert_eq!(calls[1]["appId"], APP_ID, "/insert identifies ebb");
 
         // CardMirror quits: the identity file stays, the session file goes.
         std::fs::remove_file(dir.join("cardmirror.session.json")).unwrap();
@@ -1097,8 +1025,6 @@ mod tests {
             cardmirror_jump("cmsrc1abc".into()),
             Err("not-running".into())
         );
-        let closed = cardmirror_status().unwrap();
-        assert!(closed.registered && !closed.running);
 
         // A session file left behind by a crash points at a dead port.
         let stale = json!({ "port": 1, "token": "peer-token", "pid": 1 });

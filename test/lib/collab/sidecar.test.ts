@@ -59,6 +59,21 @@ describe("parseSidecar", () => {
         expect(parseSidecar(future, round.id, "deadbeef")).toBeNull();
     });
 
+    // A file written before `coaches` existed holds membership and no grades,
+    // so every peer it remembers reads back a partner: one silent promotion
+    // per already-shared round, on the first open after an upgrade. Discarding
+    // it costs a re-seed of the replica, which is what a stale one costs too.
+    it("discards a sidecar written before read-only grants were recorded", () => {
+        const before = JSON.stringify({
+            version: 1,
+            roundId: round.id,
+            flowHash: "deadbeef",
+            peers: [SAM, KIM],
+            doc,
+        });
+        expect(parseSidecar(before, round.id, "deadbeef")).toBeNull();
+    });
+
     it("discards an absent, empty, or malformed file rather than throwing", () => {
         expect(parseSidecar(null, round.id, "deadbeef")).toBeNull();
         expect(parseSidecar("", round.id, "deadbeef")).toBeNull();

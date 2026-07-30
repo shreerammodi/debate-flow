@@ -5,26 +5,11 @@ import { X } from "@phosphor-icons/react";
 import * as React from "react";
 
 import { asChildProps } from "@/components/ui/as-child";
-import { Button } from "@/components/ui/button";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
     return <DialogPrimitive.Root {...props} />;
-}
-
-function DialogTrigger({
-    asChild,
-    children,
-    ...props
-}: React.ComponentProps<typeof DialogPrimitive.Trigger> & { asChild?: boolean }) {
-    return (
-        <DialogPrimitive.Trigger
-            data-slot="dialog-trigger"
-            {...props}
-            {...asChildProps(asChild, children)}
-        />
-    );
 }
 
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
@@ -120,28 +105,6 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
     );
 }
 
-function DialogFooter({
-    className,
-    showCloseButton = false,
-    children,
-    ...props
-}: React.ComponentProps<"div"> & {
-    showCloseButton?: boolean;
-}) {
-    return (
-        <div
-            data-slot="dialog-footer"
-            className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
-            {...props}
-        >
-            {children}
-            {showCloseButton && (
-                <DialogPrimitive.Close render={<Button variant="outline">Close</Button>} />
-            )}
-        </div>
-    );
-}
-
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
     return (
         <DialogPrimitive.Title
@@ -165,15 +128,4 @@ function DialogDescription({
     );
 }
 
-export {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogOverlay,
-    DialogPortal,
-    DialogTitle,
-    DialogTrigger,
-};
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle };

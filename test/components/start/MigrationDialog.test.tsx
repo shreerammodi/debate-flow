@@ -12,36 +12,7 @@ import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import { FLOWS_DIR, installFakeFlowFs, type FakeFlowFs } from "../../support/fakeFlowFs";
-
-const DB_NAME = "ebbflow";
-const DONE_KEY = "ebb-idb-migrated";
-
-function seedDb(rounds: unknown[]): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("flows", { keyPath: "id" });
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction("flows", "readwrite");
-        for (const round of rounds) tx.objectStore("flows").put(round);
-        tx.oncomplete = () => {
-            db.close();
-            resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-    };
-    return promise;
-}
-
-function dropDb(): Promise<void> {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => resolve();
-    req.onerror = () => resolve();
-    req.onblocked = () => resolve();
-    return promise;
-}
+import { DONE_KEY, dropDb, seedDb } from "../../support/fakeIdb";
 
 let fs: FakeFlowFs;
 

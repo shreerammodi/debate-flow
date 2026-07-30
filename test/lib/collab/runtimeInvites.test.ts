@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PeerLink, PeerLinkConfig } from "@/lib/collab/peerLink";
 import type { MemoryNet } from "@/lib/collab/peerLinkMemory";
@@ -36,13 +36,16 @@ vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
 }));
 
 import { seedDoc } from "@/lib/collab/doc";
+import { hashText } from "@/lib/collab/hash";
 import type { InviteNotice } from "@/lib/collab/invite";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import { peerNotePath } from "@/lib/collab/rfdSync";
-import { rememberRoundPeers } from "@/lib/collab/roundPeers";
+import { knownRoundPeers, rememberRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
 import {
     currentSession,
+    disconnectPeer,
     endSession,
     inviteContact,
     notifyLocalChange,
@@ -51,8 +54,11 @@ import {
     syncInviteWatch,
 } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
+import { parseSidecar } from "@/lib/collab/sidecar";
+import { setSidecarFs } from "@/lib/collab/sidecarFs";
 import { encodeTicket } from "@/lib/collab/ticket";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
+import { serializeFlow } from "@/lib/persistence/flowFile";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -473,5 +479,72 @@ describe("resuming a round that was shared before", () => {
 
         expect(currentSession()).toBeNull();
         expect(useCollabStore.getState().status).toBe("off");
+    });
+});
+
+/**
+ * Disconnect is the gesture that means it most, and the sequence a debater
+ * uses it in is Disconnect then quit. Autosave only fires on a round whose
+ * content changed, and hanging up changes none, so nothing else on this path
+ * reaches the file the next open reads.
+ */
+describe("hanging up on a peer", () => {
+    /** Real-shaped: the sidecar drops anything that is not an id, on the way in. */
+    const SAM = "5".repeat(64);
+    let files: Map<string, string>;
+
+    beforeEach(() => {
+        files = new Map();
+        setSidecarFs({
+            async read(id) {
+                return files.get(id) ?? null;
+            },
+            async write(id, text) {
+                files.set(id, text);
+            },
+        });
+    });
+
+    afterEach(() => {
+        setSidecarFs(null);
+    });
+
+    /** Brings a guest onto the host's session, the way a ticket does. */
+    async function samJoins(host: CollabSession): Promise<void> {
+        await startCollabSession({
+            createLink: net.create(SAM),
+            roundId: round.id,
+            appVersion: "0.11.0",
+            doc: () => seedDoc(round),
+            apply: () => [],
+            ticket: encodeTicket(host.share("partner")),
+            dial: [ME],
+        });
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+    }
+
+    it("keeps the peer out of the sidecar, so the cut survives a restart", async () => {
+        useFlowStore.getState().loadRound(round);
+        const host = await startForRound(round);
+        await samJoins(host!);
+        const live = useFlowStore.getState().round!;
+        const text = serializeFlow(live);
+        expect(knownRoundPeers(live.id)).toEqual([SAM]);
+
+        // The last save while the peer was still connected, which is the file
+        // the next open would read if the disconnect wrote nothing.
+        await persistReplica(live, text);
+        expect(parseSidecar(files.get(live.id)!, live.id, hashText(text))!.peers).toEqual([SAM]);
+
+        await disconnectPeer(SAM);
+
+        expect(parseSidecar(files.get(live.id)!, live.id, hashText(text))!.peers).toEqual([]);
+
+        // What the next launch is: no session, nothing remembered in memory,
+        // and the round's peers read back off the file beside it.
+        await endSession();
+        setRoundPeers(live.id, []);
+        clearReplica();
+        expect(await recoverReplica(live, text)).toEqual([]);
     });
 });

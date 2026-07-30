@@ -1,27 +1,16 @@
 /** Filename + download helpers shared by the exporters. */
 
-function pad(n: number, width: number): string {
-    return n.toString().padStart(width, "0");
-}
-
-/** Compact date for filenames: YYYYMMDD (UTC). */
-function compactDate(ts: number): string {
-    const d = new Date(ts);
-    return `${pad(d.getUTCFullYear(), 4)}${pad(d.getUTCMonth() + 1, 2)}${pad(d.getUTCDate(), 2)}`;
-}
-
 /** Human date for spreadsheet cells: YYYY-MM-DD (UTC). */
 export function isoDate(ts: number): string {
-    const d = new Date(ts);
-    return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}`;
+    return new Date(ts).toISOString().slice(0, 10);
 }
 
 /** e.g. debate-flow-20260602.xlsx */
 export function exportFilename(ts: number, ext: string): string {
-    return `debate-flow-${compactDate(ts)}.${ext}`;
+    return `debate-flow-${isoDate(ts).replaceAll("-", "")}.${ext}`;
 }
 
-const MIME_BY_EXT: Record<string, string> = {
+export const MIME_BY_EXT: Record<string, string> = {
     ".json": "application/json",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".csv": "text/csv",

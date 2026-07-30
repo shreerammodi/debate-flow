@@ -49,7 +49,6 @@ export interface SyncDeps {
      * it is what binds an inbound note to the peer who wrote it.
      */
     from: string;
-    now?: () => number;
     schedule?: (fn: () => void, ms: number) => () => void;
 }
 
@@ -61,7 +60,8 @@ export interface PeerSync {
     stop(): void;
 }
 
-function defaultSchedule(fn: () => void, ms: number): () => void {
+/** The real timer, for a caller that was given no clock of its own. */
+export function defaultSchedule(fn: () => void, ms: number): () => void {
     const id = setTimeout(fn, ms);
     return () => clearTimeout(id);
 }

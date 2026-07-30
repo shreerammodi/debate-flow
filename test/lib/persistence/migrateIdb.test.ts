@@ -12,44 +12,14 @@ import { migrateFromIndexedDb } from "@/lib/persistence/migrateIdb";
 import { loadRecents } from "@/lib/persistence/recents";
 
 import { FLOWS_DIR, installFakeFlowFs, type FakeFlowFs } from "../../support/fakeFlowFs";
-
-const DB_NAME = "ebbflow";
-const DONE_KEY = "ebb-idb-migrated";
-
-/** Build the single-table database the pre-file builds of ebb wrote. */
-function seedDb(rounds: unknown[]): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("flows", { keyPath: "id" });
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction("flows", "readwrite");
-        for (const round of rounds) tx.objectStore("flows").put(round);
-        tx.oncomplete = () => {
-            db.close();
-            resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-    };
-    return promise;
-}
-
-function dbExists(): Promise<boolean> {
-    return indexedDB.databases().then((dbs) => dbs.some((d) => d.name === DB_NAME));
-}
+import { dbExists, DONE_KEY, dropDb, seedDb } from "../../support/fakeIdb";
 
 let fs: FakeFlowFs;
 
 beforeEach(async () => {
     fs = installFakeFlowFs();
     localStorage.removeItem(DONE_KEY);
-    const { promise, resolve } = Promise.withResolvers<void>();
-    const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => resolve();
-    req.onerror = () => resolve();
-    req.onblocked = () => resolve();
-    await promise;
+    await dropDb();
 });
 
 afterEach(() => localStorage.removeItem(DONE_KEY));

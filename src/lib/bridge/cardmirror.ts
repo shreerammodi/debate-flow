@@ -17,15 +17,6 @@ export type BridgeFailure =
     | "bad-response"
     | "unsupported";
 
-export interface CardMirrorStatus {
-    /** CardMirror has registered in the bridge directory at least once. */
-    registered: boolean;
-    /** It answered a liveness ping just now. */
-    running: boolean;
-    appVersion?: string;
-    schema?: number;
-}
-
 export type BridgeCall<T> = { ok: true; value: T } | { ok: false; error: BridgeFailure };
 
 /**
@@ -64,10 +55,6 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
         // Anything the host did not name is a malformed answer, not a lie.
         return { ok: false, error: FAILURES[String(err)] ?? "bad-response" };
     }
-}
-
-export function cardmirrorStatus(): Promise<BridgeCall<CardMirrorStatus>> {
-    return call<CardMirrorStatus>("cardmirror_status");
 }
 
 /** CardMirror's answer to a route, once the transport succeeded. */

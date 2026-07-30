@@ -13,7 +13,7 @@
  */
 
 import { isEndpointId } from "./contacts";
-import type { Role } from "./types";
+import { isRole, type Role } from "./types";
 
 export const TICKET_PREFIX = "ebb1:";
 
@@ -53,10 +53,6 @@ export function encodeTicket(ticket: Ticket): string {
         .replace(/\//g, "_")
         .replace(/=+$/, "");
     return TICKET_PREFIX + b64;
-}
-
-function isRole(value: unknown): value is Role {
-    return value === "partner" || value === "coach";
 }
 
 /**

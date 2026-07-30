@@ -396,6 +396,42 @@ describe("a coach that comes back", () => {
         await coach.stop();
     });
 
+    // A contact holds one global role, frozen at the first save, and the UI
+    // saves a partner by default. The round's mark is the grant this round
+    // actually made, so when the two disagree the wider record must not win.
+    it("is still a coach when the contact table calls them a partner", async () => {
+        const first = await hostAndGuest("coach");
+        expect(knownRoundCoaches(shared.id)).toEqual([RAE]);
+        const remembered = knownRoundPeers(shared.id);
+        await first.guest.stop();
+        await first.host.stop();
+
+        // What the save toast writes after any session: a contact, at the role
+        // every save in the UI starts from.
+        useFlowStore.setState({ contacts: { [RAE]: { name: "Rae", role: "partner" } } });
+        net.reset();
+        clock.reset();
+        setRoundPeers(shared.id, remembered, [RAE]);
+        const hostSide = replicaFor(shared, ALEX);
+        const host = await open(ALEX, hostSide, {
+            dial: knownRoundPeers(shared.id),
+            contacts: () => useFlowStore.getState().contacts,
+        });
+        const coachSide = replicaFor(shared, RAE);
+        const coach = await open(RAE, coachSide, { dial: [ALEX] });
+        await settle();
+
+        expect(host.peers()[0].role).toBe("coach");
+        expect(coach.role()).toBe("coach");
+        coachSide.edit(sheetId, 0, 0, "coach typed");
+        coach.notifyLocalChange();
+        await settle();
+        expect(hostSide.texts(sheetId)).not.toContain("coach typed");
+
+        await host.stop();
+        await coach.stop();
+    });
+
     it("is still a coach when nobody ever saved them, because the round graded them", async () => {
         // The grant was made on this round, by a ticket this host minted. The
         // round is where it belongs, not in a table a 20-second toast fills in.

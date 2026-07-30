@@ -11,7 +11,7 @@
 import { isDesktop } from "@/lib/update/adapter";
 
 import type { Stamp } from "./stamp";
-import type { CollabDoc, Role } from "./types";
+import { isRole, type CollabDoc, type Role } from "./types";
 
 /** Bumped only for a change an older build cannot read. */
 export const PROTOCOL_MAJOR = 1;
@@ -96,10 +96,6 @@ function isCount(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-function isRole(value: unknown): value is Role {
-    return value === "partner" || value === "coach";
-}
-
 /**
  * A stamp a clock could have produced. `NaN`, `Infinity` and 2^53 are all
  * `typeof "number"`, and every one of them either wins the total order below
@@ -156,6 +152,18 @@ function isCleanMap(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * An entry the merge and the vector dereference the moment a document lands:
+ * `mergeRegisters` compares a register's stamp and `vectorOf` walks every cell's
+ * two, so an entry that is null or carries no stamp throws where nothing catches
+ * it. Checked for shape rather than for a stamp a clock could have produced,
+ * because the order is deliberately written to survive a count it does not
+ * recognize.
+ */
+function isEntry(value: unknown, ...stamps: string[]): boolean {
+    return isRecord(value) && stamps.every((key) => isRecord(value[key]));
+}
+
+/**
  * A document's outline rather than its contents. The merge is written to
  * survive a register it does not recognize, but the vector walks `round`,
  * `sheets` and every sheet's own maps the moment the message lands and throws
@@ -166,8 +174,14 @@ function isDocMessage(m: Record<string, unknown>): m is DocMessage {
     const doc = m.doc;
     if (!isRecord(doc) || typeof doc.roundId !== "string") return false;
     if (!isCleanMap(doc.round) || !isCleanMap(doc.sheets)) return false;
+    if (!Object.values(doc.round).every((reg) => isEntry(reg, "stamp"))) return false;
     return Object.values(doc.sheets).every(
-        (sheet) => isRecord(sheet) && isCleanMap(sheet.fields) && isCleanMap(sheet.cells),
+        (sheet) =>
+            isRecord(sheet) &&
+            isCleanMap(sheet.fields) &&
+            isCleanMap(sheet.cells) &&
+            Object.values(sheet.fields).every((reg) => isEntry(reg, "stamp")) &&
+            Object.values(sheet.cells).every((cell) => isEntry(cell, "textStamp", "metaStamp")),
     );
 }
 

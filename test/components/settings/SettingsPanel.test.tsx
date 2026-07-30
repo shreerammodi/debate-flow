@@ -361,6 +361,21 @@ describe("SettingsPanel", () => {
     });
 
     describe("Collaboration section", () => {
+        // The master row is the only collaboration copy a debater reads before
+        // switching anything on, because every other row is hidden behind it.
+        // Listen for invites is what puts ebb on the network with no round in
+        // hand, so a promise that nothing does until a round is shared is the
+        // one claim here that a switch in the same panel falsifies.
+        it("does not promise the network stays untouched until a round is shared", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
+
+            const copy = screen.getByTestId("collab-section").textContent ?? "";
+            expect(copy).not.toContain("until you share or join a round");
+            expect(copy).toContain("Listen for invites");
+        });
+
         it("hides the relay row until shared editing is switched on", async () => {
             const user = userEvent.setup();
             renderSettingsPanel();

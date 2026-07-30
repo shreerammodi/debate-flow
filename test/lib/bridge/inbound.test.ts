@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleBridgeRequest, resetRevealCycle } from "@/lib/bridge/inbound";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { resetMetaUndo } from "@/lib/grid/metaUndo";
-import { makeFlowRound, type CellMeta, type CellSource } from "@/lib/model/flow";
+import { makeFlowRound, type CellMeta } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+
+import { metaStore } from "../../support/fakeHot";
 
 /**
  * The slice of Handsontable the inbound routes touch, backed by plain arrays
@@ -14,12 +16,7 @@ function makeGrid(rows: number, cols: number) {
     const data: (string | null)[][] = Array.from({ length: rows }, () =>
         Array.from({ length: cols }, () => null),
     );
-    const meta = new Map<string, { className?: string; source?: CellSource }>();
-    const at = (row: number, col: number) => {
-        const key = `${row},${col}`;
-        if (!meta.has(key)) meta.set(key, {});
-        return meta.get(key)!;
-    };
+    const meta = metaStore();
     let selected: [number, number] = [0, 0];
 
     const hot = {
@@ -31,11 +28,8 @@ function makeGrid(rows: number, cols: number) {
                 if (data[row]) data[row][col] = value;
             }
         },
-        getCellMeta: (row: number, col: number) => at(row, col),
-        setCellMeta: (row: number, col: number, key: string, value: unknown) => {
-            if (key === "source") at(row, col).source = value as CellSource | undefined;
-            else at(row, col).className = value as string;
-        },
+        getCellMeta: meta.getCellMeta,
+        setCellMeta: meta.setCellMeta,
         getSelectedLast: () => selected,
         selectCell: (row: number, col: number) => {
             selected = [row, col];
@@ -45,7 +39,12 @@ function makeGrid(rows: number, cols: number) {
         },
         render: vi.fn(),
     };
-    return { hot, data, at, select: (row: number, col: number) => hot.selectCell(row, col) };
+    return {
+        hot,
+        data,
+        at: meta.at,
+        select: (row: number, col: number) => hot.selectCell(row, col),
+    };
 }
 
 const send = (items: unknown[], mode = "column", space = 0) =>

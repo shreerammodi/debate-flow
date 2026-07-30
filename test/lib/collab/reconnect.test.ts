@@ -90,7 +90,7 @@ describe("retryForever", () => {
             .mockRejectedValueOnce(new Error("down"))
             .mockRejectedValueOnce(new Error("down"))
             .mockResolvedValueOnce(undefined);
-        const retry = retryForever({ dial, schedule: clock.schedule, random: () => 0.5 });
+        const stop = retryForever({ dial, schedule: clock.schedule, random: () => 0.5 });
 
         await clock.advance(clock.delays()[0]);
         await clock.advance(clock.delays()[0]);
@@ -98,15 +98,15 @@ describe("retryForever", () => {
         // A success stops the schedule; the caller re-arms on the next drop.
         expect(clock.pendingCount).toBe(0);
 
-        retry.stop();
+        stop();
     });
 
     it("stops dead when told to", async () => {
         const clock = manualClock();
         const dial = vi.fn().mockRejectedValue(new Error("down"));
-        const retry = retryForever({ dial, schedule: clock.schedule, random: () => 0.5 });
+        const stop = retryForever({ dial, schedule: clock.schedule, random: () => 0.5 });
 
-        retry.stop();
+        stop();
         await clock.advance(120_000);
         expect(dial).not.toHaveBeenCalled();
         expect(clock.pendingCount).toBe(0);

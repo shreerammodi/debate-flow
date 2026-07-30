@@ -8,6 +8,7 @@
  * makes the first merge correct instead of a duplication.
  */
 
+import { getEvent } from "@/lib/format/events";
 import {
     compareSheets,
     emptyScouting,
@@ -16,6 +17,12 @@ import {
     type FlowSheet,
 } from "@/lib/model/flow";
 import type { Scouting } from "@/lib/model/types";
+import {
+    MAX_ROUND_CELLS,
+    holdsCellMeta,
+    holdsScouting,
+    paddedCells,
+} from "@/lib/persistence/flowFile";
 
 import { seedRank } from "./rank";
 import { ORIGIN_STAMP, type Stamp } from "./stamp";
@@ -41,32 +48,52 @@ const ROUND_LOCAL_FIELDS: Record<string, true> = {
     sheets: true,
 };
 
-/** A sheet's live cells in one column, in row order. */
-export function liveCells(sheet: CollabSheet, col: number): CollabCell[] {
-    return Object.values(sheet.cells)
-        .filter((c) => c.col === col && c.deleted === null)
-        .sort(compareCells);
-}
-
 /**
- * The widest a sheet gets. A cell's `col` arrives inside a peer's document and
- * becomes the bound of every loop that walks a sheet's columns: the projection
- * here, the grid patch, and the local row insert and remove. One cell naming a
- * column index far out asks for more array slots than the machine has memory
- * for, and the loop never returns. A flow is a speech per column.
+ * The widest a sheet gets, and the tallest a column gets. Both coordinates
+ * arrive inside a peer's document and both become the bound of a loop that
+ * walks a sheet: the projection here, the grid patch, and the local row insert
+ * and remove. The projection materializes their product, so bounding one alone
+ * buys nothing - four thousand cells in one column asks for as many array slots
+ * as a column index far out does. A flow is a speech per column, a speech is
+ * not two thousand lines, and one sheet's product stays under the
+ * MAX_ROUND_CELLS the file enforces on read. Two sheets' products do not, which
+ * is why the round's own budget is spent in `projectDoc` rather than here.
  */
 const MAX_COL = 512;
+const MAX_ROWS = 2048;
+
+/** A sheet's live cells in one column, in row order. */
+export function liveCells(sheet: CollabSheet, col: number): CollabCell[] {
+    const live = Object.values(sheet.cells)
+        .filter((c) => c.col === col && c.deleted === null)
+        .sort(compareCells);
+    // A row past the bound projects nowhere, which is already what a cell
+    // nobody can see looks like.
+    return live.length > MAX_ROWS ? live.slice(0, MAX_ROWS) : live;
+}
 
 /** One past the highest column index the sheet holds a cell in. */
 export function sheetWidth(sheet: CollabSheet): number {
     let width = 0;
     for (const cell of Object.values(sheet.cells)) {
-        // A cell outside the range projects nowhere, which is already what a
-        // cell nobody can see looks like.
+        // A cell outside the range projects nowhere, for the same reason.
         if (!Number.isInteger(cell.col) || cell.col < 0 || cell.col >= MAX_COL) continue;
         width = Math.max(width, cell.col + 1);
     }
     return width;
+}
+
+/**
+ * The cells a sheet's grid pads out to, which is what the file counts it as.
+ * The same number `projectSheet` goes on to produce, derived without
+ * materializing the rectangle, because `projectDoc` has to know what a sheet
+ * costs before it can decide how much of the round's budget the sheet may have.
+ */
+function projectedCells(sheet: CollabSheet): number {
+    const width = sheetWidth(sheet);
+    let height = 0;
+    for (let col = 0; col < width; col++) height = Math.max(height, liveCells(sheet, col).length);
+    return width * height;
 }
 
 export function seedSheet(sheet: FlowSheet, stamp: Stamp): CollabSheet {
@@ -116,7 +143,20 @@ export function seedDoc(round: FlowRound): CollabDoc {
     return { roundId: round.id, round: roundRegisters, sheets };
 }
 
-export function projectSheet(sheet: CollabSheet): FlowSheet {
+/**
+ * The sheet a replica describes.
+ *
+ * Every field but the grid is a replicated register holding whatever a peer put
+ * on the wire, and each one below is written to the file, whose parser refuses a
+ * title that is not text, a group that is not a side, or an order that is not a
+ * number. A round the parser refuses is a round the debater loses, so a value
+ * the file cannot hold falls back to what a file predating that field gets.
+ *
+ * `room` is the cells of the round's budget this sheet may claim; see
+ * `projectDoc`. One sheet on its own cannot reach the default, because MAX_COL
+ * times MAX_ROWS is under it.
+ */
+export function projectSheet(sheet: CollabSheet, room = MAX_ROUND_CELLS): FlowSheet {
     const shape: Record<string, unknown> = {};
     for (const [path, reg] of Object.entries(sheet.fields)) setPath(shape, path, reg.value);
 
@@ -128,20 +168,37 @@ export function projectSheet(sheet: CollabSheet): FlowSheet {
         columns.push(live);
         height = Math.max(height, live.length);
     }
+    // The file counts a sheet as its rows times its widest row, so the rows
+    // that fit in `room` are room / width. Rows come off the bottom, which is
+    // the end of the flow a sheet the format cannot hold has run past, and the
+    // least of that sheet to lose: dropping columns would lose whole speeches
+    // and dropping the sheet would lose one the debater may be looking at.
+    if (width > 0) height = Math.min(height, Math.floor(room / width));
     const data: (string | null)[][] = [];
     const meta: Record<string, CellMeta> = {};
     for (let row = 0; row < height; row++) {
         const line: (string | null)[] = [];
         for (let col = 0; col < width; col++) {
             const cell = columns[col][row];
-            line.push(cell?.text ?? null);
-            if (cell && Object.keys(cell.meta).length > 0) {
+            line.push(typeof cell?.text === "string" ? cell.text : null);
+            if (cell && Object.keys(cell.meta).length > 0 && holdsCellMeta(cell.meta)) {
                 meta[`${row},${col}`] = cell.meta as CellMeta;
             }
         }
         data.push(line);
     }
-    return { ...(shape as Omit<FlowSheet, "id" | "data" | "meta">), id: sheet.id, data, meta };
+    const projected: FlowSheet = {
+        ...(shape as Omit<FlowSheet, "id" | "data" | "meta">),
+        id: sheet.id,
+        title: typeof shape.title === "string" ? shape.title : "",
+        group: shape.group === "neg" ? "neg" : "aff",
+        order: typeof shape.order === "number" && Number.isFinite(shape.order) ? shape.order : 0,
+        kind: shape.kind === "cx" ? "cx" : "flow",
+        data,
+        meta,
+    };
+    if (typeof projected.startSpeechId !== "string") delete projected.startSpeechId;
+    return projected;
 }
 
 /**
@@ -155,17 +212,53 @@ export function projectSheet(sheet: CollabSheet): FlowSheet {
  * and the copy already in `base` stands rather than being derived again.
  * Without that, one cell arriving from a partner re-derives every sheet in the
  * round, up to thirty times a second while they type.
+ *
+ * This is also where the file's cell ceiling is spent, because the ceiling is a
+ * total across sheets while the merge's `MAX_CELLS` is per sheet: two sheets a
+ * peer grew to the widest and tallest this build projects sum past it, and then
+ * every autosave of that round is refused for as long as the round holds them.
+ * The budget belongs here and not in the merge - what the merge accepts must
+ * not depend on the replica's own other sheets, or two peers holding different
+ * sheets would accept different cells and diverge. A projection is local: the
+ * replica still holds every cell it was sent, and only the file is bounded.
+ *
+ * Cheapest sheet first, each offered everything still unspent, so a round the
+ * format holds is projected exactly as it would be with no budget at all: the
+ * budget only ever runs out on a sheet larger than every sheet before it. A
+ * sheet is therefore clamped only once the sheets no larger than it have spent
+ * the whole two million, which at the 512-sheet ceiling takes 3,907 cells each
+ * - a 325-row sheet of twelve speeches. A fat real round is a few hundred rows
+ * by a dozen speeches per sheet, three orders of magnitude below that.
  */
 export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc): FlowRound {
     const shape: Record<string, unknown> = {};
     for (const [path, reg] of Object.entries(doc.round)) setPath(shape, path, reg.value);
     const already = new Map(base.sheets.map((s) => [s.id, s]));
-    const sheets = Object.values(doc.sheets)
+    // What each sheet costs the file: the reused ones from the copy already
+    // projected, the rest derived. Cheapest first, then by id, so two peers
+    // holding the same document write the same file - `order` would not do,
+    // being a register a peer writes.
+    const costed = Object.values(doc.sheets)
         .filter((s) => s.deleted === null)
         .map((sheet) => {
             const untouched =
                 settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined;
-            return untouched ?? projectSheet(sheet);
+            const cost = untouched ? paddedCells(untouched.data) : projectedCells(sheet);
+            return { sheet, untouched, cost };
+        })
+        .sort((a, b) => a.cost - b.cost || (a.sheet.id < b.sheet.id ? -1 : 1));
+
+    let unspent = MAX_ROUND_CELLS;
+    const sheets = costed
+        .map(({ sheet, untouched, cost }) => {
+            if (untouched && cost <= unspent) {
+                unspent -= cost;
+                return untouched;
+            }
+            // Clamped to what is left, and counted as what it came back as.
+            const projected = projectSheet(sheet, unspent);
+            unspent -= paddedCells(projected.data);
+            return projected;
         })
         .sort(compareSheets);
     return {
@@ -173,7 +266,12 @@ export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc)
         id: doc.roundId,
         createdAt: base.createdAt,
         updatedAt: base.updatedAt,
-        scouting: (shape.scouting as Scouting) ?? emptyScouting(),
+        // Replicated registers, so a peer chooses all three, and all three are
+        // written to the file. `getEvent` already names the fallback an
+        // unknown event gets on read; this is the same fallback on write.
+        event: getEvent(shape.event as string).id,
+        firstSide: shape.firstSide === "neg" ? "neg" : "aff",
+        scouting: holdsScouting(shape.scouting) ? (shape.scouting as Scouting) : emptyScouting(),
         sheets,
     };
 }

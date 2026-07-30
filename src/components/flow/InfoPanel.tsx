@@ -1,13 +1,10 @@
 "use client";
 
-import { CalendarBlank, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tip } from "@/components/ui/tooltip";
 import { sideLabels } from "@/lib/format/events";
 import { parsePairing, type PairingPatch } from "@/lib/model/parsePairing";
@@ -15,21 +12,6 @@ import { teamCode } from "@/lib/model/teamCode";
 import type { Scouting } from "@/lib/model/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { cn } from "@/lib/utils";
-
-/** Parses a stored "yyyy-mm-dd" date as a local Date; anything else (blank, legacy free text) yields undefined. */
-function parseScoutDate(value: string | undefined): Date | undefined {
-    const m = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return undefined;
-    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-}
-
-/** Serializes a picked date to "yyyy-mm-dd" using local parts, so the day never shifts across time zones. */
-function toScoutDate(date: Date): string {
-    const y = date.getFullYear();
-    const mo = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${mo}-${d}`;
-}
 
 /** Deep-merges a parsed pairing into scouting so a parsed aff never wipes an existing neg debater. */
 function applyPairing(sc: Scouting, patch: PairingPatch): Partial<Scouting> {
@@ -70,7 +52,6 @@ function InfoPanelInner() {
 
     if (!round) return null;
     const sc = round.scouting;
-    const scoutDate = parseScoutDate(sc.date);
     const sides = sideLabels(round.event);
 
     const affCode = teamCode(sc.affSchool ?? "", sc.aff.first, sc.aff.second);
@@ -235,36 +216,13 @@ function InfoPanelInner() {
                                 onChange={(e) => setScouting({ flight: e.target.value })}
                             />
                         </div>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    aria-label="Date"
-                                    data-testid="scout-date"
-                                    data-empty={!scoutDate}
-                                    className="data-[empty=true]:text-muted-foreground w-full justify-start font-normal"
-                                >
-                                    <CalendarBlank />
-                                    {scoutDate
-                                        ? scoutDate.toLocaleDateString(undefined, {
-                                              year: "numeric",
-                                              month: "long",
-                                              day: "numeric",
-                                          })
-                                        : (sc.date ?? "Date")}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                    mode="single"
-                                    selected={scoutDate}
-                                    defaultMonth={scoutDate}
-                                    onSelect={(d) =>
-                                        setScouting({ date: d ? toScoutDate(d) : undefined })
-                                    }
-                                />
-                            </PopoverContent>
-                        </Popover>
+                        <Input
+                            type="date"
+                            aria-label="Date"
+                            data-testid="scout-date"
+                            value={sc.date ?? ""}
+                            onChange={(e) => setScouting({ date: e.target.value || undefined })}
+                        />
                         <Input
                             data-testid="scout-judge"
                             placeholder="Judge"

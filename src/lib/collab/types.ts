@@ -23,6 +23,11 @@ export interface Register {
 /** A peer's authority over the document. `coach` reads only. */
 export type Role = "partner" | "coach";
 
+/** A role off the wire, a ticket, or a saved contact, none of them trusted. */
+export function isRole(value: unknown): value is Role {
+    return value === "partner" || value === "coach";
+}
+
 export interface CollabCell {
     /** Stored column index, the index `sheet.data` rows already use. */
     col: number;

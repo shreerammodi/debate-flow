@@ -28,6 +28,27 @@ describe("serializeFlow", () => {
         expect(serializeFlow(round)).toContain("\n  ");
         expect(serializeFlow(round).endsWith("\n")).toBe(true);
     });
+
+    it("refuses a round this parser could not read back", () => {
+        // A round projected from a replica carries whatever a peer put in a
+        // register, and a file written from one of those is a round the debater
+        // can never open again. The write is the last place to refuse.
+        const round = makeFlowRound({});
+        const unknownEvent = { ...round, event: "moot-court" as FlowRound["event"] };
+        const noSide = { ...round, firstSide: "nobody" as FlowRound["firstSide"] };
+        expect(() => serializeFlow(unknownEvent)).toThrow(/event is not a known debate event/);
+        expect(() => serializeFlow(noSide)).toThrow(/round\.firstSide is not "aff" or "neg"/);
+    });
+
+    it("refuses an event name that only the prototype chain answers to", () => {
+        // `in` walks the chain, so "constructor" would pass the check and then
+        // name no event at all wherever the table is indexed.
+        const round = { ...makeFlowRound({}), event: "constructor" as FlowRound["event"] };
+        expect(() => serializeFlow(round)).toThrow(/event is not a known debate event/);
+        expect(() => parseFlowFile(withRound({ event: "constructor" }))).toThrow(
+            /round\.event is not a known debate event/,
+        );
+    });
 });
 
 describe("parseFlowFile", () => {

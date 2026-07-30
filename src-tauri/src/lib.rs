@@ -112,7 +112,6 @@ pub fn run() {
             bridge::bridge_reply,
             bridge::cardmirror_insert,
             bridge::cardmirror_jump,
-            bridge::cardmirror_status,
             collab::collab_claim,
             collab::collab_close,
             collab::collab_dial,

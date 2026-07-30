@@ -44,6 +44,31 @@ describe("peerLinkMemory", () => {
         expect(replies).toEqual([{ type: "helloAck", ok: true }]);
     });
 
+    // Load-bearing for every hostile-payload test in the suite: they assert
+    // what the far side did with a line, and that only means something if this
+    // net narrows a line the way the shipping adapter does. Without this,
+    // deleting the narrowing leaves the whole suite green.
+    it("drops a line that does not conform to its variant, as the real link does", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        const heard: WireMessage[] = [];
+        await host.listen((peer) => peer.onMessage((m) => heard.push(m)));
+        const guestSide = await guest.dial("alex");
+
+        // Parsed rather than written as a literal: `__proto__` in an object
+        // literal is the prototype setter, and a peer sends an own key.
+        guestSide.send({
+            type: "delta",
+            doc: { roundId: "r", round: JSON.parse('{"__proto__":{}}'), sheets: {} },
+        });
+        guestSide.send({ type: "state" } as unknown as WireMessage);
+        expect(heard).toEqual([]);
+
+        guestSide.send({ type: "delta", doc: { roundId: "r", round: {}, sheets: {} } });
+        expect(heard).toHaveLength(1);
+    });
+
     it("tells both sides when one closes", async () => {
         const net = createMemoryNet();
         const host = await net.create("alex")(CONFIG);

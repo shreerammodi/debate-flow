@@ -181,16 +181,16 @@ pub fn build<R: Runtime>(
         .item(&cmd("help.open", "Keyboard Shortcuts", "")?)
         .build()?;
 
-    let mut builder = tauri::menu::MenuBuilder::new(app);
-    builder = builder.items(&[
-        &app_menu,
-        &file_menu,
-        &edit_menu,
-        &view_menu,
-        &window_menu,
-        &help_menu,
-    ]);
-    builder.build()
+    tauri::menu::MenuBuilder::new(app)
+        .items(&[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ])
+        .build()
 }
 
 /// Rebuilds the menu with the frontend's effective-keymap accelerators.

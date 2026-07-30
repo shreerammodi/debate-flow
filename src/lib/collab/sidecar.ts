@@ -15,7 +15,15 @@
 import { isEndpointId } from "./contacts";
 import type { CollabDoc } from "./types";
 
-export const SIDECAR_VERSION = 1;
+/**
+ * Bumped whenever a field the admission rules read starts carrying meaning,
+ * because an older file parses with that field absent and so reads as the
+ * widest case. Version 2 is what `coaches` costs: a version 1 file holds
+ * membership with no grades, and every peer it remembers would come back a
+ * partner. An unknown version is discarded, so a bump costs a re-seed of the
+ * replica and never a promotion.
+ */
+export const SIDECAR_VERSION = 2;
 
 export interface Sidecar {
     version: number;

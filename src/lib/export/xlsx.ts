@@ -16,11 +16,9 @@ import { columnsForFlowSheet } from "@/lib/grid/flowColumns";
 import { sortedSheets, type FlowRound, type FlowSheet } from "@/lib/model/flow";
 import type { Side } from "@/lib/model/types";
 
-import { exportFilename, saveBlob } from "./download";
+import { exportFilename, MIME_BY_EXT, saveBlob } from "./download";
 import { applyInfoWorksheet, maybeAddRfdWorksheet } from "./infoSheet";
 import { safeSheetName } from "./sheetNames";
-
-const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /** Light-theme inks and markers from globals.css. */
 const SIDE_INK: Record<Side, string> = { aff: "FF1D4ED8", neg: "FFC0271F" };
@@ -137,5 +135,8 @@ export async function downloadXlsx(round: FlowRound, contacts: Contacts = {}): P
     const workbook = new ExcelJS.Workbook();
     fillWorkbook(workbook, round, contacts);
     const out = await workbook.xlsx.writeBuffer();
-    await saveBlob(new Blob([out], { type: XLSX_MIME }), exportFilename(round.createdAt, "xlsx"));
+    await saveBlob(
+        new Blob([out], { type: MIME_BY_EXT[".xlsx"] }),
+        exportFilename(round.createdAt, "xlsx"),
+    );
 }

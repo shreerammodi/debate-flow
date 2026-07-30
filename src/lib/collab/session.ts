@@ -36,9 +36,9 @@ import {
     type WireMessage,
 } from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Presence } from "./presence";
-import { retryForever, type Retry } from "./reconnect";
+import { retryForever } from "./reconnect";
 import { forgetRoundPeer, knownRoundCoaches, rememberRoundRole } from "./roundPeers";
-import { attachSync, type PeerSync } from "./sync";
+import { attachSync, defaultSchedule, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
 
@@ -170,13 +170,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * Every peer the round remembers is graded, rather than left to a default:
      * membership with no grade beside it is the one thing that hands a coach
      * the wider role, and a peer nobody restricted is still a partner. The
-     * contact table comes second because setting a role there is the debater
-     * deciding by hand, and it is read once: a contact edited mid-round grades
-     * the next session rather than this one.
+     * round's own read-only mark has the last word, because it is the grant
+     * this round made, while a contact's role is one global row frozen at the
+     * first save: when the two disagree the narrower one holds. Promotion is
+     * invite()'s job, where it is a gesture rather than a leftover. The
+     * contact table is read once, so a contact edited mid-round grades the
+     * next session rather than this one.
      */
     const roles: Record<string, Role> = {};
-    for (const id of dial) roles[id] = readOnlyPeers.includes(id) ? "coach" : "partner";
     for (const [id, contact] of Object.entries(deps.contacts?.() ?? {})) roles[id] = contact.role;
+    for (const id of dial)
+        roles[id] = readOnlyPeers.includes(id) ? "coach" : (roles[id] ?? "partner");
 
     const policy: HostPolicy = {
         roundId: deps.roundId,
@@ -190,11 +194,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     /** Peers the debater cut loose, which stay cut however they come back. */
     const gone = new Set<string>();
     /**
-     * The dial loop running for each peer this side is trying to reach again.
-     * Held so the session can say it is reconnecting, and so stopping the
-     * session cancels a backoff that would otherwise fire minutes later.
+     * The dial loop running for each peer this side is trying to reach again,
+     * valued by the call that stops it. Held so the session can say it is
+     * reconnecting, and so stopping the session cancels a backoff that would
+     * otherwise fire minutes later.
      */
-    const retries = new Map<string, Retry>();
+    const retries = new Map<string, () => void>();
     /** Where each peer is. Advisory, and always expiring. */
     let presences: Presence[] = [];
     let stopped = false;
@@ -210,20 +215,11 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         deps.onRoleChanged?.(next);
     }
 
-    function publishPresences(): void {
-        setPresences(presences);
-    }
-
     /** This side's own open editor, and this side's own cursor. */
     let held: CellRef | null = null;
     let at: CellRef | null = null;
     let cancelHeartbeat: (() => void) | null = null;
-    const schedule =
-        deps.schedule ??
-        ((fn, ms) => {
-            const id = setTimeout(fn, ms);
-            return () => clearTimeout(id);
-        });
+    const schedule = deps.schedule ?? defaultSchedule;
 
     /**
      * One message per send, because a peer is in one place: an open editor
@@ -265,7 +261,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         presences = cell
             ? claim(presences, { endpointId: peerId, ...cell, heldAt: Date.now(), editing })
             : releaseCell(presences, peerId);
-        publishPresences();
+        setPresences(presences);
     }
 
     function track(
@@ -275,7 +271,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         outbound: boolean,
     ): PeerSync | null {
         // Nothing is climbing a backoff for a peer that is here.
-        retries.get(peer.endpointId)?.stop();
+        retries.get(peer.endpointId)?.();
         retries.delete(peer.endpointId);
         const existing = live.get(peer.endpointId);
         if (existing) {
@@ -344,7 +340,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // A peer that is gone is nowhere, instantly and without waiting
             // for the heartbeat to lapse.
             presences = releasePeer(presences, peer.endpointId);
-            publishPresences();
+            setPresences(presences);
             announce();
             // A link that blips mid-round is the ordinary case in a gym full
             // of laptops, and the dial that opened this one only retried while
@@ -525,7 +521,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     function redial(target: string): void {
         // One ladder per peer: a second drop while a retry is armed would
         // otherwise leave two of them climbing the same backoff.
-        retries.get(target)?.stop();
+        retries.get(target)?.();
         retries.set(target, retryForever({ dial: () => dialPeer(target), schedule }));
     }
 
@@ -598,7 +594,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // append-only. Without this the next open re-dials them off the
             // sidecar and admits them on membership alone.
             forgetRoundPeer(deps.roundId, target);
-            retries.get(target)?.stop();
+            retries.get(target)?.();
             retries.delete(target);
             const entry = live.get(target);
             if (!entry) return;
@@ -610,7 +606,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             entry.conn.send({ type: "bye" });
             entry.conn.close();
             presences = releasePeer(presences, target);
-            publishPresences();
+            setPresences(presences);
             announce();
         },
 
@@ -649,7 +645,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             stopped = true;
             // A backoff can be half a minute wide, so a session that ended is
             // not a reason for one more dial.
-            for (const retry of retries.values()) retry.stop();
+            for (const stop of retries.values()) stop();
             retries.clear();
             for (const l of [...live.values()]) {
                 l.sync.stop();
@@ -661,7 +657,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             held = null;
             at = null;
             presences = [];
-            publishPresences();
+            setPresences(presences);
             announce();
             await link.stop();
         },

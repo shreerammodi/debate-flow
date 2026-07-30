@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { liveCells, projectDoc, seedDoc, sheetWidth } from "@/lib/collab/doc";
+import { liveCells, projectDoc, projectSheet, seedDoc, sheetWidth } from "@/lib/collab/doc";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { createClock, ORIGIN_STAMP } from "@/lib/collab/stamp";
 import { cellKey } from "@/lib/collab/types";
-import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
+import { compareSheets, makeFlowRound, makeFlowSheet, type FlowRound } from "@/lib/model/flow";
+import { MAX_ROUND_CELLS, paddedCells } from "@/lib/persistence/flowFile";
 
 function roundWithData(): FlowRound {
     const round = makeFlowRound({});
@@ -146,6 +147,55 @@ describe("projecting a round a partner just changed", () => {
         const base = projectDoc(doc, round);
         for (const sheet of projectDoc(doc, base).sheets) {
             expect(sheet).not.toBe(base.sheets.find((s) => s.id === sheet.id));
+        }
+    });
+});
+
+/**
+ * The round's cells are bounded across sheets, because the file counts them
+ * across sheets. What matters as much as the bound is that it is unreachable
+ * from anything a debater can type.
+ */
+describe("the round's cell budget", () => {
+    /** A fat but ordinary elim: six sheets, a few hundred rows, eight speeches. */
+    function realisticRound(): FlowRound {
+        const round = makeFlowRound({});
+        while (round.sheets.length < 6) {
+            const order = round.sheets.length;
+            round.sheets.push(makeFlowSheet({ title: `${order}.`, group: "neg", order }));
+        }
+        for (const sheet of round.sheets) {
+            sheet.data = Array.from({ length: 220 }, (_, r) =>
+                Array.from({ length: 8 }, (_, c) => (r % 4 === 0 ? null : `arg ${r}.${c}`)),
+            );
+            sheet.meta = { "0,1": { bold: true }, "17,3": { card: true } };
+        }
+        return round;
+    }
+
+    it("is inert on an ordinary round, which projects byte for byte as it did before", () => {
+        const round = realisticRound();
+        const doc = seedDoc(round);
+        // `projectSheet` with no room given is the projection as it stood before
+        // the budget: one sheet cannot reach MAX_ROUND_CELLS on its own, MAX_COL
+        // times MAX_ROWS being under it. So this is the old output sheet for
+        // sheet, and the budgeted round has to serialize to the same bytes.
+        const unbudgeted = Object.values(doc.sheets)
+            .map((sheet) => projectSheet(sheet))
+            .sort(compareSheets);
+        expect(JSON.stringify(projectDoc(doc, round).sheets)).toBe(JSON.stringify(unbudgeted));
+
+        // Including through the reuse path, which the budget must not cost: a
+        // settled sheet is still the very same object, not derived again.
+        const base = projectDoc(doc, round);
+        const reused = projectDoc(doc, base, doc);
+        expect(JSON.stringify(reused.sheets)).toBe(JSON.stringify(unbudgeted));
+        expect(reused.sheets.every((s, i) => s === base.sheets[i])).toBe(true);
+
+        // The margin: no sheet here is within a factor of two of the smallest
+        // share the budget could offer it, which is one 512th of the round.
+        for (const sheet of unbudgeted) {
+            expect(paddedCells(sheet.data)).toBeLessThan(MAX_ROUND_CELLS / 512);
         }
     });
 });

@@ -43,7 +43,19 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const net: MemoryNet = createMemoryNet();
 const ME = "e".repeat(64);
-transport.link = net.create(ME);
+/** Resolved by a test that wants the bind still in flight while it acts. */
+let binding: Promise<void> | null = null;
+
+transport.link = async (config) => {
+    const link = await net.create(ME)(config);
+    return {
+        ...link,
+        async listen(onPeer) {
+            await link.listen(onPeer);
+            if (binding) await binding;
+        },
+    };
+};
 
 function Watcher(): null {
     useInviteWatch();
@@ -60,6 +72,7 @@ let round: FlowRound;
 beforeEach(async () => {
     // The watcher is desktop-only, and isDesktop() reads this global.
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    binding = null;
     await endSession();
     net.reset();
     clearReplica();
@@ -86,6 +99,32 @@ describe("throwing the master switch off", () => {
         useFlowStore.setState({ collabEnabled: false });
 
         await waitFor(() => expect(currentSession()).toBeNull());
+        expect(net.calls.filter((c) => c.op === "stop")).toHaveLength(1);
+        expect(useCollabStore.getState().status).toBe("off");
+        view.unmount();
+    });
+
+    // A real bind is an endpoint plus one awaited dial per remembered peer:
+    // seconds on a tournament LAN, and the debater who reaches for the kill
+    // switch during it is the one who means it. Off has to reach a session
+    // that comes up afterwards, because by then the chip is hidden and
+    // Settings has dropped its controls, so no surface is left to end it by
+    // hand.
+    it("ends a session that finishes binding after the switch went off", async () => {
+        const view = watch();
+        let release!: () => void;
+        binding = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const coming = startForRound(round);
+        await waitFor(() => expect(net.calls.filter((c) => c.op === "listen")).toHaveLength(1));
+
+        useFlowStore.setState({ collabEnabled: false });
+        await waitFor(() => expect(useCollabStore.getState().status).toBe("off"));
+        release();
+
+        expect(await coming).toBeNull();
+        expect(currentSession()).toBeNull();
         expect(net.calls.filter((c) => c.op === "stop")).toHaveLength(1);
         expect(useCollabStore.getState().status).toBe("off");
         view.unmount();

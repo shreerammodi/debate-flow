@@ -23,10 +23,6 @@ export function backoffMs(attempt: number, random: () => number = Math.random): 
     return Math.round(window / 2 + random() * (window / 2));
 }
 
-export interface Retry {
-    stop(): void;
-}
-
 export interface RetryDeps {
     /** Resolves when the peer is back. Rejecting is ordinary. */
     dial(): Promise<void>;
@@ -38,8 +34,11 @@ export interface RetryDeps {
  * Dials until it succeeds, then stops. The caller re-arms on the next drop,
  * which is what resets the backoff: a second outage starts short again rather
  * than at the ceiling the first one climbed to.
+ *
+ * Returns the call that stops it, the same shape `schedule` hands back for a
+ * delay that has not fired yet.
  */
-export function retryForever(deps: RetryDeps): Retry {
+export function retryForever(deps: RetryDeps): () => void {
     const random = deps.random ?? Math.random;
     let attempt = 0;
     let cancel: (() => void) | null = null;
@@ -66,11 +65,9 @@ export function retryForever(deps: RetryDeps): Retry {
     }
     arm();
 
-    return {
-        stop() {
-            stopped = true;
-            cancel?.();
-            cancel = null;
-        },
+    return () => {
+        stopped = true;
+        cancel?.();
+        cancel = null;
     };
 }

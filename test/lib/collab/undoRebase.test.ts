@@ -80,29 +80,6 @@ describe("an action shape this build does not recognize", () => {
     });
 });
 
-describe("a remote single-column cell shift", () => {
-    it("moves no Handsontable row, so an untouched column keeps its history", () => {
-        const out = rebaseActions([change(3)], { kind: "cellShift", col: 1, at: 0 })!;
-        expect(out[0].changes![0][0]).toBe(3);
-    });
-
-    it("clears when a pending change touches that column at or below the shift", () => {
-        const pending: UndoAction = {
-            actionType: "change",
-            changes: [[3, 1, "old", "new"]],
-        };
-        expect(rebaseActions([pending], { kind: "cellShift", col: 1, at: 2 })).toBeNull();
-    });
-
-    it("keeps history when the pending change is above the shift", () => {
-        const pending: UndoAction = {
-            actionType: "change",
-            changes: [[0, 1, "old", "new"]],
-        };
-        expect(rebaseActions([pending], { kind: "cellShift", col: 1, at: 2 })).not.toBeNull();
-    });
-});
-
 describe("an empty stack", () => {
     it("stays empty rather than clearing, so nothing is reported as lost", () => {
         expect(rebaseActions([], { kind: "insertRow", at: 0, amount: 1 })).toEqual([]);

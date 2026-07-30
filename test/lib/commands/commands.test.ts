@@ -11,10 +11,12 @@ import { COMMANDS, EDITS_ROUND, type CommandId } from "@/lib/commands/registry";
 import { BOLD_CLASS, GROUP_CLASS, HIGHLIGHT_CLASS, KICKED_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
-import { makeFlowRound, type CellSource } from "@/lib/model/flow";
+import { makeFlowRound } from "@/lib/model/flow";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useContactPicker } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+
+import { metaStore, selectionHot } from "../../support/fakeHot";
 
 function loadRound() {
     const round = makeFlowRound({});
@@ -200,123 +202,53 @@ describe("grid commands", () => {
     });
 
     it("toggleBold writes classNames over the selection and notifies", () => {
-        const meta = new Map<string, { className?: string }>();
-        const at = (r: number, c: number) => {
-            const key = `${r},${c}`;
-            if (!meta.has(key)) meta.set(key, {});
-            return meta.get(key)!;
-        };
+        const meta = metaStore();
         const onMutated = vi.fn();
-        const render = vi.fn();
-        const fakeHot = {
-            getSelectedRange: () => [
-                {
-                    highlight: { row: 0, col: 0 },
-                    getTopLeftCorner: () => ({ row: 0, col: 0 }),
-                    getBottomRightCorner: () => ({ row: 1, col: 0 }),
-                },
-            ],
-            getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, _k: string, v: string) => {
-                at(r, c).className = v;
-            },
-            render,
-        };
-        // The fake covers exactly the surface toggleDecoration touches.
-        setActiveHot(fakeHot as never, onMutated);
+        const hot = selectionHot(1, meta);
+        setActiveHot(hot as never, onMutated);
 
         executeCommand("format.toggleBold");
-        expect(at(0, 0).className).toBe(BOLD_CLASS);
-        expect(at(1, 0).className).toBe(BOLD_CLASS);
-        expect(render).toHaveBeenCalled();
+        expect(meta.at(0, 0).className).toBe(BOLD_CLASS);
+        expect(meta.at(1, 0).className).toBe(BOLD_CLASS);
+        expect(hot.render).toHaveBeenCalled();
         expect(onMutated).toHaveBeenCalled();
 
         executeCommand("format.toggleBold");
-        expect(at(0, 0).className).toBe("");
-        expect(at(1, 0).className).toBe("");
+        expect(meta.at(0, 0).className).toBe("");
+        expect(meta.at(1, 0).className).toBe("");
     });
 
     it("toggleGroup writes the group className over the selection", () => {
-        const meta = new Map<string, { className?: string }>();
-        const at = (r: number, c: number) => {
-            const key = `${r},${c}`;
-            if (!meta.has(key)) meta.set(key, {});
-            return meta.get(key)!;
-        };
-        const fakeHot = {
-            getSelectedRange: () => [
-                {
-                    highlight: { row: 0, col: 0 },
-                    getTopLeftCorner: () => ({ row: 0, col: 0 }),
-                    getBottomRightCorner: () => ({ row: 2, col: 0 }),
-                },
-            ],
-            getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, _k: string, v: string) => {
-                at(r, c).className = v;
-            },
-            render: vi.fn(),
-        };
-        setActiveHot(fakeHot as never, vi.fn());
+        const meta = metaStore();
+        setActiveHot(selectionHot(2, meta) as never, vi.fn());
 
         executeCommand("format.toggleGroup");
-        expect(at(0, 0).className).toBe(GROUP_CLASS);
-        expect(at(1, 0).className).toBe(GROUP_CLASS);
-        expect(at(2, 0).className).toBe(GROUP_CLASS);
+        expect(meta.at(0, 0).className).toBe(GROUP_CLASS);
+        expect(meta.at(1, 0).className).toBe(GROUP_CLASS);
+        expect(meta.at(2, 0).className).toBe(GROUP_CLASS);
     });
 
     it("toggleKicked marks a run without disturbing a highlight it already wears", () => {
-        const meta = new Map<string, { className?: string }>([
-            ["1,0", { className: HIGHLIGHT_CLASS }],
-        ]);
-        const at = (r: number, c: number) => {
-            const key = `${r},${c}`;
-            if (!meta.has(key)) meta.set(key, {});
-            return meta.get(key)!;
-        };
-        const fakeHot = {
-            getSelectedRange: () => [
-                {
-                    highlight: { row: 0, col: 0 },
-                    getTopLeftCorner: () => ({ row: 0, col: 0 }),
-                    getBottomRightCorner: () => ({ row: 1, col: 0 }),
-                },
-            ],
-            getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, _k: string, v: string) => {
-                at(r, c).className = v;
-            },
-            render: vi.fn(),
-        };
-        setActiveHot(fakeHot as never, vi.fn());
+        const meta = metaStore([["1,0", { className: HIGHLIGHT_CLASS }]]);
+        setActiveHot(selectionHot(1, meta) as never, vi.fn());
 
         executeCommand("format.toggleKicked");
-        expect(at(0, 0).className).toBe(KICKED_CLASS);
+        expect(meta.at(0, 0).className).toBe(KICKED_CLASS);
         // A cell the opponent conceded and this side kicked anyway keeps both.
-        expect(at(1, 0).className).toBe(`${HIGHLIGHT_CLASS} ${KICKED_CLASS}`);
+        expect(meta.at(1, 0).className).toBe(`${HIGHLIGHT_CLASS} ${KICKED_CLASS}`);
     });
 
     it("cell.insert shifts the selected column down and blanks the target", () => {
         const data = [["a"], ["b"], ["c"]];
-        const meta = new Map<string, { className?: string; source?: CellSource }>([
-            ["0,0", { className: BOLD_CLASS }],
-        ]);
-        const at = (r: number, c: number) => {
-            const key = `${r},${c}`;
-            if (!meta.has(key)) meta.set(key, {});
-            return meta.get(key)!;
-        };
+        const meta = metaStore([["0,0", { className: BOLD_CLASS }]]);
         const onMutated = vi.fn();
         const fakeHot = {
             getSelectedLast: () => [1, 0],
             countRows: () => data.length,
             countCols: () => 1,
             getDataAtCell: (r: number, c: number) => data[r][c],
-            getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, k: string, v: unknown) => {
-                if (k === "source") at(r, c).source = v as CellSource | undefined;
-                else at(r, c).className = v as string;
-            },
+            getCellMeta: meta.getCellMeta,
+            setCellMeta: meta.setCellMeta,
             setDataAtCell: (changes: [number, number, string | null][]) => {
                 for (const [r, c, v] of changes) data[r][c] = v as string;
             },
@@ -327,30 +259,22 @@ describe("grid commands", () => {
         executeCommand("cell.insert");
         // Row 0 untouched, row 1 blanked, "b" pushed to row 2 ("c" falls off).
         expect(data.map((row) => row[0])).toEqual(["a", "", "b"]);
-        expect(at(1, 0).className).toBe("");
+        expect(meta.at(1, 0).className).toBe("");
         // The opened cell inherits no provenance from the text it displaced.
-        expect(at(1, 0).source).toBeUndefined();
+        expect(meta.at(1, 0).source).toBeUndefined();
         expect(onMutated).toHaveBeenCalled();
     });
 
     it("cell.insertBelow blanks the row under the selection", () => {
         const data = [["a"], ["b"], ["c"], ["d"]];
-        const meta = new Map<string, { className?: string; source?: CellSource }>();
-        const at = (r: number, c: number) => {
-            const key = `${r},${c}`;
-            if (!meta.has(key)) meta.set(key, {});
-            return meta.get(key)!;
-        };
+        const meta = metaStore();
         const fakeHot = {
             getSelectedLast: () => [1, 0],
             countRows: () => data.length,
             countCols: () => 1,
             getDataAtCell: (r: number, c: number) => data[r][c],
-            getCellMeta: (r: number, c: number) => at(r, c),
-            setCellMeta: (r: number, c: number, k: string, v: unknown) => {
-                if (k === "source") at(r, c).source = v as CellSource | undefined;
-                else at(r, c).className = v as string;
-            },
+            getCellMeta: meta.getCellMeta,
+            setCellMeta: meta.setCellMeta,
             setDataAtCell: (changes: [number, number, string | null][]) => {
                 for (const [r, c, v] of changes) data[r][c] = v as string;
             },

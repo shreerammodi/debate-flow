@@ -198,9 +198,28 @@ describe("an idle install", () => {
         expect(quiet.closed()).toBe(true);
     });
 
-    // Traffic beyond the greeting is another window syncing with a peer it
-    // admitted. Hanging up at the deadline would drop it mid-round.
-    it("keeps a connection another window is talking on", async () => {
+    // Writing again must not buy a longer stay. The shell addresses an owned
+    // connection's messages to the window that claimed it, so a second line
+    // reaching a window holding no session is a peer nobody admitted - the
+    // case the deadline is for. A stranger who greets and then chatters would
+    // otherwise pin one inbound slot per dial for the life of the process.
+    it("releases a stranger that keeps talking after its greeting", async () => {
+        await listener();
+        const stranger = await offer(STRANGER, "Round 3");
+        stranger.send({ type: "vector", seen: {} });
+        await Promise.resolve();
+
+        deadline!();
+
+        expect(stranger.closed()).toBe(true);
+        expect(stranger.answers).toEqual([]);
+    });
+
+    // The same for a saved contact arriving about the round this window has
+    // open: this window answers nothing, so it is holding a connection it is
+    // not using. Closing one the shell says belongs to another window is
+    // refused there and costs this window only its own handle.
+    it("releases a contact it left for another window, however much they say", async () => {
         openRound = "my-round";
         await listener();
         const peer = await offer(ALEX, "Round 3", "my-round");
@@ -209,7 +228,7 @@ describe("an idle install", () => {
 
         deadline!();
 
-        expect(peer.closed()).toBe(false);
+        expect(peer.closed()).toBe(true);
     });
 });
 

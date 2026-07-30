@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearMyEndpointId, myEndpointId } from "@/lib/collab/identity";
+import { clearShellStrings, myEndpointId } from "@/lib/collab/machineName";
 
 const invoke = vi.hoisted(() => vi.fn());
 
@@ -24,7 +24,7 @@ const ID = "e".repeat(64);
 
 beforeEach(() => {
     invoke.mockReset();
-    clearMyEndpointId();
+    clearShellStrings();
     onDesktop(true);
 });
 

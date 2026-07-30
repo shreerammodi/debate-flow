@@ -1,3 +1,9 @@
+/**
+ * Collab seams: the commands write through the live grid, then report to the
+ * replica from the store's snapshot. `selectionHot` stands in for the grid; the
+ * store and the replica are the real ones.
+ */
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { projectDoc } from "@/lib/collab/doc";
@@ -7,33 +13,7 @@ import { setActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
-/**
- * The commands write through the live grid, then report to the replica from
- * the store's snapshot. These fakes stand in for the grid; the store and the
- * replica are the real ones.
- */
-function metaGrid() {
-    const meta = new Map<string, { className?: string }>();
-    const at = (r: number, c: number) => {
-        const key = `${r},${c}`;
-        if (!meta.has(key)) meta.set(key, {});
-        return meta.get(key)!;
-    };
-    return {
-        getSelectedRange: () => [
-            {
-                highlight: { row: 0, col: 0 },
-                getTopLeftCorner: () => ({ row: 0, col: 0 }),
-                getBottomRightCorner: () => ({ row: 1, col: 0 }),
-            },
-        ],
-        getCellMeta: (r: number, c: number) => at(r, c),
-        setCellMeta: (r: number, c: number, _k: string, v: string) => {
-            at(r, c).className = v;
-        },
-        render: vi.fn(),
-    };
-}
+import { selectionHot } from "../../support/fakeHot";
 
 let round: FlowRound;
 let sheetId: string;
@@ -59,7 +39,7 @@ beforeEach(() => {
 describe("a decoration toggle reaches the replica", () => {
     it("records the meta of every cell it flipped", () => {
         openRound();
-        const grid = metaGrid();
+        const grid = selectionHot(1);
         // The store is the source the op reads, so it carries the new class.
         const mutated = () => {
             useFlowStore
@@ -80,7 +60,7 @@ describe("a decoration toggle reaches the replica", () => {
 
     it("records nothing when no grid names a sheet", () => {
         openRound();
-        setActiveHot(metaGrid() as never, vi.fn(), null);
+        setActiveHot(selectionHot(1) as never, vi.fn(), null);
         const before = getReplica();
         executeCommand("format.toggleBold");
         expect(getReplica()).toBe(before);

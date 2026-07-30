@@ -11,9 +11,7 @@
 /** What a partner did, in the terms the stack has to be corrected for. */
 export type StructuralChange =
     | { kind: "insertRow"; at: number; amount: number }
-    | { kind: "removeRow"; at: number; amount: number }
-    /** One column's cells slid; no Handsontable row moved. */
-    | { kind: "cellShift"; col: number; at: number };
+    | { kind: "removeRow"; at: number; amount: number };
 
 /** One entry of Handsontable's own undo stack, in the parts that carry rows. */
 export interface UndoAction {
@@ -34,13 +32,10 @@ function shiftRow(row: number, change: StructuralChange): number | null {
     if (change.kind === "insertRow") {
         return row >= change.at ? row + change.amount : row;
     }
-    if (change.kind === "removeRow") {
-        if (row < change.at) return row;
-        // The row this action names no longer exists.
-        if (row < change.at + change.amount) return null;
-        return row - change.amount;
-    }
-    return row;
+    if (row < change.at) return row;
+    // The row this action names no longer exists.
+    if (row < change.at + change.amount) return null;
+    return row - change.amount;
 }
 
 /**
@@ -54,18 +49,6 @@ export function rebaseActions(
     change: StructuralChange,
 ): UndoAction[] | null {
     if (actions.length === 0) return [];
-
-    if (change.kind === "cellShift") {
-        // A single-column insert leaves every row index valid but moves the
-        // values underneath them, so an undo would restore stale text into
-        // shifted positions. Only the column that moved is affected.
-        const touched = actions.some((a) =>
-            (a.changes ?? []).some(
-                ([row, prop]) => Number(prop) === change.col && row >= change.at,
-            ),
-        );
-        return touched ? null : actions.slice();
-    }
 
     const out: UndoAction[] = [];
     for (const action of actions) {

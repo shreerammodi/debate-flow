@@ -14,16 +14,19 @@ import type { CollabCell, CollabDoc, CollabSheet, Register } from "./types";
 export type Vector = Record<string, Stamp>;
 
 function raise(into: Vector, stamp: Stamp): void {
-    // An actor comes off the wire and is used as a key here. `__proto__` would
-    // swap this vector's own prototype instead of recording a stamp, and every
-    // later lookup in it would resolve through the stamp that replaced it.
-    if (stamp.actor === "__proto__") return;
     const held = into[stamp.actor];
     if (!held || compareStamps(stamp, held) > 0) into[stamp.actor] = stamp;
 }
 
+/**
+ * An actor comes off the wire and is used as a key here. On a plain object
+ * `__proto__` finds `Object.prototype`'s accessor and swaps this vector's own
+ * prototype instead of recording a stamp; a map with no prototype has no
+ * accessor to find. Refusing the name instead would record nothing for that
+ * actor, and a stamp no vector can hold is one every delta re-ships forever.
+ */
 export function vectorOf(doc: CollabDoc): Vector {
-    const seen: Vector = {};
+    const seen: Vector = Object.create(null);
     for (const reg of Object.values(doc.round)) raise(seen, reg.stamp);
     for (const sheet of Object.values(doc.sheets)) {
         for (const reg of Object.values(sheet.fields)) raise(seen, reg.stamp);
@@ -39,8 +42,10 @@ export function vectorOf(doc: CollabDoc): Vector {
 
 /** Whether the far side is already at or past this stamp's actor. */
 function known(seen: Vector, stamp: Stamp): boolean {
-    const held = seen[stamp.actor];
-    return held !== undefined && compareStamps(stamp, held) <= 0;
+    // A peer's vector arrives as a plain object, where a lookup for an actor it
+    // does not name resolves up the prototype chain rather than to nothing.
+    if (!Object.hasOwn(seen, stamp.actor)) return false;
+    return compareStamps(stamp, seen[stamp.actor]) <= 0;
 }
 
 function newRegisters(from: Record<string, Register>, seen: Vector): Record<string, Register> {
@@ -81,7 +86,12 @@ export function isEmptyDelta(doc: CollabDoc): boolean {
  * A vector that has seen only the file both peers opened. Every seeded value
  * shares the origin stamp, so this suppresses the whole seed and a first sync
  * between two peers who opened one round costs nothing.
+ *
+ * Prototypeless for the same reason `vectorOf` is: the sync raises this map by
+ * the actor of every stamp it ships.
  */
 export function emptyVector(): Vector {
-    return { "": ORIGIN_STAMP };
+    const seen: Vector = Object.create(null);
+    seen[""] = ORIGIN_STAMP;
+    return seen;
 }

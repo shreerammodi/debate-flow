@@ -35,7 +35,7 @@ import {
     type CommandId,
 } from "@/lib/commands/registry";
 import { FONTS, DEFAULT_FONT_ID, type FontId } from "@/lib/fonts/registry";
-import { effectiveKeymap } from "@/lib/keymap/effective";
+import { buildChordMap } from "@/lib/keymap/displayChord";
 import { eventToChord } from "@/lib/keymap/resolve";
 import { restoreMenuAccelerators, suspendMenuAccelerators } from "@/lib/keymap/useDesktopMenu";
 import { useSettingsShortcut } from "@/lib/keymap/useSettingsShortcut";
@@ -103,14 +103,6 @@ const CATEGORIES: { id: Category; label: string; icon: Icon }[] = isDesktop()
           { id: "updates", label: "Updates", icon: ArrowsClockwise },
       ]
     : BASE_CATEGORIES;
-
-function chordForCommand(bindings: Record<string, CommandId>): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const [chord, cmd] of Object.entries(bindings)) {
-        if (out[cmd] === undefined) out[cmd] = chord;
-    }
-    return out;
-}
 
 export default function SettingsPanel() {
     // The panel owns the chord that opens it, so it works on every screen.
@@ -185,10 +177,9 @@ export default function SettingsPanel() {
         return () => restoreMenuAccelerators();
     }, [recording]);
 
-    const chordByCommand = useMemo(() => {
-        const keymap = effectiveKeymap(keymapOverrides);
-        return chordForCommand(keymap.bindings);
-    }, [keymapOverrides]);
+    // Inverting a keymap of a few dozen entries, so it is rebuilt rather than
+    // memoized on a key the compiler cannot see it read.
+    const chordByCommand = buildChordMap();
 
     // isDesktop() gates the bridge itself; the setting gates the user's choice.
     const cardmirrorOn = cardmirrorEnabled && isDesktop();
@@ -605,7 +596,7 @@ export default function SettingsPanel() {
                             <div className="flex flex-col" data-testid="collab-section">
                                 <SettingRow
                                     title="Shared editing"
-                                    description="Enables collaboration features, off by default. Nothing reaches the network until you share or join a round."
+                                    description="Enables collaboration features, off by default. Off, nothing reaches the network. On, sharing or joining a round does, and so does Listen for invites."
                                     control={
                                         <Switch
                                             checked={collabEnabled}

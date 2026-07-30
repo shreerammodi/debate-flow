@@ -70,4 +70,15 @@ describe("createClock", () => {
         clock.observe({ ms: 1, counter: 0, actor: "sam" });
         expect(clock.tick()).toEqual({ ms: 100, counter: 1, actor: "alex" });
     });
+
+    it("raises past a count no clock reported instead of ignoring the stamp", () => {
+        const clock = createClock("alex", () => 10);
+        // A peer sitting at the far end of the safe range with a count a
+        // million times past what a stalled clock reaches. Dropping the whole
+        // stamp would leave this clock at 10, and every later local write
+        // losing to it forever.
+        const pinned = { ms: 9_007_199_254_740_991, counter: 2_000_000, actor: "sam" };
+        clock.observe(pinned);
+        expect(compareStamps(pinned, clock.tick())).toBeLessThan(0);
+    });
 });

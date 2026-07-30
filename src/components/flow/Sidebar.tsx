@@ -10,7 +10,6 @@ import SessionChip from "@/components/collab/SessionChip";
 import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
-import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 import { sideLabels } from "@/lib/format/events";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { compareSheets, type FlowSheet } from "@/lib/model/flow";
@@ -85,10 +84,7 @@ export default function Sidebar() {
                     edge, clear of the collapsed rail. */}
                 <div className="no-print fixed bottom-3 left-11 z-30 flex flex-col items-start gap-1">
                     <InviteChip />
-                    <SessionChip
-                        onDisconnectPeer={(id) => void disconnectPeer(id)}
-                        onEndSession={() => void endSession()}
-                    />
+                    <SessionChip />
                 </div>
             </>
         );
@@ -218,11 +214,7 @@ export default function Sidebar() {
                 a sheet name. Each chip carries its own rule and draws nothing
                 when it has nothing, so an idle round shows no footer at all. */}
             <InviteChip className="border-border/60 shrink-0 border-t p-2" />
-            <SessionChip
-                className="border-border/60 shrink-0 border-t p-2"
-                onDisconnectPeer={(id) => void disconnectPeer(id)}
-                onEndSession={() => void endSession()}
-            />
+            <SessionChip className="border-border/60 shrink-0 border-t p-2" />
         </nav>
     );
 }

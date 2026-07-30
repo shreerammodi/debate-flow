@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { broadcastName, clearMachineName, machineName } from "@/lib/collab/machineName";
+import { broadcastName, clearShellStrings, machineName } from "@/lib/collab/machineName";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -23,7 +23,7 @@ function onDesktop(yes: boolean): void {
 
 beforeEach(() => {
     invoke.mockReset();
-    clearMachineName();
+    clearShellStrings();
     onDesktop(true);
     useFlowStore.setState({ collabName: "" });
 });

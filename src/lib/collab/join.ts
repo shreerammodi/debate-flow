@@ -22,6 +22,7 @@ import { projectDoc } from "./doc";
 import { collabLive, collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
 import { broadcastName } from "./machineName";
+import { merge } from "./merge";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
 import { adoptJoinedDoc } from "./persist";
 import { incomingDoc } from "./rfdSync";
@@ -125,7 +126,12 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         // The same rule every later message goes through: the host's own
         // reasoning is theirs, and a note this install left with them on an
         // earlier round is not a partner's.
-        const doc = incomingDoc(raw, endpointId, host.endpointId);
+        const raised = incomingDoc(raw, endpointId, host.endpointId);
+        // A join is the one document path that skips `merge`, which is where the
+        // growth ceilings and the rank check live. The host chooses every byte
+        // of a guest's first document, so it goes through the same gate as the
+        // second one rather than straight into the sidecar.
+        const { doc } = merge({ roundId: raised.roundId, round: {}, sheets: {} }, raised);
         const io = deps.fs ?? (await getFlowFs());
         const existing = await findExisting(io, doc.roundId);
 

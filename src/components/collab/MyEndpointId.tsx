@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import SettingRow from "@/components/settings/SettingRow";
 import { Button } from "@/components/ui/button";
 import { copyText, selectNode } from "@/lib/clipboard";
-import { myEndpointId } from "@/lib/collab/identity";
+import { myEndpointId } from "@/lib/collab/machineName";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 
 /**

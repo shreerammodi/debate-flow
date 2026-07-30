@@ -7,6 +7,7 @@ import { applyOp, type OpContext } from "@/lib/collab/ops";
 import type { PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { recoverReplica } from "@/lib/collab/persist";
+import { getReplica } from "@/lib/collab/replica";
 import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
 import { applyRemoteDoc } from "@/lib/collab/runtime";
 import { startCollabSession } from "@/lib/collab/session";
@@ -362,5 +363,54 @@ describe("what a joined round remembers", () => {
                 .round!.sheets.find((s) => s.id === sheetId)!
                 .data.map((r) => r[0]),
         ).toEqual(["perm do both", "then the CP"]);
+    });
+
+    it("puts the host's first document through the gate every later one goes through", async () => {
+        const sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
+        const hostSide = side(shared);
+        // The host chooses every byte of a guest's first document, and a join
+        // is the one path that used to skip `merge`. A rank with a trailing
+        // zero digit is the shape `rankBetween` cannot subdivide, so a cell
+        // carrying one throws on the guest's next insert into that column and
+        // comes back from the sidecar after every restart.
+        const poisoned: CollabDoc = {
+            ...hostSide.doc(),
+            sheets: {
+                ...hostSide.doc().sheets,
+                [sheetId]: {
+                    ...hostSide.doc().sheets[sheetId],
+                    cells: {
+                        ...hostSide.doc().sheets[sheetId].cells,
+                        bottom: {
+                            col: 0,
+                            rank: "zzzzz0",
+                            actor: ALEX,
+                            text: "theirs",
+                            textStamp: { ms: 9_000, counter: 0, actor: ALEX },
+                            meta: {},
+                            metaStamp: { ms: 9_000, counter: 0, actor: ALEX },
+                            deleted: null,
+                        },
+                    },
+                },
+            },
+        };
+        const host = (await startCollabSession({
+            createLink: net.create(ALEX),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            doc: () => poisoned,
+            apply: hostSide.apply,
+        }))!;
+
+        const joined = await joinRound({
+            ticket: encodeTicket(host.share("partner")),
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
+        await recoverReplica(round, serializeFlow(round));
+        expect(Object.keys(getReplica()!.sheets[sheetId].cells)).not.toContain("bottom");
     });
 });

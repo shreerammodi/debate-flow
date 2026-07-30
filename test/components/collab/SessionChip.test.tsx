@@ -12,6 +12,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import SessionChip from "@/components/collab/SessionChip";
 import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
 
+const { disconnectPeer, endSession } = vi.hoisted(() => ({
+    disconnectPeer: vi.fn(async () => {}),
+    endSession: vi.fn(async () => {}),
+}));
+
+vi.mock("@/lib/collab/runtime", () => ({ disconnectPeer, endSession }));
+
 const ALEX: CollabPeerView = {
     endpointId: "alex-endpoint",
     name: "Alex",
@@ -33,6 +40,8 @@ function live(peers: CollabPeerView[] = [ALEX, RIN]) {
 
 beforeEach(() => {
     useCollabStore.getState().reset();
+    disconnectPeer.mockClear();
+    endSession.mockClear();
 });
 
 describe("SessionChip", () => {
@@ -142,50 +151,38 @@ describe("SessionChip", () => {
 
     it("disconnects one peer by endpoint id", async () => {
         const user = userEvent.setup();
-        const onDisconnectPeer = vi.fn();
         live();
-        render(<SessionChip onDisconnectPeer={onDisconnectPeer} />);
+        render(<SessionChip />);
 
         await user.click(screen.getByTestId("collab-chip"));
         const [, rin] = screen.getAllByTestId("collab-peer-row");
         await user.click(within(rin).getByTestId("collab-peer-disconnect"));
 
-        expect(onDisconnectPeer).toHaveBeenCalledWith(RIN.endpointId);
+        expect(disconnectPeer).toHaveBeenCalledWith(RIN.endpointId);
     });
 
     it("ends the session", async () => {
         const user = userEvent.setup();
-        const onEndSession = vi.fn();
         live();
-        render(<SessionChip onEndSession={onEndSession} />);
+        render(<SessionChip />);
 
         await user.click(screen.getByTestId("collab-chip"));
         await user.click(screen.getByTestId("collab-end-session"));
 
-        expect(onEndSession).toHaveBeenCalledTimes(1);
-    });
-
-    it("offers no action button the caller has not wired", async () => {
-        const user = userEvent.setup();
-        live();
-        render(<SessionChip />);
-        await user.click(screen.getByTestId("collab-chip"));
-
-        expect(screen.queryByTestId("collab-peer-disconnect")).toBeNull();
-        expect(screen.queryByTestId("collab-end-session")).toBeNull();
+        expect(endSession).toHaveBeenCalledTimes(1);
     });
 
     describe("never interrupting the grid", () => {
         it("takes no focus when it appears", () => {
             live();
-            render(<SessionChip onDisconnectPeer={vi.fn()} onEndSession={vi.fn()} />);
+            render(<SessionChip />);
             expect(document.activeElement).toBe(document.body);
         });
 
         it("is not a modal", async () => {
             const user = userEvent.setup();
             live();
-            render(<SessionChip onDisconnectPeer={vi.fn()} onEndSession={vi.fn()} />);
+            render(<SessionChip />);
             await user.click(screen.getByTestId("collab-chip"));
 
             expect(screen.queryByRole("dialog")).toBeNull();
@@ -195,7 +192,7 @@ describe("SessionChip", () => {
         it("autofocuses nothing inside the expanded panel", async () => {
             const user = userEvent.setup();
             live();
-            render(<SessionChip onDisconnectPeer={vi.fn()} onEndSession={vi.fn()} />);
+            render(<SessionChip />);
 
             const chip = screen.getByTestId("collab-chip");
             await user.click(chip);
@@ -212,7 +209,7 @@ describe("SessionChip", () => {
             live();
             render(
                 <>
-                    <SessionChip onDisconnectPeer={vi.fn()} onEndSession={vi.fn()} />
+                    <SessionChip />
                     <button type="button" data-testid="outside">
                         Grid
                     </button>

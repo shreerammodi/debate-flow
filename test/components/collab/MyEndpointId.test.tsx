@@ -16,7 +16,7 @@ import { useCollabStore } from "@/lib/store/useCollabStore";
 
 const myEndpointId = vi.hoisted(() => vi.fn(async () => ""));
 
-vi.mock("@/lib/collab/identity", () => ({ myEndpointId }));
+vi.mock("@/lib/collab/machineName", () => ({ myEndpointId }));
 
 const { toastSuccess, toastError } = vi.hoisted(() => ({
     toastSuccess: vi.fn(),

@@ -8,47 +8,9 @@ import {
     movingBlock,
     nudge,
     revertMove,
-    type MoveGrid,
 } from "@/lib/grid/moveSession";
-import type { CellSource } from "@/lib/model/flow";
 
-/** A column-major grid over a plain array, with the setDataAtCell moveSession needs. */
-function fakeGrid(
-    data: (string | null)[][],
-    classNames: Record<string, string> = {},
-): MoveGrid & {
-    data: (string | null)[][];
-    classNames: Record<string, string>;
-    col(c: number): (string | null)[];
-} {
-    const store = { ...classNames };
-    const srcStore: Record<string, CellSource> = {};
-    return {
-        data,
-        classNames: store,
-        countRows: () => data.length,
-        countCols: () => data[0]?.length ?? 0,
-        getDataAtCell: (r, c) => data[r][c],
-        setDataAtCell: (changes) => {
-            for (const [r, c, v] of changes) data[r][c] = v;
-        },
-        getCellMeta: (r, c) => ({ className: store[`${r},${c}`], source: srcStore[`${r},${c}`] }),
-        setCellMeta: (r, c, key, value) => {
-            const cell = `${r},${c}`;
-            if (key === "source") {
-                if (value) srcStore[cell] = value as CellSource;
-                else delete srcStore[cell];
-            } else if (value) {
-                store[cell] = value as string;
-            } else {
-                delete store[cell];
-            }
-        },
-        col(c) {
-            return data.map((row) => row[c]);
-        },
-    };
-}
+import { fakeGrid } from "../../support/fakeHot";
 
 const oneCol = () => fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]]);
 

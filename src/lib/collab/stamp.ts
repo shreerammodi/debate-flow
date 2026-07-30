@@ -28,8 +28,21 @@ export const ORIGIN_STAMP: Stamp = { ms: 0, counter: 0, actor: "" };
  * climbed past: `tick` moves it by one, so once the clock has adopted such a
  * counter every later local write carries the same stamp, `known` reads each of
  * them as one the far side already holds, and the debater's edits stop shipping.
+ * A count above this is not one a clock reported either: the wall clock would
+ * have to stall for a million writes.
  */
 const MAX_COUNTER = 1_000_000;
+
+/**
+ * The count a stamp is ordered by. A document's counts come off the wire and
+ * nothing above this narrows them, so a count no clock could have produced
+ * reads as the origin's here - and `observe` adopts the same value, because a
+ * clock that raised past a count the order does not honour would leave the
+ * debater's next write losing to it.
+ */
+function countOf(value: number): number {
+    return Number.isSafeInteger(value) && value >= 0 && value <= MAX_COUNTER ? value : 0;
+}
 
 /**
  * Total order: wall time, then counter, then actor.
@@ -44,8 +57,8 @@ export function compareStamps(a: Stamp, b: Stamp): number {
     const ams = Number.isSafeInteger(a.ms) ? a.ms : 0;
     const bms = Number.isSafeInteger(b.ms) ? b.ms : 0;
     if (ams !== bms) return ams - bms;
-    const ac = Number.isSafeInteger(a.counter) ? a.counter : 0;
-    const bc = Number.isSafeInteger(b.counter) ? b.counter : 0;
+    const ac = countOf(a.counter);
+    const bc = countOf(b.counter);
     if (ac !== bc) return ac - bc;
     return a.actor < b.actor ? -1 : a.actor > b.actor ? 1 : 0;
 }
@@ -80,13 +93,16 @@ export function createClock(actor: string, now: () => number = Date.now): Clock 
             // time, which is what makes "last typed wins" match what the two
             // debaters saw. A reading no clock produces is not adopted at all.
             if (!Number.isSafeInteger(stamp.ms) || stamp.ms < 0) return;
-            if (!Number.isSafeInteger(stamp.counter) || stamp.counter < 0) return;
-            if (stamp.counter > MAX_COUNTER) return;
+            // The count is clamped and the stamp kept: discarding it leaves the
+            // clock below a stamp the document holds, and the debater can then
+            // never type over that cell. A far-future ms paired with a count no
+            // clock produced is the case this raise exists for.
+            const seen = countOf(stamp.counter);
             if (stamp.ms > ms) {
                 ms = stamp.ms;
-                counter = stamp.counter;
-            } else if (stamp.ms === ms && stamp.counter > counter) {
-                counter = stamp.counter;
+                counter = seen;
+            } else if (stamp.ms === ms && seen > counter) {
+                counter = seen;
             }
         },
     };

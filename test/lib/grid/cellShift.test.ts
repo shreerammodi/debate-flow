@@ -2,64 +2,14 @@ import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-    insertCell,
-    moveBlock,
-    shiftMetaDown,
-    shiftSpan,
-    type CellGrid,
-} from "@/lib/grid/cellShift";
+import { insertCell, moveBlock, shiftMetaDown, shiftSpan } from "@/lib/grid/cellShift";
 import type { CellSource } from "@/lib/model/flow";
+
+import { fakeGrid } from "../../support/fakeHot";
 
 registerAllModules();
 
 const src = (key: string): CellSource => ({ app: "cardmirror", token: `t-${key}`, key });
-
-/**
- * A column-major grid of text plus className and source maps keyed "row,col".
- * `col` picks one column's text out as an array, which is how the rotation
- * assertions read.
- */
-function fakeGrid(
-    data: (string | null)[][],
-    classNames: Record<string, string> = {},
-    sources: Record<string, CellSource> = {},
-): CellGrid & {
-    data: (string | null)[][];
-    classNames: Record<string, string>;
-    sources: Record<string, CellSource>;
-    apply(changes: [number, number, string | null][]): void;
-    col(c: number): (string | null)[];
-} {
-    const store = { ...classNames };
-    const srcStore = { ...sources };
-    return {
-        data,
-        classNames: store,
-        sources: srcStore,
-        countRows: () => data.length,
-        countCols: () => data[0]?.length ?? 0,
-        getDataAtCell: (r, c) => data[r][c],
-        getCellMeta: (r, c) => ({ className: store[`${r},${c}`], source: srcStore[`${r},${c}`] }),
-        setCellMeta: (r, c, key, value) => {
-            const cell = `${r},${c}`;
-            if (key === "source") {
-                if (value) srcStore[cell] = value as CellSource;
-                else delete srcStore[cell];
-            } else if (value) {
-                store[cell] = value as string;
-            } else {
-                delete store[cell];
-            }
-        },
-        apply(changes) {
-            for (const [r, c, v] of changes) data[r][c] = v;
-        },
-        col(c) {
-            return data.map((row) => row[c]);
-        },
-    };
-}
 
 /** An empty rows x cols grid, for the decoration-only cases. */
 const blank = (rows: number, cols: number): (string | null)[][] =>
@@ -69,7 +19,7 @@ describe("shiftSpan", () => {
     it("moves a span down, dropping what runs off the last row", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]], { "1,0": "bold" });
 
-        g.apply(shiftSpan(g, 0, 1, 4, 1));
+        g.setDataAtCell(shiftSpan(g, 0, 1, 4, 1));
 
         // Row 1 is a source, never a target, so its stale value stays for the
         // caller to blank. "d" fell off.
@@ -80,7 +30,7 @@ describe("shiftSpan", () => {
     it("moves a span up, dropping what runs off row 0", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]]);
 
-        g.apply(shiftSpan(g, 0, 1, 4, -1));
+        g.setDataAtCell(shiftSpan(g, 0, 1, 4, -1));
 
         expect(g.col(0)).toEqual(["b", "c", "d", "d"]);
     });
@@ -101,7 +51,7 @@ describe("shiftSpan", () => {
             ["b", "y"],
         ]);
 
-        g.apply(shiftSpan(g, 0, 0, 2, 1));
+        g.setDataAtCell(shiftSpan(g, 0, 0, 2, 1));
 
         expect(g.col(1)).toEqual(["x", "y"]);
     });
@@ -109,7 +59,7 @@ describe("shiftSpan", () => {
     it("carries provenance with the text it describes", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]], {}, { "1,0": src("k-b") });
 
-        g.apply(shiftSpan(g, 0, 1, 4, 1));
+        g.setDataAtCell(shiftSpan(g, 0, 1, 4, 1));
 
         expect(g.col(0)).toEqual(["a", "b", "b", "c"]);
         expect(g.sources).toEqual({ "1,0": src("k-b"), "2,0": src("k-b") });
@@ -122,7 +72,7 @@ describe("shiftSpan", () => {
             { "0,0": src("k-a"), "1,0": src("k-b"), "2,0": src("k-c") },
         );
 
-        g.apply(shiftSpan(g, 0, 0, 3, 1));
+        g.setDataAtCell(shiftSpan(g, 0, 0, 3, 1));
 
         // "c" had nowhere to go, so k-c went off the bottom with it. Row 0 is a
         // source, never a target, so its stale text and provenance both stay.
@@ -139,7 +89,7 @@ describe("insertCell", () => {
     it("blanks the target and pushes the column down, dropping the last row", () => {
         const g = fakeGrid([["a"], ["b"], ["c"]], { "0,0": "bold", "1,0": "hl" });
 
-        g.apply(insertCell(g, 1, 0));
+        g.setDataAtCell(insertCell(g, 1, 0));
 
         expect(g.col(0)).toEqual(["a", "", "b"]);
         expect(g.classNames).toEqual({ "0,0": "bold", "2,0": "hl" });
@@ -148,7 +98,7 @@ describe("insertCell", () => {
     it("leaves the opened cell with no provenance", () => {
         const g = fakeGrid([["a"], ["b"], ["c"]], {}, { "1,0": src("k-b") });
 
-        g.apply(insertCell(g, 1, 0));
+        g.setDataAtCell(insertCell(g, 1, 0));
 
         expect(g.col(0)).toEqual(["a", "", "b"]);
         expect(g.sources).toEqual({ "2,0": src("k-b") });
@@ -159,7 +109,7 @@ describe("moveBlock", () => {
     it("rotates the cells a downward block passes over, losing nothing", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]], { "1,0": "bold" });
 
-        g.apply(moveBlock(g, 0, 1, 1, 2));
+        g.setDataAtCell(moveBlock(g, 0, 1, 1, 2));
 
         expect(g.col(0)).toEqual(["A", "C", "D", "B", "E"]);
         expect(g.classNames).toEqual({ "3,0": "bold" });
@@ -168,7 +118,7 @@ describe("moveBlock", () => {
     it("rotates the cells an upward block passes over, losing nothing", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]], { "3,0": "bold" });
 
-        g.apply(moveBlock(g, 0, 3, 1, -2));
+        g.setDataAtCell(moveBlock(g, 0, 3, 1, -2));
 
         expect(g.col(0)).toEqual(["A", "D", "B", "C", "E"]);
         expect(g.classNames).toEqual({ "1,0": "bold" });
@@ -177,7 +127,7 @@ describe("moveBlock", () => {
     it("moves a multi-row block", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]]);
 
-        g.apply(moveBlock(g, 0, 0, 2, 2));
+        g.setDataAtCell(moveBlock(g, 0, 0, 2, 2));
 
         expect(g.col(0)).toEqual(["C", "D", "A", "B", "E"]);
     });
@@ -185,7 +135,7 @@ describe("moveBlock", () => {
     it("handles a travel distance longer than the block itself", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]]);
 
-        g.apply(moveBlock(g, 0, 0, 1, 3));
+        g.setDataAtCell(moveBlock(g, 0, 0, 1, 3));
 
         expect(g.col(0)).toEqual(["B", "C", "D", "A", "E"]);
     });
@@ -204,7 +154,7 @@ describe("moveBlock", () => {
             { "1,0": src("k-b"), "2,0": src("k-c") },
         );
 
-        g.apply(moveBlock(g, 0, 1, 1, 2));
+        g.setDataAtCell(moveBlock(g, 0, 1, 1, 2));
 
         expect(g.col(0)).toEqual(["A", "C", "D", "B", "E"]);
         expect(g.sources).toEqual({ "1,0": src("k-c"), "3,0": src("k-b") });

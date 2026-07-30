@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { setClaimHandler, setCursorHandler } from "@/lib/grid/presenceBridge";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
+import { serializeFlow } from "@/lib/persistence/flowFile";
 import { basename } from "@/lib/persistence/flowPaths";
 import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -30,6 +31,7 @@ import { lossMessage } from "./lossReport";
 import { broadcastName } from "./machineName";
 import { merge, type DroppedCell } from "./merge";
 import { createPeerLinkFor } from "./peerLink";
+import { persistReplica } from "./persist";
 import {
     adoptReplicaActor,
     getReplica,
@@ -207,6 +209,17 @@ export async function startForRound(
     }
     starting = false;
 
+    // The switches were read before the bind, and a bind is an endpoint plus
+    // one QUIC dial per remembered peer: seconds on a tournament LAN, which is
+    // long enough for a debater to reach the kill switch during it. A session
+    // that came up into a world where shared editing is off is ended here or
+    // never, because the chip and the Settings controls are both hidden by
+    // then and no surface is left to end it from.
+    if (session && !collabLive()) {
+        await endSession();
+        return null;
+    }
+
     if (!session) {
         useCollabStore.getState().reset();
         await syncInviteWatch();
@@ -310,6 +323,12 @@ export async function disconnectPeer(endpointId: string): Promise<void> {
     if (!held) return;
     held.disconnect(endpointId);
     publish(held.peers());
+    // Autosave only fires on a round whose content changed, so a debater who
+    // cuts a peer loose and quits without typing again leaves them in the
+    // sidecar and gets them back on the next open. The cut is the decision, so
+    // it reaches disk where it is made.
+    const { round } = useFlowStore.getState();
+    if (round?.id === held.roundId) await persistReplica(round, serializeFlow(round));
 }
 
 /**

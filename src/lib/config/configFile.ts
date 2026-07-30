@@ -17,7 +17,13 @@ import { COMMANDS } from "@/lib/commands/registry";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
 import { getPresetKeymap } from "@/lib/keymap/presets";
-import { type AppConfig, resolveZoom, useFlowStore } from "@/lib/store/useFlowStore";
+import {
+    type AppConfig,
+    bool,
+    resolveColor,
+    resolveZoom,
+    useFlowStore,
+} from "@/lib/store/useFlowStore";
 import { resolveThemeMode } from "@/lib/theme/mode";
 import { isDesktop } from "@/lib/update/adapter";
 import { DEFAULT_UPDATE_CONFIG } from "@/lib/update/types";
@@ -75,15 +81,6 @@ export interface ConfigFileShape {
 
 /** A leaf chord or a nested namespace of them. */
 export type KeymapTree = { [segment: string]: string | KeymapTree };
-
-/** Accepts only a `#rrggbb` literal (the shape native color inputs emit). */
-function resolveColor(value: unknown): string | null {
-    return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
-}
-
-function bool(value: unknown, fallback: boolean): boolean {
-    return typeof value === "boolean" ? value : fallback;
-}
 
 /**
  * Inverts a chord -> commandId map into commandId -> chord, seeding an entry for

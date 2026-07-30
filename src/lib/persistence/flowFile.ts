@@ -26,8 +26,15 @@ import { uid } from "@/lib/model/ids";
 
 export const FLOW_FILE_VERSION = 3;
 
-/** Serialize a round as .ebb file text. */
+/**
+ * Serialize a round as .ebb file text.
+ *
+ * A round projected from a replica carries register values a peer chose, and
+ * the parser below refuses several of them. A file this parser cannot read back
+ * is a round the debater loses for good, so the write refuses first.
+ */
 export function serializeFlow(round: FlowRound): string {
+    checkRound(round, "round");
     return JSON.stringify({ version: FLOW_FILE_VERSION, round }, null, 2) + "\n";
 }
 
@@ -131,6 +138,32 @@ function checkCellMeta(value: unknown, path: string): void {
     }
 }
 
+/**
+ * Whether the file can hold this scouting, or this cell decoration.
+ *
+ * Both are projected out of registers a peer chose, and the projection has to
+ * refuse a value this parser refuses or the round it writes cannot be reopened.
+ * It asks here rather than restating the contract, which would drift.
+ */
+export function holdsScouting(value: unknown): boolean {
+    try {
+        checkScouting(value, "scouting");
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** As `holdsScouting`, for one cell's decoration. */
+export function holdsCellMeta(value: unknown): boolean {
+    try {
+        checkCellMeta(value, "meta");
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** A cell-meta key is the cell's coordinate, which is how it is looked up. */
 const CELL_KEY = /^\d+,\d+$/;
 
@@ -143,6 +176,19 @@ const CELL_KEY = /^\d+,\d+$/;
  * A fat real round is a few hundred thousand cells.
  */
 export const MAX_ROUND_CELLS = 2_000_000;
+
+/**
+ * The cells one sheet claims: its rows times its widest row, which is the
+ * rectangle every consumer pads it to. `MAX_ROUND_CELLS` counts these, and the
+ * projection that writes a round spends the same number as its budget, so both
+ * ask here rather than restating the product. A projection that counted a sheet
+ * differently would write a round this parser then refuses.
+ */
+export function paddedCells(rows: readonly unknown[][]): number {
+    let widest = 0;
+    for (const row of rows) widest = Math.max(widest, row.length);
+    return rows.length * widest;
+}
 
 /** Validate one sheet, returning the cells the grid pads it to. */
 function checkSheet(value: unknown, path: string): number {
@@ -157,10 +203,8 @@ function checkSheet(value: unknown, path: string): number {
     optStr(s.startSpeechId, `${path}.startSpeechId`);
 
     if (!Array.isArray(s.data)) fail(`${path}.data`, "is not an array");
-    let widest = 0;
     s.data.forEach((row, r) => {
         if (!Array.isArray(row)) fail(`${path}.data[${r}]`, "is not a row");
-        widest = Math.max(widest, row.length);
         row.forEach((cell, c) => {
             if (cell !== null && typeof cell !== "string") {
                 fail(`${path}.data[${r}][${c}]`, "is not text or null");
@@ -179,7 +223,7 @@ function checkSheet(value: unknown, path: string): number {
             checkCellMeta(meta[key], `${path}.meta["${key}"]`);
         }
     }
-    return s.data.length * widest;
+    return paddedCells(s.data);
 }
 
 /** Validate a parsed round, throwing with the path to the first bad value. */
@@ -190,7 +234,9 @@ export function checkRound(value: unknown, path: string): FlowRound {
     finiteNum(r.updatedAt, `${path}.updatedAt`);
     if (!optional(r.event)) {
         const event = str(r.event, `${path}.event`);
-        if (!(event in EVENTS)) fail(`${path}.event`, "is not a known debate event");
+        // `in` walks the prototype chain, so "constructor" would pass and name
+        // no event at all.
+        if (!Object.hasOwn(EVENTS, event)) fail(`${path}.event`, "is not a known debate event");
     }
     if (!optional(r.firstSide) && r.firstSide !== "aff" && r.firstSide !== "neg") {
         fail(`${path}.firstSide`, 'is not "aff" or "neg"');

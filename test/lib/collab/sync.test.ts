@@ -39,7 +39,6 @@ function manualClock() {
     let pending: { fn: () => void; at: number }[] = [];
     let now = 0;
     return {
-        now: () => now,
         schedule(fn: () => void, ms: number) {
             const entry = { fn, at: now + ms };
             pending.push(entry);
@@ -96,7 +95,6 @@ function setup(over: { readOnly?: boolean } = {}) {
         readOnly: over.readOnly,
         endpointId: "me",
         from: "them",
-        now: clock.now,
         schedule: clock.schedule,
     });
     return { ...link, clock, applied, sync };

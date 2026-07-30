@@ -218,26 +218,7 @@ export type FlowStore = FlowState & FlowActions;
  * The full set of settings the desktop config file mirrors, in the store's own
  * camelCase vocabulary. The config module maps this to/from the plain-text file.
  */
-export interface AppConfig {
-    flowFont: FontId;
-    defaultGridZoom: number;
-    sidebarCollapsed: boolean;
-    rfdOpen: boolean;
-    rfdVim: boolean;
-    insertPaste: boolean;
-    scrollZoom: boolean;
-    tooltips: boolean;
-    cardmirrorEnabled: boolean;
-    cardmirrorTextType: CardMirrorTextType;
-    collabEnabled: boolean;
-    collabRelayEnabled: boolean;
-    collabListenEnabled: boolean;
-    collabName: string;
-    contacts: Contacts;
-    theme: ThemeMode;
-    affColor: string | null;
-    negColor: string | null;
-    flowsDir: string | null;
+export interface AppConfig extends DisplaySettings {
     keymapOverrides: Record<string, string>;
     updateConfig: UpdateConfig;
 }
@@ -308,8 +289,13 @@ interface DisplaySettings {
 }
 
 /** Accepts only a `#rrggbb` literal, the shape native color inputs emit. */
-function resolveColor(value: unknown): string | null {
+export function resolveColor(value: unknown): string | null {
     return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
+}
+
+/** A hand-edited or stale stored value as a boolean, falling back when it is neither. */
+export function bool(value: unknown, fallback: boolean): boolean {
+    return typeof value === "boolean" ? value : fallback;
 }
 
 function loadDisplaySettings(): DisplaySettings {
@@ -342,21 +328,18 @@ function loadDisplaySettings(): DisplaySettings {
         return {
             flowFont: resolveFontId(p.flowFont),
             defaultGridZoom: resolveZoom(p.defaultGridZoom),
-            sidebarCollapsed: typeof p.sidebarCollapsed === "boolean" ? p.sidebarCollapsed : false,
-            rfdOpen: typeof p.rfdOpen === "boolean" ? p.rfdOpen : false,
-            rfdVim: typeof p.rfdVim === "boolean" ? p.rfdVim : false,
-            insertPaste: typeof p.insertPaste === "boolean" ? p.insertPaste : false,
-            scrollZoom: typeof p.scrollZoom === "boolean" ? p.scrollZoom : true,
-            tooltips: typeof p.tooltips === "boolean" ? p.tooltips : true,
-            cardmirrorEnabled:
-                typeof p.cardmirrorEnabled === "boolean" ? p.cardmirrorEnabled : true,
+            sidebarCollapsed: bool(p.sidebarCollapsed, false),
+            rfdOpen: bool(p.rfdOpen, false),
+            rfdVim: bool(p.rfdVim, false),
+            insertPaste: bool(p.insertPaste, false),
+            scrollZoom: bool(p.scrollZoom, true),
+            tooltips: bool(p.tooltips, true),
+            cardmirrorEnabled: bool(p.cardmirrorEnabled, true),
             cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
             theme: resolveThemeMode(p.theme),
-            collabEnabled: typeof p.collabEnabled === "boolean" ? p.collabEnabled : false,
-            collabRelayEnabled:
-                typeof p.collabRelayEnabled === "boolean" ? p.collabRelayEnabled : true,
-            collabListenEnabled:
-                typeof p.collabListenEnabled === "boolean" ? p.collabListenEnabled : false,
+            collabEnabled: bool(p.collabEnabled, false),
+            collabRelayEnabled: bool(p.collabRelayEnabled, true),
+            collabListenEnabled: bool(p.collabListenEnabled, false),
             collabName: typeof p.collabName === "string" ? p.collabName : "",
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
@@ -400,6 +383,19 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         affColor: s.affColor,
         negColor: s.negColor,
     };
+}
+
+/**
+ * Writes a display-settings patch to localStorage and the store together, so a
+ * setter cannot update one without the other.
+ */
+function persistDisplay(
+    set: (patch: Partial<DisplaySettings>) => void,
+    get: () => FlowState,
+    patch: Partial<DisplaySettings>,
+): void {
+    saveDisplaySettings({ ...displaySettingsOf(get()), ...patch });
+    set(patch);
 }
 
 const initialDisplaySettings = loadDisplaySettings();
@@ -745,10 +741,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         set({ keymapOverrides });
     },
 
-    setFlowFont(id) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), flowFont: id });
-        set({ flowFont: id });
-    },
+    setFlowFont: (id) => persistDisplay(set, get, { flowFont: id }),
 
     setGridZoom(zoom) {
         const z = clampZoom(zoom);
@@ -766,71 +759,32 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         set({ defaultGridZoom: z, gridZoom: z });
     },
 
-    setRfdVim(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), rfdVim: on });
-        set({ rfdVim: on });
-    },
+    setRfdVim: (on) => persistDisplay(set, get, { rfdVim: on }),
 
-    setInsertPaste(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), insertPaste: on });
-        set({ insertPaste: on });
-    },
+    setInsertPaste: (on) => persistDisplay(set, get, { insertPaste: on }),
 
-    setScrollZoom(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), scrollZoom: on });
-        set({ scrollZoom: on });
-    },
+    setScrollZoom: (on) => persistDisplay(set, get, { scrollZoom: on }),
 
-    setTooltips(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), tooltips: on });
-        set({ tooltips: on });
-    },
+    setTooltips: (on) => persistDisplay(set, get, { tooltips: on }),
 
-    setCardmirrorEnabled(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorEnabled: on });
-        set({ cardmirrorEnabled: on });
-    },
+    setCardmirrorEnabled: (on) => persistDisplay(set, get, { cardmirrorEnabled: on }),
 
-    setCardmirrorTextType(type) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), cardmirrorTextType: type });
-        set({ cardmirrorTextType: type });
-    },
+    setCardmirrorTextType: (type) => persistDisplay(set, get, { cardmirrorTextType: type }),
 
-    setCollabEnabled(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), collabEnabled: on });
-        set({ collabEnabled: on });
-    },
+    setCollabEnabled: (on) => persistDisplay(set, get, { collabEnabled: on }),
 
-    setContacts(contacts) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), contacts });
-        set({ contacts });
-    },
+    setContacts: (contacts) => persistDisplay(set, get, { contacts }),
 
-    setCollabRelayEnabled(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), collabRelayEnabled: on });
-        set({ collabRelayEnabled: on });
-    },
+    setCollabRelayEnabled: (on) => persistDisplay(set, get, { collabRelayEnabled: on }),
 
-    setCollabListenEnabled(on) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), collabListenEnabled: on });
-        set({ collabListenEnabled: on });
-    },
+    setCollabListenEnabled: (on) => persistDisplay(set, get, { collabListenEnabled: on }),
 
-    setCollabName(name) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), collabName: name });
-        set({ collabName: name });
-    },
+    setCollabName: (name) => persistDisplay(set, get, { collabName: name }),
 
-    setTheme(mode) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), theme: mode });
-        set({ theme: mode });
-    },
+    setTheme: (mode) => persistDisplay(set, get, { theme: mode }),
 
-    setSideColor(side, color) {
-        const patch = side === "aff" ? { affColor: color } : { negColor: color };
-        saveDisplaySettings({ ...displaySettingsOf(get()), ...patch });
-        set(patch);
-    },
+    setSideColor: (side, color) =>
+        persistDisplay(set, get, side === "aff" ? { affColor: color } : { negColor: color }),
 
     setFlowsDir(dir) {
         const flowsDir = dir?.trim() ? dir.trim() : null;
@@ -876,14 +830,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setInfoOpen(open) {
         set({ infoOpen: open });
     },
-    setSidebarCollapsed(collapsed) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), sidebarCollapsed: collapsed });
-        set({ sidebarCollapsed: collapsed });
-    },
-    setRfdOpen(open) {
-        saveDisplaySettings({ ...displaySettingsOf(get()), rfdOpen: open });
-        set({ rfdOpen: open });
-    },
+    setSidebarCollapsed: (collapsed) => persistDisplay(set, get, { sidebarCollapsed: collapsed }),
+    setRfdOpen: (open) => persistDisplay(set, get, { rfdOpen: open }),
     setRenamingSheet(id) {
         set({ renamingSheetId: id });
     },
