@@ -105,10 +105,28 @@ describe("dispatchMenuCommand", () => {
         expect(executeCommand).toHaveBeenCalledWith("row.delete");
     });
 
-    it("other menu ids run their command regardless of focus", () => {
+    it("drops a grid-scoped command while chrome text is focused", () => {
         focusInput("typing");
         dispatchMenuCommand("format.toggleBold");
+        expect(executeCommand).not.toHaveBeenCalled();
+    });
+
+    it("runs a grid-scoped command from the grid's own cell editor", () => {
+        const editor = focusTextarea("card text", 4);
+        editor.classList.add("handsontableInput");
+        dispatchMenuCommand("format.toggleBold");
         expect(executeCommand).toHaveBeenCalledWith("format.toggleBold");
+    });
+
+    it("runs a grid-scoped command with no text focus", () => {
+        dispatchMenuCommand("format.toggleBold");
+        expect(executeCommand).toHaveBeenCalledWith("format.toggleBold");
+    });
+
+    it("runs an app-scoped command while chrome text is focused", () => {
+        focusInput("typing");
+        dispatchMenuCommand("settings.open");
+        expect(executeCommand).toHaveBeenCalledWith("settings.open");
     });
 
     it("unknown ids are ignored", () => {

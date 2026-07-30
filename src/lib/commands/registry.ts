@@ -229,3 +229,78 @@ export const EDITS_ROUND: Record<CommandId, boolean> = {
     "collab.invite": false,
     "collab.end": false,
 };
+
+/**
+ * Whether a command acts on the flow sheet's selected cells. Exhaustive over
+ * `CommandId` on purpose, so a new command has to say which it is.
+ *
+ * A chord that lands in a chrome text box - rename a sheet, the command
+ * palette, the RFD drawer, a settings field - is aimed at that box, not at the
+ * grid parked behind it, so `useKeymap` and `dispatchMenuCommand` drop the
+ * grid-scoped ones there. The grid's own cell editor is exempt: bolding the
+ * cell you are typing in is the gesture, not a misfire.
+ *
+ * Undo and redo are not on the list. They mean "undo here", so a text box
+ * takes them natively (`isNativeEditingChord`, and the Edit menu's own
+ * re-dispatch); calling them cell-targeting would only leave the menu item
+ * dead for anyone who rebinds them off the native chord.
+ */
+export const GRID_SCOPED: Record<CommandId, boolean> = {
+    "window.new": false,
+    "flow.new": false,
+    "flow.open": false,
+    "flow.save": false,
+    "flow.saveAs": false,
+    "flow.reveal": false,
+    "flow.close": false,
+    "edit.undo": false,
+    "edit.redo": false,
+    "format.toggleBold": true,
+    "format.toggleHighlight": true,
+    "format.toggleCard": true,
+    "format.toggleGroup": true,
+    "format.toggleKicked": true,
+    "row.insertAbove": true,
+    "row.insertBelow": true,
+    "row.delete": true,
+    "cell.insert": true,
+    "cell.insertBelow": true,
+    "cell.move": true,
+    "cell.jumpToSource": true,
+    "cell.sendToDoc": true,
+    "sheet.next": false,
+    "sheet.prev": false,
+    "sheet.newAff": false,
+    "sheet.newNeg": false,
+    "sheet.rename": false,
+    "sheet.quickSwitch": false,
+    "round.swapOrder": false,
+    "sheet.jump1": false,
+    "sheet.jump2": false,
+    "sheet.jump3": false,
+    "sheet.jump4": false,
+    "sheet.jump5": false,
+    "sheet.jump6": false,
+    "sheet.jump7": false,
+    "sheet.jump8": false,
+    "sheet.jump9": false,
+    "settings.open": false,
+    "info.open": false,
+    "rfd.toggle": false,
+    "help.open": false,
+    "sidebar.toggle": false,
+    "view.zoomIn": false,
+    "view.zoomOut": false,
+    "split.toggle": false,
+    "split.focusLeft": false,
+    "split.focusRight": false,
+    "palette.open": false,
+    "theme.light": false,
+    "theme.dark": false,
+    "theme.system": false,
+    "collab.share": false,
+    "collab.shareView": false,
+    "collab.join": false,
+    "collab.invite": false,
+    "collab.end": false,
+};

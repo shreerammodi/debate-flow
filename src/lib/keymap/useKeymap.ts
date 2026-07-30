@@ -3,10 +3,16 @@
 import { useEffect } from "react";
 
 import { executeCommand } from "@/lib/commands/commands";
+import { GRID_SCOPED, type CommandId } from "@/lib/commands/registry";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 import { effectiveKeymap as computeEffectiveKeymap } from "./effective";
-import { shouldIntercept, isTextEntryFocus, isNativeEditingChord } from "./intercept";
+import {
+    shouldIntercept,
+    isTextEntryFocus,
+    isGridEditorFocus,
+    isNativeEditingChord,
+} from "./intercept";
 import { resolveCommand, eventToChord } from "./resolve";
 
 /** Returns the keymap currently in effect: flat preset merged with user overrides. */
@@ -48,6 +54,18 @@ export function useKeymap(): void {
                 if (!(e.metaKey || e.ctrlKey || e.altKey)) return;
             }
 
+            // A chord that lands in chrome - rename, palette, RFD, a settings
+            // field - is aimed at that box; the grid behind it is not the
+            // target. The grid's own cell editor is the exception.
+            const chromeField = inTextField && !isGridEditorFocus(e.target);
+
+            /** Fires a resolved command unless chrome focus makes it a misfire. */
+            function run(commandId: CommandId): void {
+                if (chromeField && GRID_SCOPED[commandId]) return;
+                e.preventDefault();
+                executeCommand(commandId);
+            }
+
             const chord = eventToChord({
                 key: e.key,
                 code: e.code,
@@ -64,8 +82,7 @@ export function useKeymap(): void {
                 const twoKey = `${pendingPrefix} ${chord}`;
                 if (twoKey in keymap.bindings) {
                     pendingPrefix = null;
-                    e.preventDefault();
-                    executeCommand(keymap.bindings[twoKey]!);
+                    run(keymap.bindings[twoKey]!);
                     return;
                 }
                 // Prefix did not complete - clear and fall through.
@@ -92,8 +109,7 @@ export function useKeymap(): void {
 
             if (!commandId) return;
 
-            e.preventDefault();
-            executeCommand(commandId);
+            run(commandId);
         }
 
         window.addEventListener("keydown", onKeyDownCapture, { capture: true });

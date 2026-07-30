@@ -98,6 +98,20 @@ export function isTextEntryFocus(target: EventTarget | null): boolean {
 }
 
 /**
+ * Returns true if the event target is the grid's own cell editor.
+ *
+ * It is the one text field where a chord aimed at cells is aimed at the cell
+ * the debater is typing in, so formatting still belongs to it; every other
+ * text box (rename, palette, RFD, settings) sits in front of a grid it must
+ * not reach. Handsontable's TextEditor is a `textarea.handsontableInput`
+ * parked over the active cell.
+ */
+export function isGridEditorFocus(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return target.classList.contains("handsontableInput");
+}
+
+/**
  * Selects all text in a text-entry element and reports whether it did.
  *
  * Serves the Edit menu's Select All item via dispatchMenuCommand: on macOS

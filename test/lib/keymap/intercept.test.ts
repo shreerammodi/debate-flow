@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
     isTextEntryFocus,
+    isGridEditorFocus,
     isNativeEditingChord,
     selectAllInElement,
     shouldIntercept,
@@ -46,6 +47,26 @@ describe("isTextEntryFocus", () => {
     it("returns false for a button element", () => {
         const el = document.createElement("button");
         expect(isTextEntryFocus(el)).toBe(false);
+    });
+});
+
+describe("isGridEditorFocus", () => {
+    it("returns true for Handsontable's cell editor textarea", () => {
+        const el = document.createElement("textarea");
+        el.className = "handsontableInput";
+        expect(isGridEditorFocus(el)).toBe(true);
+    });
+
+    it("returns false for a chrome input", () => {
+        expect(isGridEditorFocus(document.createElement("input"))).toBe(false);
+    });
+
+    it("returns false for a plain textarea", () => {
+        expect(isGridEditorFocus(document.createElement("textarea"))).toBe(false);
+    });
+
+    it("returns false for a non-element target", () => {
+        expect(isGridEditorFocus(null)).toBe(false);
     });
 });
 

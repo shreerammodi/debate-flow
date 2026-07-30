@@ -12,11 +12,11 @@
  */
 
 import { executeCommand } from "@/lib/commands/commands";
-import { COMMANDS, type CommandId } from "@/lib/commands/registry";
+import { COMMANDS, GRID_SCOPED, type CommandId } from "@/lib/commands/registry";
 import { isMacPlatform } from "@/lib/platform";
 
 import { chordForCommand } from "./accelerator";
-import { isTextEntryFocus, selectAllInElement } from "./intercept";
+import { isGridEditorFocus, isTextEntryFocus, selectAllInElement } from "./intercept";
 import { effectiveKeymap } from "./useKeymap";
 
 /** Menu id of the Select All item. Not a CommandId; there is no app command. */
@@ -127,6 +127,11 @@ export function dispatchMenuCommand(id: string): void {
             return;
         }
     }
+    // On macOS a menu accelerator is consumed before the webview's keydown, so
+    // a formatting chord typed into chrome arrives here rather than through
+    // useKeymap. Same rule: the box in front owns the chord, not the grid
+    // behind it, and the grid's own cell editor is the exception.
+    if (field && !isGridEditorFocus(field) && GRID_SCOPED[commandId]) return;
     if (isBlockedOffFlow(commandId)) return;
     executeCommand(commandId);
 }
