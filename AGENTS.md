@@ -9,9 +9,14 @@ competitive debate rounds. It is a flow _editor_: each flow is a `.ebb` file on
 the user's own filesystem, reached through the `FlowFs` port in
 `src/lib/persistence/` and the narrow Rust commands in
 `src-tauri/src/flowfile.rs`. There is no backend and no database. The app is
-built as a static export, which Tauri consumes as its frontend; that export is
-not deployed anywhere, so a browser is a development target rather than a
-product surface, and `flowFsMemory` exists to serve it.
+built as a static export, which Tauri consumes as its frontend; the same export
+is also served as a website, so it is a product surface and not only a
+development target. A browser cannot reach the filesystem commands, so the web
+build runs on `flowFsMemory`, which keeps flows in memory and mirrors them to
+`localStorage`. That makes the browser a place a debater can lose work, not a
+place a round lives. Its security headers, including the CSP a static export
+cannot get from Tauri, are in `vercel.json`; the desktop shell's stricter
+policy is in `src-tauri/tauri.conf.json`.
 
 Run `npm test` and `npm run lint` before considering a change complete.
 Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
