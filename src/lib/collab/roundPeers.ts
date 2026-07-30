@@ -2,12 +2,23 @@
  * The peers a round has been shared with, and which of them read and do not
  * write.
  *
- * Held for the open round only, and written into the sidecar on every save, so
- * that opening the file tomorrow re-dials the same partners with no ticket and
- * no interaction. Remembering only ever adds: a partner who is offline right
- * now is still this round's partner, and forgetting them would cost a ticket to
- * get back. Cutting a peer loose is the one exception, because a debater who
- * does that means it to outlast the session.
+ * Kept per round rather than for whichever round was touched last. A join dials
+ * the round it is joining, not the one on screen, and for a round that already
+ * exists on disk this module is its only record of the host; a single slot for
+ * all rounds meant that record was written over the open round's, and the open
+ * round's next autosave put the loss in its sidecar. There is no slot to
+ * contend for now: every entry names its round, and nothing here reaches an
+ * entry other than the one it was handed the id of.
+ *
+ * One entry per round opened or joined since the app started, and every one of
+ * them dropped when the last round closes.
+ *
+ * Written into the sidecar on every save, so that opening the file tomorrow
+ * re-dials the same partners with no ticket and no interaction. Remembering
+ * only ever adds: a partner who is offline right now is still this round's
+ * partner, and forgetting them would cost a ticket to get back. Cutting a peer
+ * loose is the one exception, because a debater who does that means it to
+ * outlast the session.
  *
  * The read-only mark rides with the membership rather than in the contact table
  * alone. Membership with no grade beside it reads as the wider role, so a grant
@@ -17,29 +28,44 @@
 
 import type { Role } from "./types";
 
-let heldRoundId: string | null = null;
-let held: string[] = [];
-/** The peers of this round that were admitted read-only. */
-let readOnly: string[] = [];
+interface Membership {
+    peers: string[];
+    /** The peers of this round that were admitted read-only. */
+    readOnly: string[];
+}
 
-/** Replaces the set, for a round that is being opened. */
+const rounds = new Map<string, Membership>();
+
+function entryFor(roundId: string): Membership {
+    const held = rounds.get(roundId);
+    if (held) return held;
+    const fresh: Membership = { peers: [], readOnly: [] };
+    rounds.set(roundId, fresh);
+    return fresh;
+}
+
+/**
+ * Replaces one round's set, for a round being opened off its sidecar.
+ *
+ * The grades are named rather than defaulted because this is the only call that
+ * can drop one, and a replace that says nothing about them promotes every coach
+ * the round remembered.
+ */
 export function setRoundPeers(
     roundId: string,
     peers: readonly string[],
-    readOnlyPeers: readonly string[] = [],
+    readOnlyPeers: readonly string[],
 ): void {
-    heldRoundId = roundId;
-    held = [...new Set(peers)];
-    readOnly = [...new Set(readOnlyPeers)];
+    rounds.set(roundId, {
+        peers: [...new Set(peers)],
+        readOnly: [...new Set(readOnlyPeers)],
+    });
 }
 
-/** Adds peers to the set, for a round that is already open. */
+/** Adds peers to one round's set. No other round's set is reachable from here. */
 export function rememberRoundPeers(roundId: string, peers: readonly string[]): void {
-    if (heldRoundId !== roundId) {
-        setRoundPeers(roundId, peers);
-        return;
-    }
-    for (const peer of peers) if (!held.includes(peer)) held.push(peer);
+    const held = entryFor(roundId);
+    for (const peer of peers) if (!held.peers.includes(peer)) held.peers.push(peer);
 }
 
 /**
@@ -51,24 +77,24 @@ export function rememberRoundPeers(roundId: string, peers: readonly string[]): v
  * no way to disagree about who belongs.
  */
 export function rememberRoundRole(roundId: string, peer: string, role: Role): void {
-    if (heldRoundId !== roundId) return;
-    if (!held.includes(peer)) held.push(peer);
-    const marked = readOnly.includes(peer);
+    const held = entryFor(roundId);
+    if (!held.peers.includes(peer)) held.peers.push(peer);
+    const marked = held.readOnly.includes(peer);
     if (role === "coach") {
-        if (!marked) readOnly.push(peer);
+        if (!marked) held.readOnly.push(peer);
     } else if (marked) {
-        readOnly = readOnly.filter((p) => p !== peer);
+        held.readOnly = held.readOnly.filter((p) => p !== peer);
     }
 }
 
-/** Empty for any round but the one being tracked, which is what a fresh open is. */
+/** Empty for a round nothing has been recorded about, which is what a fresh open is. */
 export function knownRoundPeers(roundId: string): string[] {
-    return heldRoundId === roundId ? [...held] : [];
+    return [...(rounds.get(roundId)?.peers ?? [])];
 }
 
 /** Of those peers, the ones a session has to keep read-only. */
 export function knownRoundCoaches(roundId: string): string[] {
-    return heldRoundId === roundId ? [...readOnly] : [];
+    return [...(rounds.get(roundId)?.readOnly ?? [])];
 }
 
 /**
@@ -77,14 +103,13 @@ export function knownRoundCoaches(roundId: string): string[] {
  * re-dials them off the sidecar and admits them on membership alone.
  */
 export function forgetRoundPeer(roundId: string, peer: string): void {
-    if (heldRoundId !== roundId) return;
-    held = held.filter((p) => p !== peer);
-    readOnly = readOnly.filter((p) => p !== peer);
+    const held = rounds.get(roundId);
+    if (!held) return;
+    held.peers = held.peers.filter((p) => p !== peer);
+    held.readOnly = held.readOnly.filter((p) => p !== peer);
 }
 
-/** Drops the set, for a round that is being closed. Nothing is open to remember. */
+/** Drops every set, for a debater back at the start screen with nothing open. */
 export function forgetRoundPeers(): void {
-    heldRoundId = null;
-    held = [];
-    readOnly = [];
+    rounds.clear();
 }

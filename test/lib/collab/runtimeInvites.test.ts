@@ -543,7 +543,7 @@ describe("hanging up on a peer", () => {
         // What the next launch is: no session, nothing remembered in memory,
         // and the round's peers read back off the file beside it.
         await endSession();
-        setRoundPeers(live.id, []);
+        setRoundPeers(live.id, [], []);
         clearReplica();
         expect(await recoverReplica(live, text)).toEqual([]);
     });

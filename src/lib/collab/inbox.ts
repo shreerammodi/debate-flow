@@ -14,6 +14,7 @@ import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
+import { collabLive } from "./enabled";
 import { inviteToastFor, shouldAnnounceInvite, type InviteNotice } from "./invite";
 import { joinRound } from "./join";
 import { createPeerLinkFor } from "./peerLink";
@@ -67,7 +68,10 @@ export async function acceptInvite(notice: InviteNotice): Promise<void> {
             appVersion: await getCurrentVersion(),
         });
         if (!joined) {
-            toast.error("Turn on shared editing in Settings first");
+            // Either the switch went off behind the corner message, or the
+            // debater declined to admit this contact to a round they already
+            // hold. The second has had its dialog and wants no second message.
+            if (!collabLive()) toast.error("Turn on shared editing in Settings first");
             return;
         }
         useCollabStore.getState().dismissInvite(notice.endpointId, notice.roundId);

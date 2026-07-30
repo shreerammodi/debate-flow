@@ -15,7 +15,7 @@
 import type { FlowRound, FlowSheet } from "@/lib/model/flow";
 
 import { vectorOf } from "./delta";
-import { projectSheet, seedDoc, seedSheet } from "./doc";
+import { projectDoc, seedDoc, seedSheet } from "./doc";
 import { sheetDigest } from "./hash";
 import { applyOp, type CollabOp } from "./ops";
 import { createClock, ORIGIN_STAMP, type Clock } from "./stamp";
@@ -130,25 +130,30 @@ export function resyncSheet(sheet: FlowSheet): void {
     onLocalChange?.();
 }
 
-function digestOf(sheet: CollabSheet): string {
-    const projected = projectSheet(sheet);
-    return sheetDigest(projected.data, projected.meta);
-}
-
 /**
  * The sheets whose replica no longer matches the store. A hook that never fired
  * is otherwise a silent divergence; this turns it into a recoverable one.
+ *
+ * Projected as a round and not a sheet at a time. The store's copy was written
+ * under the round's budget, so a sheet the budget held to its share there is
+ * not drift, and comparing an unbudgeted projection against it would call every
+ * clamp drift and reseed the replica from the clamped file: the shape a crowded
+ * round produced would become the replica's own, and no later projection could
+ * give the sheet its rows back. Same document, same budget, same answer.
  */
 export function driftedSheetIds(round: FlowRound): string[] {
     if (!live) return [];
+    const projected = new Map(projectDoc(live.doc, round).sheets.map((s) => [s.id, s]));
     const drifted: string[] = [];
     for (const sheet of round.sheets) {
-        const mine = live.doc.sheets[sheet.id];
-        if (!mine || mine.deleted !== null) {
+        const mine = projected.get(sheet.id);
+        if (!mine) {
             drifted.push(sheet.id);
             continue;
         }
-        if (digestOf(mine) !== sheetDigest(sheet.data, sheet.meta)) drifted.push(sheet.id);
+        if (sheetDigest(mine.data, mine.meta) !== sheetDigest(sheet.data, sheet.meta)) {
+            drifted.push(sheet.id);
+        }
     }
     return drifted;
 }

@@ -32,15 +32,19 @@ export const FLOW_FILE_VERSION = 3;
  * A round projected from a replica carries register values a peer chose, and
  * the parser below refuses several of them. A file this parser cannot read back
  * is a round the debater loses for good, so the write refuses first - by type,
- * by cell count, and by the size the read caps at. The projection spends
+ * by cell count, and by the bytes the read caps at. The projection spends
  * `MAX_ROUND_BYTES` so a peer cannot reach that last one; reaching it anyway
  * fails the autosave loudly and leaves the file already on disk readable.
  */
 export function serializeFlow(round: FlowRound): string {
     checkRound(round, "round");
     const text = JSON.stringify({ version: FLOW_FILE_VERSION, round }, null, 2) + "\n";
-    if (text.length > MAX_FLOW_TEXT_CHARS) {
-        fail("round", `is longer than the ${MAX_FLOW_TEXT_CHARS} characters a flow file holds`);
+    // Bytes and not characters, the way `MAX_ROUND_BYTES` counts and for the
+    // same reason: the shell refuses the file by the bytes on disk and one
+    // character is up to three of them, so a round of Chinese inside the
+    // character cap is a file the app writes and then cannot read back.
+    if (utf8Bytes(text) > MAX_FLOW_BYTES) {
+        fail("round", `is longer than the ${MAX_FLOW_BYTES} bytes a flow file holds`);
     }
     return text;
 }
@@ -198,6 +202,15 @@ export function paddedCells(rows: readonly unknown[][]): number {
 }
 
 /**
+ * Ceiling on the bytes a flow file takes on disk, which is where the shell
+ * refuses to hand one back (`MAX_FLOW_BYTES` in `src-tauri/src/flowfile.rs`).
+ * The same number as `MAX_FLOW_TEXT_CHARS` and a different measure of the same
+ * file: that one is the characters a parse walks, this one is the bytes the
+ * read never gets to, so the write refuses here.
+ */
+export const MAX_FLOW_BYTES = 64 * 1024 * 1024;
+
+/**
  * Ceiling on the bytes one round's own values can claim of the file.
  *
  * `MAX_ROUND_CELLS` bounds how many cells a round holds and nothing bounds how
@@ -252,6 +265,24 @@ export function fileBytes(value: unknown): number {
         bytes += code < 0x800 ? 1 : 2;
     }
     return bytes + lines * FILE_LINE;
+}
+
+/**
+ * The bytes one string takes on disk, exactly. Counted rather than encoded for
+ * the reason above, doubly so here: the string being measured is the whole file,
+ * and a `TextEncoder` pass would hold a second copy of it to answer. Exact and
+ * not high, because this one decides whether a save is refused - `JSON.stringify`
+ * escapes an unpaired surrogate, so every surrogate left in the text is half of
+ * a pair and carries half of the four bytes the pair takes.
+ */
+function utf8Bytes(text: string): number {
+    let bytes = text.length;
+    for (let i = 0; i < text.length; i += 1) {
+        const code = text.charCodeAt(i);
+        if (code < 0x80) continue;
+        bytes += code < 0x800 || (code >= 0xd800 && code < 0xe000) ? 1 : 2;
+    }
+    return bytes;
 }
 
 /** Validate one sheet, returning the cells the grid pads it to. */

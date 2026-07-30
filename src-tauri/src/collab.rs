@@ -1829,6 +1829,37 @@ mod loopback {
         stop(&state, "session").expect("stop");
     }
 
+    /// The in-flight count is what makes the cap a cap rather than a wedge.
+    /// `Pending` decrements it when an accept task ends, and the map entry goes
+    /// with the read, so an endpoint that has let go of thirty-two peers has
+    /// room for the thirty-third. Without the decrement the count keeps every
+    /// connection the endpoint ever accepted and refuses every dial after
+    /// thirty-two for the life of the process - a worse denial than the
+    /// unbounded growth the count was added to stop.
+    #[test]
+    fn a_connection_the_host_let_go_of_gives_its_place_back() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+        let addr = live_addr(&state);
+
+        let guest = Guest::new();
+        for n in 1..=MAX_CONNS + 1 {
+            let (conn, mut send, _recv) = guest
+                .try_dial(addr.clone())
+                .unwrap_or_else(|e| panic!("dial {n} of {} refused: {e}", MAX_CONNS + 1));
+            guest.write(&mut send, b"{\"type\":\"hello\",\"protocol\":1}\n");
+            events.wait("every hello", |seen| seen.messages().len() >= n);
+            // Done sending, so the host lets go of this one before the next dial
+            // asks for its place: nothing here is ever holding two at once.
+            guest.finish(&mut send);
+            events.wait("every close", |seen| seen.closed().len() >= n);
+            drop(conn);
+        }
+
+        stop(&state, "session").expect("stop");
+    }
+
     /// A peer that answers the handshake and grants no stream credit used to
     /// freeze the app: the dial held the one lock every collab command takes,
     /// and waited on that credit with no deadline.

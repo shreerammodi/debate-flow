@@ -17,6 +17,8 @@ import { getFlowFs, type FlowFs } from "@/lib/persistence/flowFs";
 import { suggestFilename } from "@/lib/persistence/flowPaths";
 import { resolveFlowsDir } from "@/lib/persistence/flowsDir";
 import { loadRecents } from "@/lib/persistence/recents";
+import { buildSummary, recentLabel } from "@/lib/start/summary";
+import { askToRejoin, type RejoinAsk } from "@/lib/store/useTicketDialog";
 
 import { projectDoc } from "./doc";
 import { collabLive, collabSettings, type CollabSettings } from "./enabled";
@@ -46,6 +48,14 @@ export interface JoinDeps {
      * saved on the far side as a short EndpointId for good.
      */
     displayName?: string;
+    /**
+     * Whether this peer belongs in a round this install already holds. Both the
+     * round an invite names and the document that answers for it are the
+     * issuer's to choose, so one naming a round already on this disk is asking
+     * for a place in the debater's own round rather than offering a new one, and
+     * only the debater can grant that. Defaults to the ticket dialog.
+     */
+    confirmRejoin?: (ask: RejoinAsk) => Promise<boolean>;
     settings?: () => CollabSettings;
     fs?: FlowFs;
 }
@@ -58,13 +68,17 @@ export interface JoinResult {
     created: boolean;
 }
 
-/** The local file holding this round, if there is one. */
-async function findExisting(fs: FlowFs, roundId: string): Promise<string | null> {
+/** The local file holding this round, and the round it holds, if there is one. */
+async function findExisting(
+    fs: FlowFs,
+    roundId: string,
+): Promise<{ path: string; round: FlowRound } | null> {
     for (const recent of await loadRecents(fs)) {
         try {
             const snapshot = await fs.readFlow(recent.path);
             if (!snapshot) continue;
-            if (parseFlowFile(snapshot.text).id === roundId) return recent.path;
+            const round = parseFlowFile(snapshot.text);
+            if (round.id === roundId) return { path: recent.path, round };
         } catch {
             // A recent that no longer parses is not a match, and not a reason
             // to fail a join.
@@ -73,7 +87,10 @@ async function findExisting(fs: FlowFs, roundId: string): Promise<string | null>
     return null;
 }
 
-/** Null when shared editing is off; throws with a reason the corner can show. */
+/**
+ * Null when shared editing is off, and when the debater declines to admit this
+ * peer to a round they already hold; throws with a reason the corner can show.
+ */
 export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     const settings = (deps.settings ?? collabSettings)();
     if (!collabLive()) return null;
@@ -145,6 +162,21 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         };
         const round = projectDoc(doc, base);
 
+        if (existing) {
+            // The round is already here, so this invite is not offering one: it
+            // asks for a place in a round the debater holds, and both halves of
+            // the check that got this far are the issuer's own choice. Only the
+            // debater grants that, and the answer comes before anything is
+            // recorded, so a decline writes nothing and leaves this round's
+            // membership and its grades exactly as they were.
+            const ask = deps.confirmRejoin ?? askToRejoin;
+            const granted = await ask({
+                round: recentLabel(buildSummary(existing.round), existing.path),
+                endpointId: host.endpointId,
+            });
+            if (!granted) return null;
+        }
+
         // The file about to be opened has no sidecar yet, so this is the only
         // record of who to re-dial once it is.
         rememberRoundPeers(doc.roundId, [host.endpointId]);
@@ -153,7 +185,7 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
             return {
                 roundId: doc.roundId,
                 hostEndpointId: host.endpointId,
-                path: existing,
+                path: existing.path,
                 created: false,
             };
 

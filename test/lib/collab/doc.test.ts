@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { liveCells, projectDoc, projectSheet, seedDoc, sheetWidth } from "@/lib/collab/doc";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
-import { createClock, ORIGIN_STAMP } from "@/lib/collab/stamp";
-import { cellKey, type CollabDoc } from "@/lib/collab/types";
+import { seedRank } from "@/lib/collab/rank";
+import { createClock, ORIGIN_STAMP, type Stamp } from "@/lib/collab/stamp";
+import { cellKey, type CollabCell, type CollabDoc } from "@/lib/collab/types";
 import { compareSheets, makeFlowRound, makeFlowSheet, type FlowRound } from "@/lib/model/flow";
 import { MAX_ROUND_CELLS, paddedCells } from "@/lib/persistence/flowFile";
 
@@ -200,32 +201,36 @@ describe("the round's cell budget", () => {
     });
 
     /**
-     * The debater's round plus `count` sheets a peer made, each holding one cell
-     * far from the origin. That is the cheap shape: two cells on the wire, and a
-     * projection of every slot above and left of them.
+     * The debater's round plus `count` sheets a peer filled to the tallest
+     * column this build projects.
+     *
+     * A sheet is only ever as wide as a flow, so a peer can no longer buy a
+     * rectangle with two cells: crowding the round costs it every cell it wants
+     * counted, which is why this takes a hundred and thirty sheets of two
+     * thousand cells to reach a ceiling twelve sheets of two cells used to.
      */
     function crowdedBy(count: number): CollabDoc {
         const round = realisticRound();
+        const doc = seedDoc(round);
+        const stamp: Stamp = { ms: 9_000, counter: 0, actor: "them" };
         for (let n = 0; n < count; n++) {
-            const sheet = makeFlowSheet({ title: `p${n}`, group: "neg", order: 100 + n });
+            const cells: Record<string, CollabCell> = {};
+            for (let row = 0; row < 2_048; row++) {
+                const rank = seedRank(row);
+                cells[cellKey(7, rank, "them")] = {
+                    col: 7,
+                    rank,
+                    actor: "them",
+                    text: null,
+                    textStamp: stamp,
+                    meta: {},
+                    metaStamp: stamp,
+                    deleted: null,
+                };
+            }
             // Ids a peer chooses, sorting before the debater's own.
-            sheet.id = `aaa-peer-${String(n).padStart(4, "0")}`;
-            round.sheets.push(sheet);
-        }
-        let doc = seedDoc(round);
-        const ctx: OpContext = { actor: "them", clock: createClock("them", () => 9_000) };
-        for (let n = 0; n < count; n++) {
-            doc = applyOp(
-                doc,
-                {
-                    kind: "cellText",
-                    sheetId: `aaa-peer-${String(n).padStart(4, "0")}`,
-                    col: 400,
-                    row: 1_500,
-                    text: "far",
-                },
-                ctx,
-            );
+            const id = `aaa-peer-${String(n).padStart(4, "0")}`;
+            doc.sheets[id] = { id, fields: {}, deleted: null, cells };
         }
         return doc;
     }
@@ -235,7 +240,7 @@ describe("the round's cell budget", () => {
     // be held to its share; it may never be emptied, and a peer must not get to
     // decide which sheet loses by naming its own ids first.
     it("holds a sheet to its share rather than letting a peer crowd it out", () => {
-        const doc = crowdedBy(12);
+        const doc = crowdedBy(130);
         const base = makeFlowRound({});
         const projected = projectDoc(doc, base);
 
@@ -245,9 +250,9 @@ describe("the round's cell budget", () => {
             // Whole, because 220x8 is far under an equal share of the budget.
             expect(sheet.data).toHaveLength(220);
         }
-        // Every peer sheet asked for 1500x400 and none of them got the round.
+        // Every peer sheet asked for 2048x8 and none of them got the round.
         const theirs = projected.sheets.filter((s) => s.id.startsWith("aaa-peer-"));
-        expect(theirs).toHaveLength(12);
+        expect(theirs).toHaveLength(130);
         for (const sheet of theirs) expect(sheet.data.length).toBeGreaterThan(0);
         const total = projected.sheets.reduce((n, s) => n + paddedCells(s.data), 0);
         expect(total).toBeLessThanOrEqual(MAX_ROUND_CELLS);
@@ -259,7 +264,7 @@ describe("the round's cell budget", () => {
     // the same messages have to decide it the same way, and a round must not
     // shrink a little more every time it is written.
     it("projects the same round whether or not this replica has projected before", () => {
-        const doc = crowdedBy(12);
+        const doc = crowdedBy(130);
         const base = makeFlowRound({});
 
         const cold = projectDoc(doc, base);
@@ -275,11 +280,11 @@ describe("the round's cell budget", () => {
     // make it one: the sheet would stay small once the peer's sheets were gone,
     // and a replica that never clamped would write a different file.
     it("gives a sheet back its rows once the sheets that crowded it are gone", () => {
-        const crowded = crowdedBy(12);
+        const crowded = crowdedBy(130);
         const clamped = projectDoc(crowded, makeFlowRound({}));
         const victim = "aaa-peer-0000";
         const wasClamped = clamped.sheets.find((s) => s.id === victim);
-        expect(wasClamped?.data.length).toBeLessThan(1_501);
+        expect(wasClamped?.data.length).toBeLessThan(2_048);
 
         // The crowd leaves, and the surviving sheet is the very same object, so
         // the reuse path is the one under test.
@@ -293,6 +298,56 @@ describe("the round's cell budget", () => {
         };
         const after = projectDoc(alone, clamped, alone);
         const freed = after.sheets.find((s) => s.id === victim);
-        expect(freed?.data).toHaveLength(1_501);
+        expect(freed?.data).toHaveLength(2_048);
+    }, 30_000);
+
+    /**
+     * The attack the budget was written to stop, in the shape it was measured
+     * in: a partner admitted as an ordinary peer, one 1.31 MiB delta, and the
+     * debater's own sheet down to nothing.
+     *
+     * The share bounds a sheet's cells and `projectSheet` divides it by the
+     * sheet's width to get its rows, so a single cell far out on the debater's
+     * own sheet used to pick that divisor: 512 columns of mostly nulls, each row
+     * costing sixty-four times what the sheet writes, and the sheet clamped to
+     * eight rows of its 220 - or to none, with six fat cells on the first row.
+     * A column is a speech, so none of those cells is a flow cell and none of
+     * them reaches the file.
+     */
+    it("keeps the debater's rows when a peer widens their own sheet", () => {
+        const round = realisticRound();
+        const victim = round.sheets.find((s) => s.kind !== "cx")!;
+        for (let n = 0; n < 510; n++) {
+            const sheet = makeFlowSheet({ title: `p${n}`, group: "neg", order: 100 + n });
+            sheet.id = `aaa-peer-${String(n).padStart(4, "0")}`;
+            round.sheets.push(sheet);
+        }
+        let doc = seedDoc(round);
+        const ctx: OpContext = { actor: "them", clock: createClock("them", () => 9_000) };
+        const write = (sheetId: string, col: number, row: number, text: string) => {
+            doc = applyOp(doc, { kind: "cellText", sheetId, col, row, text }, ctx);
+        };
+
+        // One cell at the far edge of the debater's own sheet, and six values of
+        // the fattest the transport takes in columns past its last speech.
+        write(victim.id, 511, 0, "far");
+        for (let col = 8; col < 14; col++) write(victim.id, col, 0, "x".repeat(16_000));
+        // Eleven cells a peer sheet: one far out, ten in the first column.
+        for (const sheet of round.sheets.filter((s) => s.id.startsWith("aaa-peer-"))) {
+            write(sheet.id, 511, 0, "far");
+            write(sheet.id, 0, 9, "cheap");
+        }
+
+        const projected = projectDoc(doc, round);
+        const mine = projected.sheets.find((s) => s.id === victim.id)!;
+        expect(mine.data).toHaveLength(220);
+        expect(mine.data.every((row) => row.length === 8)).toBe(true);
+        expect(mine.data[1][0]).toBe("arg 1.0");
+        const total = projected.sheets.reduce((n, s) => n + paddedCells(s.data), 0);
+        expect(total).toBeLessThanOrEqual(MAX_ROUND_CELLS);
+
+        // The replica keeps every cell it was sent; only the file is bounded.
+        expect(sheetWidth(doc.sheets[victim.id])).toBe(8);
+        expect(Object.keys(doc.sheets[victim.id].cells).length).toBeGreaterThan(220 * 8);
     }, 30_000);
 });

@@ -154,15 +154,22 @@ function isCleanMap(value: unknown): value is Record<string, unknown> {
 /**
  * The characters one replicated value may carry.
  *
- * A flow cell is a line of a speech and a decision is a paragraph of one, so
- * this is a couple of hundred lines past anything a debater types into either.
- * Its size is set by the other end: `MAX_ROUND_BYTES` across the 512 sheets a
- * round can hold, halved again for the half of a sheet its grid keeps, is
- * 48 KiB - the smallest a sheet's rows are ever projected under - and a
- * character is up to three bytes there. A value this admits has to fit inside
- * that, or it is a value the file then cannot carry.
+ * Set past anything the debater's own writing reaches, because refusing a value
+ * refuses the whole document message it rides in, and every later delta carries
+ * that value again: `deltaSince` ships any register the far side has not
+ * acknowledged, and the far side never acknowledges a message it dropped. So a
+ * cap a debater's own content can reach ends shared editing for the round in
+ * that direction, silently and for good. A flow cell is a line of a speech and
+ * a debater pastes a whole card into one; a decision is prose a judge writes at
+ * length. A megabyte is orders past either, and still a quarter of the 4 MiB
+ * line the shell reads at all, which is the bound that holds a message.
+ *
+ * Deliberately not sized to the smallest share a sheet's grid is projected
+ * under. A value too long for that share costs its own row off the bottom of
+ * the sheet, which is a clamp the next projection undoes once the round has
+ * room again; a refusal here is neither reported nor recoverable.
  */
-const MAX_VALUE = 16 * 1024;
+const MAX_VALUE = 1024 * 1024;
 
 /**
  * A value the file can carry: short enough for the budget the projection spends

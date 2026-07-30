@@ -12,7 +12,9 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { copyText, selectNode } from "@/lib/clipboard";
-import { useTicketDialog } from "@/lib/store/useTicketDialog";
+import { contactName } from "@/lib/collab/contacts";
+import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useTicketDialog, type RejoinAsk } from "@/lib/store/useTicketDialog";
 
 /**
  * The invite, on screen: shown after a share, asked for before a join.
@@ -25,11 +27,18 @@ import { useTicketDialog } from "@/lib/store/useTicketDialog";
  * Which half is on screen comes from the store's latched mode, not from what
  * is pending: a closing share must keep showing the ticket for the length of
  * its exit rather than swap to the join field on the way out.
+ *
+ * The third half is the one question a join asks after the paste: an invite
+ * naming a round already on this machine wants a place in it, which is the
+ * debater's to grant. Cancel holds the focus, because the safe answer is the
+ * one a debater who does not recognise the round gives by reflex, and Escape
+ * gives the same answer.
  */
 export default function TicketDialog() {
     const open = useTicketDialog((s) => s.open);
     const mode = useTicketDialog((s) => s.mode);
     const ticket = useTicketDialog((s) => s.ticket);
+    const rejoin = useTicketDialog((s) => s.rejoin);
     const submit = useTicketDialog((s) => s.submit);
     const close = useTicketDialog((s) => s.close);
 
@@ -47,11 +56,9 @@ export default function TicketDialog() {
             {/* The field lives in the content, which unmounts with the dialog,
                 so each opening starts empty without an effect to reset it. */}
             <DialogContent className="max-w-md" data-testid="ticket-dialog">
-                {mode === "ask" ? (
-                    <Ask onSubmit={submit} />
-                ) : (
-                    <Handover ticket={ticket} onDone={close} />
-                )}
+                {mode === "ask" && <Ask onSubmit={submit} />}
+                {mode === "rejoin" && rejoin && <Rejoin ask={rejoin} onAnswer={submit} />}
+                {mode === "show" && <Handover ticket={ticket} onDone={close} />}
             </DialogContent>
         </Dialog>
     );
@@ -130,6 +137,47 @@ function Ask({ onSubmit }: { onSubmit: (ticket: string | null) => void }) {
                     data-testid="ticket-submit"
                 >
                     Join
+                </Button>
+            </div>
+        </>
+    );
+}
+
+function Rejoin({ ask, onAnswer }: { ask: RejoinAsk; onAnswer: (answer: true | null) => void }) {
+    const contacts = useFlowStore((s) => s.contacts);
+    // A name a peer broadcast is theirs to choose, so this takes the saved one
+    // and falls back to a short EndpointId rather than to anything they sent.
+    const who = contactName(contacts, ask.endpointId);
+
+    return (
+        <>
+            <DialogHeader>
+                <DialogTitle>You already have this round</DialogTitle>
+                <DialogDescription>
+                    This invite opens{" "}
+                    <strong className="text-foreground font-medium">{ask.round}</strong>, which is
+                    already on this machine. Adding {who} shares your copy with them, and every
+                    later open of the round dials them, with no invite and nothing to accept.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+                <Button
+                    autoFocus
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onAnswer(null)}
+                    data-testid="rejoin-cancel"
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => onAnswer(true)}
+                    data-testid="rejoin-add"
+                >
+                    Add {who}
                 </Button>
             </div>
         </>

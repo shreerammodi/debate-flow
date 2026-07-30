@@ -8,6 +8,7 @@
 import type Handsontable from "handsontable";
 
 import {
+    EVENTS,
     getEvent,
     sideLabels,
     speechOrder,
@@ -79,6 +80,24 @@ export function columnsForFlowSheet(round: FlowRound, sheet: FlowSheet): SpeechC
     const idx = order.findIndex((c) => c.id === startId);
     return idx === -1 ? order : order.slice(idx);
 }
+
+/**
+ * The widest `columnsForFlowSheet` ever returns: the most columns any event
+ * derives, over its speeches and over its cross-examination periods.
+ *
+ * The widest of every event rather than of one round's, because the event, the
+ * side that speaks first, a sheet's group and its own leftmost speech are all
+ * replicated registers, and a sheet holds the columns of whatever orientation
+ * wrote it: `gridWidth` pads to the wider of the derived columns and the stored
+ * data so a speaking-order swap does not truncate a column the debater typed
+ * in. A bound read off this round would narrow with those registers and drop
+ * that column instead.
+ */
+export const MAX_FLOW_COLS = Math.max(
+    ...Object.values(EVENTS).map((event) =>
+        Math.max(speechOrder(event, "aff").length, crossExColumns(event, "aff").length),
+    ),
+);
 
 /**
  * Header settings per sheet: cross-ex gets a period tier above

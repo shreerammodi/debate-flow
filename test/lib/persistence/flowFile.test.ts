@@ -49,6 +49,24 @@ describe("serializeFlow", () => {
             /round\.event is not a known debate event/,
         );
     });
+
+    /**
+     * The shell refuses a flow by the bytes on disk, and one character is up to
+     * three of them, so a round of Chinese well inside the character cap is a
+     * file the app writes and then cannot read back - the round gone, which is
+     * the whole reason the write refuses ahead of the read. Only a bug in the
+     * projection's own byte budget gets here, which is what a last line of
+     * defence is for.
+     */
+    it("refuses a round whose characters fit the file and whose bytes do not", () => {
+        const round = makeFlowRound({});
+        const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        // Three bytes a character, so two thirds of the cap in characters is
+        // twice the cap in bytes.
+        flow.data = [["中".repeat(Math.floor((2 * MAX_FLOW_TEXT_CHARS) / 3))]];
+        expect(JSON.stringify(round).length).toBeLessThan(MAX_FLOW_TEXT_CHARS);
+        expect(() => serializeFlow(round)).toThrow(/longer than/);
+    }, 30_000);
 });
 
 describe("parseFlowFile", () => {

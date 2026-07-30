@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { deltaSince, isEmptyDelta, vectorOf } from "@/lib/collab/delta";
+import { deltaSince, emptyVector, isEmptyDelta, vectorOf } from "@/lib/collab/delta";
 import { projectDoc, seedDoc, sheetWidth } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
@@ -511,9 +511,12 @@ describe("how tall a peer can make one column", () => {
         const round = roundWithData();
         const flow = round.sheets.find((s) => s.kind !== "cx")!;
         const cells: Record<string, CollabCell> = {};
-        // One column of four thousand rows plus one cell at the far column: the
-        // width bound alone leaves a 4000 x 512 rectangle to materialize.
+        // One column of four thousand rows, one cell on the sheet's last speech,
+        // and one at a column no flow has. The projection materializes the
+        // product, so the rows come off at MAX_ROWS and the rectangle stops at
+        // the widest an event derives rather than out at the far cell.
         for (let i = 0; i < 4_000; i++) cells[`r${i}`] = hostileCell({ col: 0, rank: `${i}1` });
+        cells.edge = hostileCell({ col: 7, rank: "21" });
         cells.far = hostileCell({ col: 511, rank: "21" });
 
         const merged = merge(seedDoc(round), {
@@ -524,17 +527,18 @@ describe("how tall a peer can make one column", () => {
         const projected = projectDoc(merged, round);
         const sheet = projected.sheets.find((s) => s.id === flow.id)!;
         expect(sheet.data).toHaveLength(2_048);
-        expect(sheet.data[0]).toHaveLength(512);
+        expect(sheet.data[0]).toHaveLength(8);
         // And the file the autosave writes is still one the app reads back.
         expect(() => parseFlowFile(serializeFlow(projected))).not.toThrow();
     });
 });
 
 describe("how many cells a peer can spread across sheets", () => {
-    /** One sheet at the widest and tallest this build projects: 2048 x 512. */
+    /** One sheet at the tallest and widest this build projects: 2048 x 8. */
     function balloon(id: string): CollabSheet {
         const cells: Record<string, CollabCell> = {};
         for (let i = 0; i < 2_048; i++) cells[`r${i}`] = hostileCell({ col: 0, rank: `${i}1` });
+        cells.edge = hostileCell({ col: 7, rank: "21" });
         cells.far = hostileCell({ col: 511, rank: "21" });
         return { id, fields: {}, deleted: null, cells };
     }
@@ -548,16 +552,15 @@ describe("how many cells a peer can spread across sheets", () => {
             Array.from({ length: 8 }, (_, c) => `arg ${r}.${c}`),
         );
         flow.data = typed;
-        // Two of these project to 2,097,152 padded cells against the file's
-        // 2,000,000, and the merge's own ceiling is per sheet, so it admits
-        // both. Unbudgeted, the projection then produced a round every later
-        // write of this flow refused: the peer, not the debater, decided the
-        // round could no longer be saved.
-        const merged = merge(seedDoc(round), {
-            roundId: round.id,
-            round: {},
-            sheets: { "balloon-a": balloon("balloon-a"), "balloon-b": balloon("balloon-b") },
-        }).doc;
+        // A sheet is only ever as wide as a flow, so the cheapest round past the
+        // file's ceiling is 123 of these rather than two: 2,015,232 padded cells
+        // against the file's 2,000,000, and the merge's own ceiling is per sheet
+        // so it admits every one of them. Unbudgeted, the projection then
+        // produced a round every later write of this flow refused: the peer, not
+        // the debater, decided the round could no longer be saved.
+        const hoard: Record<string, CollabSheet> = {};
+        for (let n = 0; n < 123; n++) hoard[`balloon-${n}`] = balloon(`balloon-${n}`);
+        const merged = merge(seedDoc(round), { roundId: round.id, round: {}, sheets: hoard }).doc;
         const projected = projectDoc(merged, round);
 
         const text = serializeFlow(projected);
@@ -565,19 +568,19 @@ describe("how many cells a peer can spread across sheets", () => {
         expect(serializeFlow(parseFlowFile(text))).toBe(text);
 
         const reopened = parseFlowFile(text);
-        for (const id of ["balloon-a", "balloon-b"]) {
-            // Clamped, not dropped: the sheet is still in the round at its full
-            // width, and the replica still holds every cell it was sent.
+        for (const id of ["balloon-0", "balloon-122"]) {
+            // Clamped, not dropped: the sheet is still in the round at the width
+            // a flow has, and the replica still holds every cell it was sent.
             const sheet = reopened.sheets.find((s) => s.id === id)!;
-            expect(sheet.data[0]).toHaveLength(512);
+            expect(sheet.data[0]).toHaveLength(8);
             expect(sheet.data.length).toBeGreaterThan(1_000);
-            expect(Object.keys(merged.sheets[id].cells)).toHaveLength(2_049);
+            expect(Object.keys(merged.sheets[id].cells)).toHaveLength(2_050);
         }
         // The debater's own sheet is projected as if the peer had sent nothing,
         // because the budget is spent on the cheapest sheet first and a real
-        // sheet is three orders of magnitude cheaper than a ballooned one.
+        // sheet is orders of magnitude cheaper than a ballooned one.
         expect(reopened.sheets.find((s) => s.id === flow.id)!.data).toEqual(typed);
-    });
+    }, 30_000);
 });
 
 describe("a stamp from a peer whose count no clock reported", () => {
@@ -730,9 +733,40 @@ describe("how many bytes a peer can put in the file", () => {
         const cell = (text: string) =>
             `{"type":"delta","doc":{"roundId":"r","round":{},"sheets":{"s":{"id":"s","fields":{},"deleted":null,"cells":{"0|a1|x":{"col":0,"rank":"a1","actor":"x","text":${JSON.stringify(text)},"meta":{},"textStamp":${stamp},"metaStamp":${stamp},"deleted":null}}}}}}`;
         expect(onWire(cell(FAT))).not.toBeNull();
-        // Past the cap, which is set so one admitted value still fits the
-        // smallest share of the file a sheet's rows are ever projected under.
-        expect(onWire(cell("x".repeat(17 * 1024)))).toBeNull();
+        // Past the cap, which is a megabyte: orders above any card a debater
+        // pastes into a cell or any decision a judge writes, and a quarter of
+        // the line the shell reads at all.
+        expect(onWire(cell("x".repeat(1_048_577)))).toBeNull();
+    });
+
+    /**
+     * The cap has to be past the debater's own writing, not just past a cell of
+     * it. `deltaSince` ships any register the far side has not acknowledged, and
+     * the far side never acknowledges a message it dropped, so one value over
+     * the cap is not one value lost: every later delta carries it again and is
+     * refused whole, and every cell typed after it stops reaching the partner.
+     * No error surfaces - the transport returns null and the line is dropped.
+     */
+    it("carries a decision longer than a cell, and the cells typed after it", () => {
+        const round = roundWithData();
+        const flow = round.sheets.find((s) => s.kind !== "cx")!;
+        const ctx: OpContext = { actor: "me", clock: createClock("me", () => 5_000) };
+        const rfd = "The aff wins the impact turn. ".repeat(600);
+        expect(rfd.length).toBeGreaterThan(17 * 1024);
+
+        let doc = seedDoc(round);
+        doc = applyOp(doc, { kind: "roundField", path: "scouting.decision.rfd", value: rfd }, ctx);
+        doc = applyOp(
+            doc,
+            { kind: "cellText", sheetId: flow.id, col: 1, row: 1, text: "typed after the rfd" },
+            ctx,
+        );
+
+        const delta = deltaSince(doc, emptyVector());
+        expect(delta.round["scouting.decision.rfd"].value).toBe(rfd);
+        const landed = inboundDoc(JSON.stringify({ type: "delta", doc: delta }));
+        const cells = Object.values(landed.sheets[flow.id].cells);
+        expect(cells.some((c) => c.text === "typed after the rfd")).toBe(true);
     });
 
     it("cannot leave the round too large to open again", () => {

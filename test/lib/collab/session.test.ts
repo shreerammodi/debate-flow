@@ -391,7 +391,7 @@ describe("a link that drops mid-round", () => {
         const clock = manualClock();
         // What opening a round does before a session starts: the record exists
         // and is empty, because no sidecar for it does.
-        setRoundPeers(shared.id, []);
+        setRoundPeers(shared.id, [], []);
         const host = (await open(ALEX, { schedule: clock.schedule }))!;
         const guest = (await open("sam", {
             ticket: encodeTicket(host.share("partner")),

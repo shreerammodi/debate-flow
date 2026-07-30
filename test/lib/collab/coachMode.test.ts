@@ -119,7 +119,7 @@ beforeEach(() => {
     sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
     // What opening a round does before a session starts. The record is where a
     // read-only grant lives, so every test here starts with an empty one.
-    setRoundPeers(shared.id, []);
+    setRoundPeers(shared.id, [], []);
 });
 
 async function open(

@@ -73,7 +73,10 @@ export async function runJoin(deps: CollabCommandDeps): Promise<void> {
             appVersion: await getCurrentVersion(),
         });
         if (!joined) {
-            deps.fail("Turn on shared editing in Settings first");
+            // Either the switch went off behind the paste, or the debater
+            // declined to admit the issuer to a round they already hold. The
+            // second has had its dialog and wants no corner message.
+            if (!collabLive()) deps.fail("Turn on shared editing in Settings first");
             return;
         }
         deps.notify(joined.created ? "Joined. The round is yours to keep." : "Joined.");

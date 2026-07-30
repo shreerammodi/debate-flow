@@ -20,32 +20,41 @@ describe("the peers a round remembers", () => {
     });
 
     it("takes the set a sidecar recovered", () => {
-        setRoundPeers("r1", ["sam", "kim"]);
+        setRoundPeers("r1", ["sam", "kim"], []);
         expect(knownRoundPeers("r1")).toEqual(["sam", "kim"]);
     });
 
     it("keeps a peer who is not connected right now", () => {
-        setRoundPeers("r1", ["sam", "kim"]);
+        setRoundPeers("r1", ["sam", "kim"], []);
         rememberRoundPeers("r1", ["sam"]);
         expect(knownRoundPeers("r1")).toEqual(["sam", "kim"]);
     });
 
     it("counts one peer once, however many times they connect", () => {
-        setRoundPeers("r1", ["sam"]);
+        setRoundPeers("r1", ["sam"], []);
         rememberRoundPeers("r1", ["sam", "sam", "kim"]);
         expect(knownRoundPeers("r1")).toEqual(["sam", "kim"]);
     });
 
-    it("answers for the tracked round and no other", () => {
-        setRoundPeers("r1", ["sam"]);
+    it("answers for a round it was told about and no other", () => {
+        setRoundPeers("r1", ["sam"], []);
         expect(knownRoundPeers("r2")).toEqual([]);
     });
 
-    it("starts over when a different round is opened", () => {
-        setRoundPeers("r1", ["sam"]);
+    // A join records its host under the round being joined, which is never the
+    // round on screen. One slot for all of them let that join spend the open
+    // round's membership, and the open round's next autosave wrote the loss out.
+    it("keeps one round's set when another round is remembered", () => {
+        setRoundPeers("r1", ["sam"], []);
         rememberRoundPeers("r2", ["kim"]);
         expect(knownRoundPeers("r2")).toEqual(["kim"]);
-        expect(knownRoundPeers("r1")).toEqual([]);
+        expect(knownRoundPeers("r1")).toEqual(["sam"]);
+    });
+
+    it("keeps one round's read-only grades when another round is remembered", () => {
+        setRoundPeers("r1", ["kim"], ["kim"]);
+        rememberRoundPeers("r2", ["sam"]);
+        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
     });
 });
 
@@ -54,7 +63,7 @@ describe("cutting one peer out of what a round remembers", () => {
     // without it the next open re-dials the peer off the sidecar and admits
     // them on membership alone.
     it("drops the peer and keeps the rest", () => {
-        setRoundPeers("r1", ["sam", "kim"]);
+        setRoundPeers("r1", ["sam", "kim"], []);
         forgetRoundPeer("r1", "sam");
         expect(knownRoundPeers("r1")).toEqual(["kim"]);
     });
@@ -66,13 +75,14 @@ describe("cutting one peer out of what a round remembers", () => {
     });
 
     it("leaves another round's set alone", () => {
-        setRoundPeers("r1", ["sam"]);
+        setRoundPeers("r1", ["sam"], []);
+        setRoundPeers("r2", ["sam"], []);
         forgetRoundPeer("r2", "sam");
         expect(knownRoundPeers("r1")).toEqual(["sam"]);
     });
 
     it("says nothing about a peer who was never there", () => {
-        setRoundPeers("r1", ["sam"]);
+        setRoundPeers("r1", ["sam"], []);
         forgetRoundPeer("r1", "kim");
         expect(knownRoundPeers("r1")).toEqual(["sam"]);
     });
@@ -80,7 +90,7 @@ describe("cutting one peer out of what a round remembers", () => {
 
 describe("what a round remembers a peer was admitted as", () => {
     it("grades nobody until somebody says so", () => {
-        setRoundPeers("r1", ["sam"]);
+        setRoundPeers("r1", ["sam"], []);
         expect(knownRoundCoaches("r1")).toEqual([]);
     });
 
@@ -92,7 +102,7 @@ describe("what a round remembers a peer was admitted as", () => {
     // A grant the contact table never saw has to live somewhere durable, or
     // the round remembers the membership and forgets the restriction.
     it("marks a peer admitted read-only, and remembers them as a peer", () => {
-        setRoundPeers("r1", []);
+        setRoundPeers("r1", [], []);
         rememberRoundRole("r1", "kim", "coach");
         expect(knownRoundCoaches("r1")).toEqual(["kim"]);
         expect(knownRoundPeers("r1")).toEqual(["kim"]);
@@ -106,28 +116,36 @@ describe("what a round remembers a peer was admitted as", () => {
     });
 
     it("counts one mark once, however many times the peer reconnects", () => {
-        setRoundPeers("r1", ["kim"]);
+        setRoundPeers("r1", ["kim"], []);
         rememberRoundRole("r1", "kim", "coach");
         rememberRoundRole("r1", "kim", "coach");
         expect(knownRoundCoaches("r1")).toEqual(["kim"]);
     });
 
-    it("ignores a grade for a round that is not the open one", () => {
-        setRoundPeers("r1", ["kim"]);
-        rememberRoundRole("r2", "kim", "coach");
-        expect(knownRoundCoaches("r1")).toEqual([]);
+    // The round a session grades is its own, which after a join is not the
+    // round this module was last asked about. Dropping the grade there is the
+    // same promotion by a quieter route.
+    it("grades a round that is not the one last remembered", () => {
+        setRoundPeers("r1", ["kim"], []);
+        rememberRoundPeers("r2", ["sam"]);
+        rememberRoundRole("r1", "kim", "coach");
+        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
         expect(knownRoundCoaches("r2")).toEqual([]);
     });
 
-    it("answers for the tracked round and no other", () => {
+    it("answers for the round it was told about and no other", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
         expect(knownRoundCoaches("r2")).toEqual([]);
     });
 
-    it("forgets every mark when the round closes", () => {
+    // Back at the start screen nothing is open, so holding any round's partner
+    // ids costs privacy for nothing.
+    it("forgets every round's marks when the last round closes", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
+        setRoundPeers("r2", ["sam"], ["sam"]);
         forgetRoundPeers();
         expect(knownRoundCoaches("r1")).toEqual([]);
+        expect(knownRoundPeers("r2")).toEqual([]);
     });
 
     // Remembering is what the runtime does on every peer change, and it must

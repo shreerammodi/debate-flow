@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { projectDoc, seedDoc } from "@/lib/collab/doc";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
+import { seedRank } from "@/lib/collab/rank";
 import {
     clearReplica,
     driftedSheetIds,
@@ -16,6 +17,7 @@ import {
     setLocalChangeListener,
 } from "@/lib/collab/replica";
 import { compareStamps, createClock } from "@/lib/collab/stamp";
+import { cellKey, type CollabCell } from "@/lib/collab/types";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 function round(): FlowRound {
@@ -170,6 +172,60 @@ describe("self-heal", () => {
     it("heals nothing and reports nothing with no round open", () => {
         expect(driftedSheetIds(round())).toEqual([]);
         expect(healReplica(round())).toEqual([]);
+    });
+
+    /**
+     * The half of the destruction that made it permanent. A sheet the round's
+     * budget held to its share is written to the file at that shape, so a drift
+     * check that projects the replica unbudgeted disagrees with its own store
+     * copy, calls the clamp drift, and re-seeds the replica from the clamped
+     * file. After that the cells are gone from the replica too and no later
+     * projection gives them back, however far the round that crowded them out
+     * has since shrunk.
+     */
+    it("does not heal a sheet down to the shape the round's budget produced", () => {
+        setLocalChangeListener(null);
+        const base = makeFlowRound({});
+        const doc = seedDoc(base);
+        const stamp = { ms: 9_000, counter: 0, actor: "them" };
+        const cellsOf = (text: string | null, rows: number): Record<string, CollabCell> =>
+            Object.fromEntries(
+                Array.from({ length: rows }, (_, row) => [
+                    cellKey(0, seedRank(row), "them"),
+                    {
+                        col: 0,
+                        rank: seedRank(row),
+                        actor: "them",
+                        text,
+                        textStamp: stamp,
+                        meta: {},
+                        metaStamp: stamp,
+                        deleted: null,
+                    },
+                ]),
+            );
+
+        // One value the transport admits and no sheet's byte share can place, on
+        // the cheapest sheet in the round so it is served first and its share is
+        // the smallest one going. The rest are the 512 sheets the merge admits,
+        // each dearer in cells so none of them is served ahead of it.
+        doc.sheets["aaa-fat"] = {
+            id: "aaa-fat",
+            fields: {},
+            deleted: null,
+            cells: cellsOf("x".repeat(200_000), 1),
+        };
+        while (Object.keys(doc.sheets).length < 512) {
+            const id = `bbb-peer-${String(Object.keys(doc.sheets).length).padStart(4, "0")}`;
+            doc.sheets[id] = { id, fields: {}, deleted: null, cells: cellsOf("cheap", 2) };
+        }
+
+        const clamped = projectDoc(doc, base);
+        expect(clamped.sheets.find((s) => s.id === "aaa-fat")!.data).toEqual([]);
+
+        seedReplica(base, "me", doc);
+        expect(healReplica(clamped)).toEqual([]);
+        expect(Object.keys(getReplica()!.sheets["aaa-fat"].cells)).toHaveLength(1);
     });
 });
 

@@ -11,7 +11,13 @@ import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import TicketDialog from "@/components/collab/TicketDialog";
-import { askForTicket, showTicket, useTicketDialog } from "@/lib/store/useTicketDialog";
+import { useFlowStore } from "@/lib/store/useFlowStore";
+import {
+    askForTicket,
+    askToRejoin,
+    showTicket,
+    useTicketDialog,
+} from "@/lib/store/useTicketDialog";
 
 const { toastSuccess, toastError } = vi.hoisted(() => ({
     toastSuccess: vi.fn(),
@@ -21,11 +27,20 @@ const { toastSuccess, toastError } = vi.hoisted(() => ({
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: toastError } }));
 
 const TICKET = "ebb1:eyJlbmRwb2ludElkIjoiYWxleCJ9";
+/** What iroh hands back, and what a contact is saved under. */
+const ALEX = "a".repeat(64);
 
 beforeEach(() => {
     toastSuccess.mockClear();
     toastError.mockClear();
-    useTicketDialog.setState({ open: false, mode: "show", ticket: "", resolve: null });
+    useTicketDialog.setState({
+        open: false,
+        mode: "show",
+        ticket: "",
+        rejoin: null,
+        resolve: null,
+    });
+    useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
 });
 
 describe("TicketDialog", () => {
@@ -138,5 +153,60 @@ describe("TicketDialog", () => {
         act(() => showTicket(TICKET));
         expect(await asked).toBeNull();
         expect(screen.getByTestId("ticket-text")).toBeTruthy();
+    });
+});
+
+describe("the confirmation a join asks for a round already here", () => {
+    function ask(round = "round-3"): Promise<boolean> {
+        let answer!: Promise<boolean>;
+        act(() => {
+            answer = askToRejoin({ round, endpointId: ALEX });
+        });
+        return answer;
+    }
+
+    it("names the round and the peer asking for a place in it", () => {
+        render(<TicketDialog />);
+        void ask("Berkeley B vs Harvard D");
+
+        expect(screen.getByTestId("ticket-dialog").textContent).toContain(
+            "Berkeley B vs Harvard D",
+        );
+        expect(screen.getByTestId("rejoin-add").textContent).toBe("Add Alex");
+    });
+
+    it("grants the peer only on the answer that says so", async () => {
+        render(<TicketDialog />);
+        const answer = ask();
+
+        await userEvent.click(screen.getByTestId("rejoin-add"));
+        expect(await answer).toBe(true);
+    });
+
+    it("declines on the cancel", async () => {
+        render(<TicketDialog />);
+        const answer = ask();
+
+        await userEvent.click(screen.getByTestId("rejoin-cancel"));
+        expect(await answer).toBe(false);
+    });
+
+    // The whole question exists for a debater who does not recognise the round,
+    // so the answer their reflexes give has to be the one that adds nobody.
+    it("holds the focus on the cancel, and takes Escape as one", async () => {
+        render(<TicketDialog />);
+        const answer = ask();
+
+        expect(screen.getByTestId("rejoin-cancel")).toHaveFocus();
+        await userEvent.keyboard("{Escape}");
+        expect(await answer).toBe(false);
+    });
+
+    it("declines when it leaves the tree, so a join is never left waiting", async () => {
+        const { unmount } = render(<TicketDialog />);
+        const answer = ask();
+
+        unmount();
+        expect(await answer).toBe(false);
     });
 });

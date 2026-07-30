@@ -17,12 +17,7 @@ import type { FlowRound } from "@/lib/model/flow";
 import { collabSettings } from "./enabled";
 import { hashText } from "./hash";
 import { getReplica, healReplica, replicaRoundId, seedReplica } from "./replica";
-import {
-    knownRoundCoaches,
-    knownRoundPeers,
-    rememberRoundPeers,
-    setRoundPeers,
-} from "./roundPeers";
+import { knownRoundCoaches, knownRoundPeers, setRoundPeers } from "./roundPeers";
 import { parseSidecar, serializeSidecar } from "./sidecar";
 import { getSidecarFs } from "./sidecarFs";
 import type { CollabDoc } from "./types";
@@ -44,12 +39,11 @@ export async function recoverReplica(round: FlowRound, flowText: string): Promis
         // A broken config directory is not a reason to refuse to open a round.
     }
     seedReplica(round, "", recovered?.doc ?? null);
-    // A recovered sidecar replaces the set, read-only grants included, because
-    // it is the only record of them. Without one the round keeps what it
-    // already knows: one taken from an invitation knows its host before any
+    // A recovered sidecar replaces this round's set, read-only grants included,
+    // because it is the only record of them. Without one the round keeps what
+    // it already knows: one taken from an invitation knows its host before any
     // sidecar for it exists.
     if (recovered) setRoundPeers(round.id, recovered.peers, recovered.coaches);
-    else rememberRoundPeers(round.id, []);
     return knownRoundPeers(round.id);
 }
 

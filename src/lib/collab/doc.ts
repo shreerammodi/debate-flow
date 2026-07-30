@@ -9,6 +9,7 @@
  */
 
 import { getEvent } from "@/lib/format/events";
+import { MAX_FLOW_COLS } from "@/lib/grid/flowColumns";
 import {
     compareSheets,
     emptyScouting,
@@ -51,17 +52,26 @@ const ROUND_LOCAL_FIELDS: Record<string, true> = {
 };
 
 /**
- * The widest a sheet gets, and the tallest a column gets. Both coordinates
+ * The tallest a column gets, beside the widest a sheet gets. Both coordinates
  * arrive inside a peer's document and both become the bound of a loop that
  * walks a sheet: the projection here, the grid patch, and the local row insert
  * and remove. The projection materializes their product, so bounding one alone
  * buys nothing - four thousand cells in one column asks for as many array slots
- * as a column index far out does. A flow is a speech per column, a speech is
- * not two thousand lines, and one sheet's product stays under the
- * MAX_ROUND_CELLS the file enforces on read. Two sheets' products do not, which
- * is why the round's own budget is spent in `projectDoc` rather than here.
+ * as a column index far out does.
+ *
+ * The width is what a flow is rather than a round number of its own, because a
+ * column is a speech. A cell at column 511 of an eight-speech sheet is not a
+ * flow cell, and padding the rectangle out to it hands a peer the divisor the
+ * round's cell and byte budgets turn into rows: one cell on the debater's own
+ * sheet, and every row of it costs sixty-four times what the sheet writes.
+ * `MAX_FLOW_COLS` is the widest of every event, so no register a peer writes
+ * narrows it onto a column the debater has already typed in.
+ *
+ * A speech is not two thousand lines, so their product leaves one sheet three
+ * orders under the MAX_ROUND_CELLS the file enforces on read. A hundred and
+ * twenty-three sheets pass it, which is why the round's own budget is spent in
+ * `projectDoc` rather than here.
  */
-const MAX_COL = 512;
 const MAX_ROWS = 2048;
 
 /** A sheet's live cells in one column, in row order. */
@@ -74,12 +84,12 @@ export function liveCells(sheet: CollabSheet, col: number): CollabCell[] {
     return live.length > MAX_ROWS ? live.slice(0, MAX_ROWS) : live;
 }
 
-/** One past the highest column index the sheet holds a cell in. */
+/** One past the highest column index the sheet holds a flow cell in. */
 export function sheetWidth(sheet: CollabSheet): number {
     let width = 0;
     for (const cell of Object.values(sheet.cells)) {
         // A cell outside the range projects nowhere, for the same reason.
-        if (!Number.isInteger(cell.col) || cell.col < 0 || cell.col >= MAX_COL) continue;
+        if (!Number.isInteger(cell.col) || cell.col < 0 || cell.col >= MAX_FLOW_COLS) continue;
         width = Math.max(width, cell.col + 1);
     }
     return width;
@@ -213,8 +223,8 @@ export function seedDoc(round: FlowRound): CollabDoc {
  *
  * `room` is the cells of the round's budget this sheet may claim and `bytes`
  * the bytes of it; see `projectDoc`. A sheet on its own cannot reach the cell
- * default, because MAX_COL times MAX_ROWS is under it, but it can reach the
- * byte default, because a peer picks how long every cell is.
+ * default, because MAX_FLOW_COLS times MAX_ROWS is under it, but it can reach
+ * the byte default, because a peer picks how long every cell is.
  */
 export function projectSheet(
     sheet: CollabSheet,
@@ -295,26 +305,29 @@ export function projectSheet(
  * round, up to thirty times a second while they type.
  *
  * This is also where the file's two ceilings are spent, because both are totals
- * across sheets while the merge's `MAX_CELLS` is per sheet: two sheets a peer
- * grew to the widest and tallest this build projects sum past the cell ceiling,
- * and a few thousand cells of a few kilobytes sum past the bytes a reopen
- * accepts. Either way every autosave of that round is then refused for as long
- * as the round holds them. The budgets belong here and not in the merge - what
- * the merge accepts must not depend on the replica's own other sheets, or two
- * peers holding different sheets would accept different cells and diverge. A
- * projection is local: the replica still holds every cell it was sent, and only
- * the file is bounded.
+ * across sheets while the merge's `MAX_CELLS` is per sheet: a hundred and
+ * twenty-three sheets a peer grew to the tallest this build projects sum past
+ * the cell ceiling, and a few thousand cells of a few kilobytes sum past the
+ * bytes a reopen accepts. Either way every autosave of that round is then
+ * refused for as long as the round holds them. The budgets belong here and not
+ * in the merge - what the merge accepts must not depend on the replica's own
+ * other sheets, or two peers holding different sheets would accept different
+ * cells and diverge. A projection is local: the replica still holds every cell
+ * it was sent, and only the file is bounded.
  *
  * Cheapest sheet first, each held to an equal share of what is left, so a round
  * the format holds is projected exactly as it would be with no budget at all: a
  * sheet that needs less than its share leaves the remainder to the rest, and
  * the budget only binds once the sheets have asked for more than two million
  * cells, or forty-eight million bytes, between them. A sheet is then held to
- * its share rather than to nothing, so no number of sheets a peer invents can
- * empty one of the debater's: at the 512-sheet ceiling the smallest shares are
- * 3,906 cells and 96 KiB, of which the grid keeps 48 KiB and one value of the
- * largest the transport admits still fits, and a fat real round is a few
- * hundred rows by a dozen speeches per sheet.
+ * its share rather than to nothing, and the share buys the sheet rows, because
+ * `sheetWidth` is what a flow is however far out a peer writes: at the
+ * 512-sheet ceiling the smallest cell share is 3,906, which is 488 rows of a
+ * full-width sheet. The smallest byte share is 48 KiB, of which the grid keeps
+ * 24 KiB - a few dozen rows of typed argument, so a round of sheets a peer
+ * invented costs the debater rows off the bottom of a full sheet and can never
+ * empty one. A fat real round is a few hundred rows by eight speeches across
+ * six sheets, three orders under either ceiling.
  */
 export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc): FlowRound {
     const shape: Record<string, unknown> = {};
