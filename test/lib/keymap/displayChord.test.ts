@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
 import { prettyChord, buildChordMap, keyHintFor } from "@/lib/keymap/displayChord";
+import { effectiveKeymap } from "@/lib/keymap/useKeymap";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 describe("displayChord", () => {
@@ -36,5 +37,20 @@ describe("displayChord", () => {
             keymapOverrides: { "sheet.next": "Meta+J" },
         });
         expect(keyHintFor("sheet.next")).toBe("Cmd-Shift-J");
+    });
+
+    // One chord per command is structural, not a tie `buildChordMap` breaks:
+    // an override is keyed by command, so binding a command replaces its chord
+    // rather than adding one. This pins that, because the map's "keep the first"
+    // arm reads like an ordering contract and there is no ordering to have.
+    it("gives a command one chord, because an override replaces rather than adds", () => {
+        useFlowStore.setState({ keymapOverrides: { "sheet.next": "Meta+J" } });
+
+        const chords = Object.entries(effectiveKeymap().bindings)
+            .filter(([, cmd]) => cmd === "sheet.next")
+            .map(([chord]) => chord);
+
+        expect(chords).toEqual(["Meta+J"]);
+        expect(buildChordMap()["sheet.next"]).toBe("Meta+J");
     });
 });

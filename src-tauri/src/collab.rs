@@ -47,13 +47,15 @@ pub const ALPN: &[u8] = b"ebb/flow/1";
 /// standard a peer link is held to.
 const MAX_LINE: usize = 4 * 1024 * 1024;
 
-/// The most connections one endpoint holds at once.
+/// The most connections one endpoint holds at once, counting both the ones it
+/// has taken a line from and the ones still finishing a handshake.
 ///
-/// A dial that has not been admitted anywhere still costs a QUIC connection,
-/// two tasks and a map entry, and admission is decided above this module from a
-/// line this module has to read first. The cap is what a stranger who learned
-/// the EndpointId cannot spend past. A round is a partner, a few guests and a
-/// coach; anything near this number is not a debate.
+/// A dial that has not been admitted anywhere still costs a QUIC connection and
+/// a task, and admission is decided above this module from a line this module
+/// has to read first, so the wait is real time a stranger can buy. A round is a
+/// partner, a few guests and a coach; anything near this number is not a debate.
+/// `Pending` is what makes the count cover a handshake that has produced no line
+/// and so has no map entry to be counted by.
 const MAX_CONNS: usize = 32;
 
 /// One in-flight connection, counted from the moment the accept loop hands it

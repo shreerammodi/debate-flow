@@ -9,6 +9,13 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Changed
 
+- The round's date is the platform's own date field rather than a calendar that
+  opened in a popover, so it takes a typed date, follows the date format the
+  machine is set to, and reaches the keyboard the way every other field in the
+  panel does. A date written as free text by a much older build is still in the
+  file, but the field shows nothing until a date is picked, and picking one
+  replaces it.
+
 - **Nothing ends the app with an unwritten edit.** Quitting, closing the window,
   and installing an update all write the open flow first. If that write fails -
   a full disk, an ejected drive - the exit is cancelled and the round stays on

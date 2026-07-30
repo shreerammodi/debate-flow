@@ -33,8 +33,7 @@
 import type { Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
 import { INVITED, inviteFrom, type InviteNotice } from "./invite";
-import type { PeerLinkFactory } from "./peerLink";
-import { HANDSHAKE_MS } from "./session";
+import { HANDSHAKE_MS, type PeerLinkFactory } from "./peerLink";
 import { defaultSchedule } from "./sync";
 
 export interface InviteListenerDeps {

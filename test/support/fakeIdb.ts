@@ -6,7 +6,7 @@
  * "fake-indexeddb/auto" before anything that reaches for `indexedDB`.
  */
 
-export const DB_NAME = "ebbflow";
+const DB_NAME = "ebbflow";
 export const DONE_KEY = "ebb-idb-migrated";
 
 /** Build the single-table database the pre-file builds of ebb wrote. */

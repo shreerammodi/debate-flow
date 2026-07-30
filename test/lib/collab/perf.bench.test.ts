@@ -189,7 +189,24 @@ describe("collaboration under a full round", () => {
 
     it("projects the round the store is handed", () => {
         const ms = timeMedian(20, () => projectDoc(doc, round));
-        expect(record("projectDoc, cold", ms, 60)).toBeLessThan(60);
+        expect(record("projectDoc, every sheet derived", ms, 60)).toBeLessThan(60);
+    });
+
+    // The one projection that walks a sheet's cells: a cost is taken against
+    // the sheet object and every projection of that same object afterwards
+    // reads it instead of walking again. So this needs a document per call,
+    // warmup included, and it is the only line here that prices the walk.
+    //
+    // Fast for its size, and not comparable to the line above it: these
+    // documents are seeded together and walked immediately, while the round a
+    // debater has had open all day has its cells scattered across a heap that
+    // fifteen other tests have churned. What this defends is the shape of the
+    // walk, not a wall time a real round would see.
+    it("projects a document nothing has costed yet", () => {
+        const unseen = Array.from({ length: 60 }, () => seedDoc(round));
+        let next = 0;
+        const ms = timeMedian(20, () => projectDoc(unseen[next++], round));
+        expect(record("projectDoc, first sight of a document", ms, 60)).toBeLessThan(60);
     });
 
     // What actually runs per remote change. A delta names only the sheets it
@@ -211,8 +228,11 @@ describe("collaboration under a full round", () => {
             `projectDoc, 1 of ${SHEETS} sheets changed`.padEnd(52) +
                 `${reused.toFixed(3).padStart(9)} ms   (whole round ${whole.toFixed(3)})`,
         );
-        // Seven sheets of eight are handed back, so most of the work is gone.
-        expect(reused).toBeLessThan(whole * 0.6);
+        // Seven sheets of eight are handed back and cost a row count each, so
+        // nearly all of the work is gone. The bar sits well above the eighth
+        // this measures, and well under the half it costs when a reused sheet
+        // is priced from its cells rather than from a cost already taken.
+        expect(reused).toBeLessThan(whole * 0.4);
     });
 
     it("diffs one sheet into the writes a pane needs", () => {

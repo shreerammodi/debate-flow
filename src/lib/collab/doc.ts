@@ -95,42 +95,89 @@ export function sheetWidth(sheet: CollabSheet): number {
     return width;
 }
 
-/**
- * The cells a sheet's grid pads out to, which is what the file counts it as.
- * The same number `projectSheet` goes on to produce, derived without
- * materializing the rectangle, because `projectDoc` has to know what a sheet
- * costs before it can decide how much of the round's budget the sheet may have.
- */
-function projectedCells(sheet: CollabSheet): number {
-    const width = sheetWidth(sheet);
-    let height = 0;
-    for (let col = 0; col < width; col++) height = Math.max(height, liveCells(sheet, col).length);
-    return width * height;
-}
-
 /** What one padded, empty grid slot costs the file: a line holding `null`. */
 const EMPTY_CELL = fileBytes(null);
 
+/** A sheet's live cells by column, and what the file charges for them. */
+interface Costed {
+    /** Each column's live cells in row order, which is what the grid writes. */
+    columns: CollabCell[][];
+    /**
+     * The cells the sheet's grid pads out to, which is what the file counts it
+     * as. `projectDoc` has to know this before it can decide how much of the
+     * round's budget the sheet may have, so it is derived from the columns
+     * rather than from a rectangle that does not exist yet.
+     */
+    cells: number;
+    /**
+     * What the whole sheet costs the file. Every slot the grid pads to is a
+     * line whether a cell sits on it or not, and every live cell, decoration
+     * and register adds what the file writes for it. Counted over the whole
+     * sheet, high rather than exactly, so what a sheet is charged depends on
+     * the document alone.
+     */
+    bytes: number;
+    /**
+     * The registers' part of `bytes`. A sheet's shape is fit into half the
+     * sheet's byte budget, so this alone decides whether a register comes off.
+     */
+    shape: number;
+}
+
 /**
- * What a sheet costs the file, derived from the document for the reason
- * `projectedCells` is: `projectDoc` spends its budget before the rectangle
- * exists. Every slot the grid pads to is a line whether a cell sits on it or
- * not, and every live cell, decoration and register adds what the file writes
- * for it. Counted over the whole sheet, high rather than exactly, so what a
- * sheet is charged depends on the document alone.
+ * What a sheet costs, held against the sheet object.
+ *
+ * `projectDoc` costs every sheet in the round before it can divide the budget
+ * and then derives the one the merge touched, so one projection asks for the
+ * same walk over a sheet's cells twice and the next projection asks for it
+ * again - up to thirty times a second while a partner types, for sheets
+ * nothing has touched. A sheet is replaced and never written to, which is the
+ * invariant the reuse path's `settled.sheets[id] === sheet` already rests on,
+ * so an entry describes its key for as long as the key exists and a sheet
+ * nothing holds any more takes its entry with it.
  */
-function projectedBytes(sheet: CollabSheet, cells: number): number {
-    let bytes = cells * EMPTY_CELL;
+const COSTED = new WeakMap<CollabSheet, Costed>();
+
+function costOf(sheet: CollabSheet): Costed {
+    const known = COSTED.get(sheet);
+    if (known) return known;
+
+    const width = sheetWidth(sheet);
+    const columns: CollabCell[][] = [];
+    let height = 0;
+    for (let col = 0; col < width; col++) {
+        const live = liveCells(sheet, col);
+        columns.push(live);
+        height = Math.max(height, live.length);
+    }
+    let shape = 0;
+    for (const [path, reg] of Object.entries(sheet.fields)) {
+        shape += path.length + fileBytes(reg.value);
+    }
+    const cells = width * height;
+    let bytes = cells * EMPTY_CELL + shape;
     for (const cell of Object.values(sheet.cells)) {
         if (cell.deleted !== null) continue;
         if (typeof cell.text === "string") bytes += fileBytes(cell.text);
         if (Object.keys(cell.meta).length > 0) bytes += fileBytes(cell.meta);
     }
-    for (const [path, reg] of Object.entries(sheet.fields)) {
-        bytes += path.length + fileBytes(reg.value);
-    }
-    return bytes;
+
+    const costed: Costed = { columns, cells, bytes, shape };
+    COSTED.set(sheet, costed);
+    return costed;
 }
+
+/**
+ * The sheet a projection carries every register of.
+ *
+ * A copy already projected is handed back rather than derived again, and a copy
+ * an earlier, tighter share clamped is not the sheet. Rows coming off the
+ * bottom show in the copy's own cell count; registers coming off the shape show
+ * nowhere, because dropping one changes no cell count. So a projection that fit
+ * its whole shape says so here and one that did not says nothing, and a copy
+ * from anywhere but a projection says nothing either.
+ */
+const WHOLE_SHAPE = new WeakMap<FlowSheet, CollabSheet>();
 
 /**
  * The shape a map of registers describes, in the bytes the file allows it.
@@ -231,6 +278,11 @@ export function projectSheet(
     room = MAX_ROUND_CELLS,
     bytes = MAX_ROUND_BYTES,
 ): FlowSheet {
+    return project(sheet, costOf(sheet), room, bytes);
+}
+
+/** `projectSheet` over a cost already taken, which is what `projectDoc` holds. */
+function project(sheet: CollabSheet, costed: Costed, room: number, bytes: number): FlowSheet {
     // Half the sheet's bytes to its registers and half kept for the grid: the
     // merge lets a peer hold four thousand register paths on the debater's own
     // sheet, and spending the whole share on those would write the sheet with
@@ -239,14 +291,10 @@ export function projectSheet(
     const shape: Record<string, unknown> = {};
     let spare = bytes - forShape + fitShape(sheet.fields, forShape, shape);
 
-    const width = sheetWidth(sheet);
-    const columns: CollabCell[][] = [];
+    const columns = costed.columns;
+    const width = columns.length;
     let height = 0;
-    for (let col = 0; col < width; col++) {
-        const live = liveCells(sheet, col);
-        columns.push(live);
-        height = Math.max(height, live.length);
-    }
+    for (const live of columns) height = Math.max(height, live.length);
     // The file counts a sheet as its rows times its widest row, so the rows
     // that fit in `room` are room / width. Rows come off the bottom, which is
     // the end of the flow a sheet the format cannot hold has run past, and the
@@ -289,6 +337,9 @@ export function projectSheet(
         meta,
     };
     if (typeof projected.startSpeechId !== "string") delete projected.startSpeechId;
+    // `fitShape` takes the cheapest registers first, so it keeps every one of
+    // them exactly when they fit together.
+    if (costed.shape <= forShape) WHOLE_SHAPE.set(projected, sheet);
     return projected;
 }
 
@@ -347,22 +398,18 @@ export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc)
     // writes.
     const costed = Object.values(doc.sheets)
         .filter((s) => s.deleted === null)
-        .map((sheet) => {
-            const cost = projectedCells(sheet);
-            return {
-                sheet,
-                untouched: settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined,
-                cost,
-                bytes: projectedBytes(sheet, cost),
-            };
-        })
-        .sort((a, b) => a.cost - b.cost || (a.sheet.id < b.sheet.id ? -1 : 1));
+        .map((sheet) => ({
+            sheet,
+            cost: costOf(sheet),
+            untouched: settled?.sheets[sheet.id] === sheet ? already.get(sheet.id) : undefined,
+        }))
+        .sort((a, b) => a.cost.cells - b.cost.cells || (a.sheet.id < b.sheet.id ? -1 : 1));
 
     let unspent = MAX_ROUND_CELLS;
     let unserved = costed.length;
     const sheets = costed
-        .map(({ sheet, untouched, cost, bytes }) => {
-            const share = Math.min(cost, Math.floor(unspent / unserved));
+        .map(({ sheet, cost, untouched }) => {
+            const share = Math.min(cost.cells, Math.floor(unspent / unserved));
             const byteShare = Math.floor(unspentBytes / unserved);
             unserved -= 1;
             // Charged what the document says the sheet costs, capped at the
@@ -370,23 +417,28 @@ export function projectDoc(doc: CollabDoc, base: FlowRound, settled?: CollabDoc)
             // what came back would mean measuring the projection, and counting
             // a sheet high only ever hands the next one less of a budget no
             // real round reaches.
-            unspentBytes -= Math.min(bytes, byteShare);
-            // Reused only when the copy already projected is the whole sheet.
-            // One that came back clamped would otherwise be handed back
-            // unchanged, keeping the sheet small after the round that crowded
-            // it out is gone and leaving a replica that once clamped writing a
-            // different file than one that never did.
+            unspentBytes -= Math.min(cost.bytes, byteShare);
+            // Reused only when the copy already projected is the whole sheet
+            // and this share buys the whole sheet again. One that came back
+            // clamped would otherwise be handed back unchanged, keeping the
+            // sheet small after the round that crowded it out is gone and
+            // leaving a replica that once clamped writing a different file than
+            // one that never did. A clamp has two halves and both are asked
+            // for: rows off the bottom, which the copy's own cell count shows,
+            // and registers off the shape, which nothing about the copy shows.
             if (
                 untouched &&
-                cost <= share &&
-                bytes <= byteShare &&
-                paddedCells(untouched.data) === cost
+                cost.cells <= share &&
+                cost.bytes <= byteShare &&
+                cost.shape <= Math.floor(byteShare / 2) &&
+                paddedCells(untouched.data) === cost.cells &&
+                WHOLE_SHAPE.get(untouched) === sheet
             ) {
-                unspent -= cost;
+                unspent -= cost.cells;
                 return untouched;
             }
             // Clamped to its share, and counted as what it came back as.
-            const projected = projectSheet(sheet, share, byteShare);
+            const projected = project(sheet, cost, share, byteShare);
             unspent -= paddedCells(projected.data);
             return projected;
         })

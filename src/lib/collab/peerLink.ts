@@ -16,6 +16,15 @@ import { isRole, type CollabDoc, type Role } from "./types";
 /** Bumped only for a change an older build cannot read. */
 export const PROTOCOL_MAJOR = 1;
 
+/**
+ * How long a connection may stay open without greeting. Wide enough for a relay
+ * to carry the first line across a bad hotel network, and short enough that a
+ * stranger who dials in a loop holds a bounded number of slots. It lives beside
+ * the protocol because both sides of it - a session and the idle listener - hold
+ * a link to a peer that has not spoken yet, and neither owns the other.
+ */
+export const HANDSHAKE_MS = 10_000;
+
 /** A grid slot a peer is on. */
 export interface CellRef {
     sheetId: string;

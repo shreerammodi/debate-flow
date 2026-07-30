@@ -4,7 +4,7 @@ import { liveCells, projectDoc, projectSheet, seedDoc, sheetWidth } from "@/lib/
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { seedRank } from "@/lib/collab/rank";
 import { createClock, ORIGIN_STAMP, type Stamp } from "@/lib/collab/stamp";
-import { cellKey, type CollabCell, type CollabDoc } from "@/lib/collab/types";
+import { cellKey, type CollabCell, type CollabDoc, type CollabSheet } from "@/lib/collab/types";
 import { compareSheets, makeFlowRound, makeFlowSheet, type FlowRound } from "@/lib/model/flow";
 import { MAX_ROUND_CELLS, paddedCells } from "@/lib/persistence/flowFile";
 
@@ -300,6 +300,65 @@ describe("the round's cell budget", () => {
         const freed = after.sheets.find((s) => s.id === victim);
         expect(freed?.data).toHaveLength(2_048);
     }, 30_000);
+
+    /**
+     * The same clamp, on the half of a sheet that is not its grid. A share too
+     * tight for the sheet's registers drops the ones that do not fit, and
+     * dropping a register changes no cell count, so the copy's own grid still
+     * measures whole. The merge lets a peer hold `MAX_REGISTERS` paths on the
+     * debater's sheet, so what a tight share takes off can be the title.
+     */
+    it("gives a sheet back its registers once the sheets that crowded it are gone", () => {
+        // Five hundred and twelve sheets of one cell: the smallest byte share
+        // the round hands out, of which the shape keeps half.
+        const stamp: Stamp = { ms: 9_000, counter: 0, actor: "them" };
+        const cell: CollabCell = {
+            col: 0,
+            rank: seedRank(0),
+            actor: "them",
+            text: "hi",
+            textStamp: stamp,
+            meta: {},
+            metaStamp: stamp,
+            deleted: null,
+        };
+        const key = cellKey(0, cell.rank, "them");
+        const title = "x".repeat(55_000);
+        const victim: CollabSheet = {
+            id: "aaa-victim",
+            fields: {
+                title: { value: title, stamp },
+                group: { value: "neg", stamp },
+                order: { value: 0, stamp },
+                kind: { value: "flow", stamp },
+            },
+            deleted: null,
+            cells: { [key]: cell },
+        };
+        // Ids a peer chooses, sorting after the debater's own, so the victim is
+        // served first and gets the tightest share the round offers.
+        const sheets: Record<string, CollabSheet> = { [victim.id]: victim };
+        for (let n = 0; n < 511; n++) {
+            const id = `zzz-peer-${String(n).padStart(4, "0")}`;
+            sheets[id] = { id, fields: {}, deleted: null, cells: { [key]: cell } };
+        }
+        const doc: CollabDoc = { roundId: "r", round: {}, sheets };
+
+        const clamped = projectDoc(doc, makeFlowRound({}));
+        const wasClamped = clamped.sheets.find((s) => s.id === victim.id)!;
+        // The title did not fit the shape's half of the share and came off; the
+        // one cell it shares the sheet with fit, so the grid measures whole.
+        expect(wasClamped.title).toBe("");
+        expect(wasClamped.data).toEqual([["hi"]]);
+        expect(paddedCells(wasClamped.data)).toBe(1);
+
+        // The crowd leaves, and the surviving sheet is the very same object, so
+        // the reuse path is the one under test.
+        const alone: CollabDoc = { ...doc, sheets: { [victim.id]: victim } };
+        const freed = projectDoc(alone, clamped, alone).sheets.find((s) => s.id === victim.id)!;
+        expect(freed.title).toBe(title);
+        expect(freed.data).toEqual([["hi"]]);
+    });
 
     /**
      * The attack the budget was written to stop, in the shape it was measured

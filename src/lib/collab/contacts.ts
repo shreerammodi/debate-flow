@@ -11,7 +11,7 @@
  * unrecognizable degrades to absent rather than to a half-valid contact.
  */
 
-import type { Role } from "./types";
+import { isRole, type Role } from "./types";
 
 export interface Contact {
     name: string;
@@ -32,10 +32,6 @@ const SHORT_ID = 8;
  */
 export function isEndpointId(value: string): boolean {
     return /^[0-9a-f]{64}$/i.test(value) || /^[a-z2-7]{52}$/i.test(value);
-}
-
-function isRole(value: unknown): value is Role {
-    return value === "partner" || value === "coach";
 }
 
 /**

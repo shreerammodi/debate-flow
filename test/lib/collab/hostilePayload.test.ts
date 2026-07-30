@@ -297,9 +297,10 @@ describe("what a peer can make this replica retain", () => {
             };
         };
         // Two hundred thousand cells as JSON text is gratuitous, so the volume
-        // below is a literal. This is what proves the shape of it is one the
-        // transport admits, i.e. that the ceiling is reachable over the wire.
-        expect(deltaOf(flood(2))).not.toBeNull();
+        // below is a literal. `deltaOf` throws when the transport refuses, so
+        // counting what came back is what proves the shape is one the transport
+        // admits, i.e. that the ceiling is reachable over the wire.
+        expect(Object.keys(deltaOf(flood(2)).sheets[flow.id].cells)).toHaveLength(2);
 
         const once = merge(local, flood(200_100)).doc;
         expect(Object.keys(once.sheets[flow.id].cells)).toHaveLength(200_000);
@@ -340,15 +341,25 @@ describe("a prototype key from a peer", () => {
         expect(onWire(doc("{}", '{"__proto__":{}}'))).toBeNull();
         expect(onWire(doc("{}", sheet('{"__proto__":{}}')))).toBeNull();
         expect(onWire(doc("{}", sheet("{}", '{"__proto__":{}}')))).toBeNull();
+        // The same document with no forged key is admitted, so the four
+        // refusals above are about the key and not about the fixture.
         expect(onWire(doc("{}", sheet("{}")))).not.toBeNull();
-        // The write those refusals stand in front of: the merge assigns into a
-        // plain object literal by the key the message chose, and this asserts
-        // the map it hands back is still an ordinary record.
-        const register = '{"event":{"value":"pf","stamp":{"ms":1,"counter":0,"actor":"attacker"}}}';
-        const admitted = inboundDoc(doc(register, sheet("{}")));
-        const merged = merge(seedDoc(makeFlowRound({})), admitted).doc;
-        expect(Object.getPrototypeOf(merged.round)).toBe(Object.prototype);
-        expect(Object.getPrototypeOf(merged.sheets.s.cells)).toBe(Object.prototype);
+        // A forged key carrying a register that is otherwise well formed. The
+        // shape check cannot refuse this one - the register is valid - so this is
+        // what the key check itself stands for.
+        const wellFormed =
+            '{"__proto__":{"value":"pf","stamp":{"ms":1,"counter":0,"actor":"them"}}}';
+        expect(onWire(doc(wellFormed, "{}"))).toBeNull();
+        // Why those refusals are the boundary rather than a second opinion. A
+        // register map is read by the key the message chose, so a forged
+        // `__proto__` resolves up the chain to `Object.prototype`, which carries
+        // no stamp: handed a document the parser never saw, the merge throws.
+        // Nothing below the transport defends this, so the refusals above are
+        // the whole of it.
+        const forged = JSON.parse(
+            doc('{"__proto__":{"value":"pf","stamp":{"ms":1,"counter":0,"actor":"them"}}}', "{}"),
+        ) as { doc: CollabDoc };
+        expect(() => merge(seedDoc(makeFlowRound({})), forged.doc)).toThrow();
     });
 
     it("is recorded in the vector under its own key rather than read off the chain", () => {

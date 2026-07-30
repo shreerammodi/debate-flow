@@ -28,6 +28,7 @@ import {
 import { INVITED, inviteFrom, type InviteNotice } from "./invite";
 import type { DroppedCell } from "./merge";
 import {
+    HANDSHAKE_MS,
     isCellRef,
     type CellRef,
     type PeerConn,
@@ -135,13 +136,6 @@ interface Live {
     /** Which side dialled, which is what decides a duplicate. */
     outbound: boolean;
 }
-
-/**
- * How long a connection may stay open without greeting. Wide enough for a
- * relay to carry the first line across a bad hotel network, and short enough
- * that a stranger who dials in a loop holds a bounded number of slots.
- */
-export const HANDSHAKE_MS = 10_000;
 
 /**
  * Whether a dial ended in the far side taking the invite rather than joining.

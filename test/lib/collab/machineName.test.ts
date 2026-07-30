@@ -8,7 +8,12 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { broadcastName, clearShellStrings, machineName } from "@/lib/collab/machineName";
+import {
+    broadcastName,
+    clearShellStrings,
+    machineName,
+    myEndpointId,
+} from "@/lib/collab/machineName";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -75,5 +80,39 @@ describe("broadcastName", () => {
     it("greets with no name when there is neither", async () => {
         invoke.mockResolvedValue("");
         expect(await broadcastName()).toBe("");
+    });
+});
+
+/**
+ * The id Settings shows, and what asking for it costs. It comes off the identity
+ * file rather than from a bound endpoint, which is the whole point: a debater
+ * hands a partner their id with nothing on the network.
+ */
+describe("myEndpointId", () => {
+    const ID = "e".repeat(64);
+
+    it("reads the identity off the shell, binding nothing", async () => {
+        invoke.mockResolvedValue(ID);
+        expect(await myEndpointId()).toBe(ID);
+        expect(invoke).toHaveBeenCalledWith("collab_endpoint_id");
+        expect(invoke).toHaveBeenCalledTimes(1);
+    });
+
+    it("asks once, because the identity cannot change while the app is open", async () => {
+        invoke.mockResolvedValue(ID);
+        await myEndpointId();
+        await myEndpointId();
+        expect(invoke).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports no id rather than failing when the shell cannot say", async () => {
+        invoke.mockRejectedValue(new Error("no identity file"));
+        expect(await myEndpointId()).toBe("");
+    });
+
+    it("asks nothing on web, where there is no shell to ask", async () => {
+        onDesktop(false);
+        expect(await myEndpointId()).toBe("");
+        expect(invoke).not.toHaveBeenCalled();
     });
 });

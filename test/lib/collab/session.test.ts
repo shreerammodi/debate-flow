@@ -9,14 +9,10 @@ import {
     type PeerLinkFactory,
     type WireMessage,
 } from "@/lib/collab/peerLink";
+import { HANDSHAKE_MS } from "@/lib/collab/peerLink";
 import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
-import {
-    HANDSHAKE_MS,
-    startCollabSession,
-    type CollabPeer,
-    type CollabSession,
-} from "@/lib/collab/session";
+import { startCollabSession, type CollabPeer, type CollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
 import { getPresences } from "@/lib/grid/presenceBridge";
