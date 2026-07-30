@@ -395,8 +395,8 @@ pub fn bridge_reply(state: State<'_, BridgeState>, id: String, response: Json) {
 
 /// 24 alphanumeric characters: URL-safe by construction, ~143 bits.
 fn random_token() -> String {
-    use rand::distributions::{Alphanumeric, DistString};
-    Alphanumeric.sample_string(&mut rand::thread_rng(), 24)
+    use rand::distr::{Alphanumeric, SampleString};
+    Alphanumeric.sample_string(&mut rand::rng(), 24)
 }
 
 /// 16 hex characters naming one in-flight renderer round trip.
@@ -447,23 +447,29 @@ fn read_peer() -> Option<(Json, Option<Peer>)> {
 fn post(path: &str, body: &Json) -> Result<Json, String> {
     let (_, session) = read_peer().ok_or("not-registered")?;
     let peer = session.ok_or("not-running")?;
-    let sent = ureq::post(&format!("http://127.0.0.1:{}{path}", peer.port))
-        .set("Content-Type", "application/json")
-        .set("X-Bridge-Token", &peer.token)
-        .set(APP_ID_HEADER, APP_ID)
-        .timeout(OUTBOUND_TIMEOUT)
-        .send_string(&body.to_string());
-    let text = match sent {
-        Ok(response) => response.into_string(),
+    let sent = ureq::post(format!("http://127.0.0.1:{}{path}", peer.port))
+        .config()
         // A rejected request still carries CardMirror's JSON body, which the
-        // caller is entitled to see.
-        Err(ureq::Error::Status(_, response)) => response.into_string(),
-        Err(ureq::Error::Transport(transport)) => {
+        // caller is entitled to see, so a 4xx has to stay a response here
+        // rather than an error that drops it.
+        .http_status_as_error(false)
+        .timeout_global(Some(OUTBOUND_TIMEOUT))
+        .build()
+        .header("Content-Type", "application/json")
+        .header("X-Bridge-Token", &peer.token)
+        .header(APP_ID_HEADER, APP_ID)
+        .send(body.to_string());
+    let text = match sent {
+        Ok(mut response) => response.body_mut().read_to_string(),
+        Err(error) => {
             // A refused connect means the session file outlived the process;
-            // a stalled socket means the process is wedged.
-            return Err(match transport.kind() {
-                ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::Dns => "not-running",
-                ureq::ErrorKind::Io => "timeout",
+            // a stalled or deadlined socket means the process is wedged.
+            return Err(match error {
+                ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::ConnectionRefused => {
+                    "not-running"
+                }
+                ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => "not-running",
+                ureq::Error::Timeout(_) | ureq::Error::Io(_) => "timeout",
                 _ => "bad-response",
             }
             .to_string());
@@ -837,50 +843,80 @@ mod tests {
         let port = server.server_addr().to_ip().expect("ip listener").port();
         std::thread::spawn(move || serve(server, router()));
         let url = |path: &str| format!("http://127.0.0.1:{port}{path}");
-        let body_of = |response: ureq::Response| -> Json {
-            assert_eq!(response.header("Content-Type"), Some("application/json"));
-            serde_json::from_str(&response.into_string().unwrap()).unwrap()
+        // A refusal is asserted on the status and body it carries, so 4xx has
+        // to stay a response rather than an error that drops the body.
+        let get = |path: &str| {
+            ureq::get(url(path))
+                .config()
+                .http_status_as_error(false)
+                .build()
+                .header("X-Bridge-Token", "tok")
         };
-        let status_of = |error: ureq::Error| -> (u16, Json) {
-            match error {
-                ureq::Error::Status(status, response) => (status, body_of(response)),
-                other => panic!("expected a status error, got {other}"),
+        let post = |path: &str| {
+            ureq::post(url(path))
+                .config()
+                .http_status_as_error(false)
+                .build()
+                .header("X-Bridge-Token", "tok")
+                .header("Content-Type", "application/json")
+        };
+        let outcome = |mut response: ureq::http::Response<ureq::Body>| -> (u16, Json) {
+            let status = response.status().as_u16();
+            assert_eq!(
+                response.headers().get("Content-Type").unwrap(),
+                "application/json"
+            );
+            let text = response.body_mut().read_to_string().unwrap();
+            (status, serde_json::from_str(&text).unwrap())
+        };
+
+        let ok = outcome(get("/ping").call().unwrap());
+        assert_eq!(ok.0, 200);
+        assert_eq!(ok.1["app"], "ebb");
+
+        let refused = get("/ping")
+            .header("Origin", "http://evil.example")
+            .call()
+            .unwrap();
+        assert_eq!(outcome(refused), (403, fail("unauthorized")));
+
+        let sent = post("/flow").send(r#"{"mode":"cell"}"#).unwrap();
+        assert_eq!(outcome(sent).1["echo"]["mode"], "cell");
+
+        let too_big = post("/flow").send("x".repeat(MAX_BODY + 1)).unwrap();
+        assert_eq!(outcome(too_big), (400, fail("bad-request")));
+
+        let missing = get("/nope").call().unwrap();
+        assert_eq!(outcome(missing).0, 404);
+    }
+
+    /// A refusal carries CardMirror's own reason on a 4xx, and the caller is
+    /// entitled to see it, so a status code must not be allowed to stand in for
+    /// the body and swallow it.
+    #[test]
+    fn a_four_hundred_from_the_peer_still_yields_its_body() {
+        let _guard = ENV_LOCK.lock();
+        let dir = scratch_dir("peer-4xx");
+        let server = tiny_http::Server::http(("127.0.0.1", 0)).expect("ephemeral port");
+        let peer_port = server.server_addr().to_ip().expect("ip listener").port();
+        std::thread::spawn(move || {
+            for request in server.incoming_requests() {
+                let _ = request.respond(json_response(400, &fail("no-consent")));
             }
-        };
+        });
 
-        let ok = ureq::get(&url("/ping"))
-            .set("X-Bridge-Token", "tok")
-            .call()
-            .unwrap();
-        assert_eq!(ok.status(), 200);
-        assert_eq!(body_of(ok)["app"], "ebb");
+        create_dir_private(&dir).unwrap();
+        let identity = json!({ "schema": 1, "app": "cardmirror", "kind": "editor" });
+        let session = json!({ "port": peer_port, "token": "peer-token", "pid": 1 });
+        write_private_json(&dir.join("cardmirror.json"), &identity).unwrap();
+        write_private_json(&dir.join("cardmirror.session.json"), &session).unwrap();
 
-        let refused = ureq::get(&url("/ping"))
-            .set("X-Bridge-Token", "tok")
-            .set("Origin", "http://evil.example")
-            .call()
-            .unwrap_err();
-        assert_eq!(status_of(refused), (403, fail("unauthorized")));
+        std::env::set_var("CARDMIRROR_BRIDGE_DIR", &dir);
+        let refused = cardmirror_jump("cmsrc1abc".into());
+        std::env::remove_var("CARDMIRROR_BRIDGE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
 
-        let sent = ureq::post(&url("/flow"))
-            .set("X-Bridge-Token", "tok")
-            .set("Content-Type", "application/json")
-            .send_string(r#"{"mode":"cell"}"#)
-            .unwrap();
-        assert_eq!(body_of(sent)["echo"]["mode"], "cell");
-
-        let too_big = ureq::post(&url("/flow"))
-            .set("X-Bridge-Token", "tok")
-            .set("Content-Type", "application/json")
-            .send_string(&"x".repeat(MAX_BODY + 1))
-            .unwrap_err();
-        assert_eq!(status_of(too_big), (400, fail("bad-request")));
-
-        let missing = ureq::get(&url("/nope"))
-            .set("X-Bridge-Token", "tok")
-            .call()
-            .unwrap_err();
-        assert_eq!(status_of(missing).0, 404);
+        assert_eq!(refused, Ok(fail("no-consent")));
     }
 
     /// A body the caller declares but never sends must not buy it a 4 MiB
