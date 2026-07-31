@@ -29,6 +29,8 @@ interface PeerPayload {
     connId: string;
     endpointId: string;
     connectionType: ConnectionKind;
+    /** Where the shell observed this peer to be homed, when it could say. */
+    relayUrl: string | null;
 }
 
 function asPeer(payload: unknown): PeerPayload | null {
@@ -40,6 +42,9 @@ function asPeer(payload: unknown): PeerPayload | null {
         endpointId: p.endpointId,
         // Anything the shell did not call direct is disclosed as relayed.
         connectionType: p.connectionType === "direct" ? "direct" : "relayed",
+        // "" is how the shell says it has none, and an empty hint saved
+        // against a contact would be dialled forever.
+        relayUrl: typeof p.relayUrl === "string" && p.relayUrl !== "" ? p.relayUrl : null,
     };
 }
 
@@ -77,6 +82,7 @@ async function defaultBridge(): Promise<TauriBridge> {
 interface Held {
     conn: PeerConn;
     kind: ConnectionKind;
+    relay: string | null;
     onMessage: ((m: WireMessage) => void)[];
     onClose: (() => void)[];
     open: boolean;
@@ -124,16 +130,23 @@ export async function createPeerLink(
         for (const cb of entry.onClose) cb();
     }
 
-    function makeConn(connId: string, remote: string, kind: ConnectionKind): PeerConn {
+    function makeConn(
+        connId: string,
+        remote: string,
+        kind: ConnectionKind,
+        relay: string | null,
+    ): PeerConn {
         const entry: Held = {
             open: true,
             kind,
+            relay,
             onMessage: [],
             onClose: [],
             claiming: null,
             conn: {
                 id: remote,
                 connectionType: () => entry.kind,
+                relayUrl: () => entry.relay,
                 claim() {
                     if (!entry.open || entry.claiming) return;
                     // A claim the shell refuses means another window admitted
@@ -190,7 +203,7 @@ export async function createPeerLink(
             // Only an inbound connection is announced. A dial reports its own
             // path in its return value, so nothing here can race it.
             if (held.has(peer.connId)) return;
-            onPeer?.(makeConn(peer.connId, peer.endpointId, peer.connectionType));
+            onPeer?.(makeConn(peer.connId, peer.endpointId, peer.connectionType, peer.relayUrl));
         }),
     );
 
@@ -218,16 +231,35 @@ export async function createPeerLink(
             return endpointId;
         },
 
+        async relayUrl() {
+            // Asked of the shell rather than held from the bind: a relay is
+            // contacted after the socket is up, so an answer taken at bind
+            // time would be empty for the first seconds of every session -
+            // which are exactly the seconds a debater spends clicking Share.
+            return (await shell.invoke("collab_relay_url", {})) as string;
+        },
+
         async listen(cb) {
             onPeer = cb;
         },
 
-        async dial(target) {
-            const result = (await shell.invoke("collab_dial", { endpointId: target })) as {
+        async dial(target, relayUrl) {
+            const result = (await shell.invoke("collab_dial", {
+                endpointId: target,
+                relayUrl: relayUrl ?? null,
+            })) as {
                 connId: string;
                 connectionType: ConnectionKind;
+                relayUrl?: string | null;
             };
-            return makeConn(result.connId, target, result.connectionType);
+            return makeConn(
+                result.connId,
+                target,
+                result.connectionType,
+                typeof result.relayUrl === "string" && result.relayUrl !== ""
+                    ? result.relayUrl
+                    : null,
+            );
         },
 
         async stop() {

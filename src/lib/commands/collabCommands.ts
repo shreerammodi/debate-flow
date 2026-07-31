@@ -52,7 +52,7 @@ export async function runShare(deps: CollabCommandDeps, role: Role = "partner"):
             deps.fail("Could not start a session");
             return;
         }
-        deps.presentTicket(encodeTicket(session.share(role)));
+        deps.presentTicket(encodeTicket(await session.share(role)));
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not share this round");
     }

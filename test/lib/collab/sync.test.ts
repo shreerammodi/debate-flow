@@ -18,6 +18,7 @@ function fakeConn() {
     const conn: PeerConn = {
         id: "sam",
         connectionType: () => "direct",
+        relayUrl: () => null,
         send: (m) => sent.push(m),
         onMessage: (cb) => {
             onMsg = cb;

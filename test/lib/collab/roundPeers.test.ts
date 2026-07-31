@@ -5,7 +5,9 @@ import {
     forgetRoundPeers,
     knownRoundCoaches,
     knownRoundPeers,
+    knownRoundRelays,
     rememberRoundPeers,
+    rememberRoundRelay,
     rememberRoundRole,
     setRoundPeers,
 } from "@/lib/collab/roundPeers";
@@ -55,6 +57,44 @@ describe("the peers a round remembers", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
         rememberRoundPeers("r2", ["sam"]);
         expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+    });
+});
+
+/**
+ * An EndpointId names a peer and does not route to them: the only lookup this
+ * build runs is mDNS, which answers across a room and no further. So a round
+ * reopened on a hotel network re-dials names it cannot reach unless it also
+ * remembers where each of them was found.
+ */
+describe("where a round's peers were found", () => {
+    it("knows nowhere for a round that was never shared", () => {
+        expect(knownRoundRelays("r1")).toEqual({});
+    });
+
+    it("takes the table a sidecar recovered", () => {
+        setRoundPeers("r1", ["sam"], [], { sam: "https://r.example/1" });
+        expect(knownRoundRelays("r1")).toEqual({ sam: "https://r.example/1" });
+    });
+
+    // A peer that moved networks is at the newer relay, and the older one is a
+    // server they are no longer connected to.
+    it("keeps the newest address for a peer, not the first", () => {
+        rememberRoundRelay("r1", "sam", "https://r.example/1");
+        rememberRoundRelay("r1", "sam", "https://r.example/2");
+        expect(knownRoundRelays("r1")).toEqual({ sam: "https://r.example/2" });
+    });
+
+    it("answers for the round it was told about and no other", () => {
+        rememberRoundRelay("r1", "sam", "https://r.example/1");
+        rememberRoundRelay("r2", "kim", "https://r.example/2");
+        expect(knownRoundRelays("r1")).toEqual({ sam: "https://r.example/1" });
+        expect(knownRoundRelays("r2")).toEqual({ kim: "https://r.example/2" });
+    });
+
+    it("hands back a copy, so a caller cannot edit the record in place", () => {
+        rememberRoundRelay("r1", "sam", "https://r.example/1");
+        delete knownRoundRelays("r1").sam;
+        expect(knownRoundRelays("r1")).toEqual({ sam: "https://r.example/1" });
     });
 });
 

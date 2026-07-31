@@ -143,7 +143,7 @@ async function open(
 async function hostAndGuest(role: "partner" | "coach", guestId = RAE) {
     const hostSide = replicaFor(shared, ALEX);
     const host = await open(ALEX, hostSide, { contacts: () => useFlowStore.getState().contacts });
-    const ticket = encodeTicket(host.share(role));
+    const ticket = encodeTicket(await host.share(role));
 
     const guestSide = replicaFor(shared, guestId);
     const guest = await open(guestId, guestSide, { ticket, role, dial: [ALEX] });
@@ -186,7 +186,7 @@ describe("a view-only ticket", () => {
     it("cannot be spent as a partner by a guest that says it is one", async () => {
         const hostSide = replicaFor(shared, ALEX);
         const host = await open(ALEX, hostSide);
-        const ticket = encodeTicket(host.share("coach"));
+        const ticket = encodeTicket(await host.share("coach"));
 
         // The guest asks for the role it wants. The host grants the role the
         // ticket names, and the ack says so to its face.
@@ -240,13 +240,13 @@ describe("what a coach may do to the round", () => {
 
         const coachSide = replicaFor(shared, RAE);
         const coach = await open(RAE, coachSide, {
-            ticket: encodeTicket(host.share("coach")),
+            ticket: encodeTicket(await host.share("coach")),
             role: "coach",
             dial: [ALEX],
         });
         const partnerSide = replicaFor(shared, SAM);
         await open(SAM, partnerSide, {
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             role: "partner",
             dial: [ALEX],
         });

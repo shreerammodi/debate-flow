@@ -16,6 +16,14 @@ import { isRole, type Role } from "./types";
 export interface Contact {
     name: string;
     role: Role;
+    /**
+     * Where this peer was last found. An EndpointId names them and does not
+     * route to them, and the only lookup this build runs is mDNS, so without
+     * this a saved partner is dialable across the room and nowhere else.
+     * Absent for a contact typed in by hand, and for one saved before this
+     * was recorded, both of which are reachable in the room as they were.
+     */
+    relay?: string;
 }
 
 /** EndpointId to contact. */
@@ -55,7 +63,16 @@ export function resolveContacts(raw: unknown): Contacts {
         const entry = value as Partial<Contact>;
         if (typeof entry.name !== "string" || entry.name.trim() === "") continue;
         if (!isRole(entry.role)) continue;
-        out[endpointId] = { name: entry.name, role: entry.role };
+        // A dial target, so a scheme somebody chose by hand is not one: an
+        // iroh relay is https. Dropped rather than refused, because it is
+        // where this contact is and not whether they may be reached at all.
+        const relay =
+            typeof entry.relay === "string" && entry.relay.startsWith("https://")
+                ? entry.relay
+                : undefined;
+        out[endpointId] = relay
+            ? { name: entry.name, role: entry.role, relay }
+            : { name: entry.name, role: entry.role };
     }
     return out;
 }

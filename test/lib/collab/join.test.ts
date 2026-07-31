@@ -5,13 +5,14 @@ import { joinRound } from "@/lib/collab/join";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import type { PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
-import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import {
     forgetRoundPeers,
     knownRoundCoaches,
     knownRoundPeers,
+    knownRoundRelays,
     rememberRoundPeers,
     rememberRoundRole,
     setRoundPeers,
@@ -68,7 +69,7 @@ async function hostWithTicket(): Promise<string> {
         appVersion: "0.11.0",
         ...side(shared),
     }))!;
-    return encodeTicket(host.share("partner"));
+    return encodeTicket(await host.share("partner"));
 }
 
 beforeEach(async () => {
@@ -122,7 +123,7 @@ describe("joinRound", () => {
             ...side(shared),
             contacts: () => ({}),
         }))!;
-        const ticket = encodeTicket(host.share("partner"));
+        const ticket = encodeTicket(await host.share("partner"));
 
         const watched: PeerLinkFactory = async (config) => {
             const link = await net.create("sam")(config);
@@ -347,6 +348,33 @@ describe("what a joined round remembers", () => {
         expect(await recoverReplica(round, serializeFlow(round))).toEqual([ALEX]);
     });
 
+    /**
+     * A join spends the ticket and hangs up; the round's own session re-dials
+     * by EndpointId, which routes across a room and no further. So where the
+     * ticket said the host is has to reach the sidecar, or a guest who joined
+     * from a hotspot opens the file they just received and reaches nobody.
+     */
+    it("keeps where the host was, so the file it wrote can be opened anywhere", async () => {
+        const ticket = await hostWithTicket();
+        const joined = await joinRound({
+            ticket,
+            createLink: net.create("sam"),
+            appVersion: "0.11.0",
+            fs,
+        });
+        expect(knownRoundRelays(joined!.roundId)[ALEX]).toBe(memoryRelay(ALEX));
+
+        const stored = JSON.parse((await sidecar.read(joined!.roundId))!);
+        expect(stored.relays[ALEX]).toBe(memoryRelay(ALEX));
+
+        // And back off the disk on the next open, which is the dial that
+        // matters: this process is gone by then.
+        forgetRoundPeers();
+        const round = parseFlowFile((await fs.readFlow(joined!.path))!.text);
+        await recoverReplica(round, serializeFlow(round));
+        expect(knownRoundRelays(round.id)).toEqual({ [ALEX]: memoryRelay(ALEX) });
+    });
+
     it("adopts the host's document, so their rows do not arrive twice", async () => {
         // Every cell here was created during the host's own session, so none of
         // them is keyed the way seeding from a file would key it.
@@ -364,7 +392,7 @@ describe("what a joined round remembers", () => {
         hostSide.edit(sheetId, 0, 1, "then the CP");
 
         const joined = await joinRound({
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,
@@ -424,7 +452,7 @@ describe("what a joined round remembers", () => {
         }))!;
 
         const joined = await joinRound({
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,

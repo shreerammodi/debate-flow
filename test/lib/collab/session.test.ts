@@ -136,7 +136,7 @@ describe("startCollabSession", () => {
 
     it("mints a ticket that names this host and this round", async () => {
         const session = await open(ALEX);
-        const ticket = session!.share("partner");
+        const ticket = await session!.share("partner");
         expect(ticket).toMatchObject({
             endpointId: ALEX,
             roundId: shared.id,
@@ -148,13 +148,15 @@ describe("startCollabSession", () => {
 
     it("mints a fresh ticket each time, replacing the unspent one", async () => {
         const session = await open(ALEX);
-        expect(session!.share("partner").secret).not.toBe(session!.share("partner").secret);
+        expect((await session!.share("partner")).secret).not.toBe(
+            (await session!.share("partner")).secret,
+        );
     });
 
     it("carries the relay stance the settings hold into the ticket", async () => {
         useFlowStore.setState({ collabRelayEnabled: false });
         const session = await open(ALEX);
-        expect(session!.share("partner").relay).toBe(false);
+        expect((await session!.share("partner")).relay).toBe(false);
     });
 });
 
@@ -184,7 +186,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -214,7 +216,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -238,7 +240,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -268,7 +270,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -293,7 +295,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -328,7 +330,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
             createLink: watched("sam", conns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -356,7 +358,7 @@ describe("a link that drops mid-round", () => {
         const clock = manualClock();
         const host = (await open(ALEX))!;
         const guest = (await open("sam", {
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -390,7 +392,7 @@ describe("a link that drops mid-round", () => {
         setRoundPeers(shared.id, [], []);
         const host = (await open(ALEX, { schedule: clock.schedule }))!;
         const guest = (await open("sam", {
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -430,7 +432,7 @@ describe("a link that drops mid-round", () => {
         const host = (await open(ALEX, { createLink: watched(ALEX, hostConns) }))!;
         const guest = (await open("sam", {
             createLink: watched("sam", guestConns),
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
         }))!;
         await settle();
@@ -508,7 +510,7 @@ describe("what a dialler is told", () => {
 
     it("names a skew to a caller holding the ticket, without naming a version", async () => {
         const host = (await open(ALEX))!;
-        const ticket = host.share("partner");
+        const ticket = await host.share("partner");
         const { answers } = await knock(
             SAM,
             hello({ endpointId: SAM, protocol: PROTOCOL_MAJOR + 1, ticket: ticket.secret }),
@@ -577,7 +579,7 @@ describe("a dialler that never greets", () => {
         const clock = manualClock();
         const host = (await open(ALEX, { schedule: clock.schedule }))!;
         const guest = (await open(SAM, {
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
@@ -597,7 +599,7 @@ describe("a dialler that never greets", () => {
 describe("a peer's claim on a cell", () => {
     /** A guest admitted by ticket, whose connection the test speaks over. */
     async function admitted(host: CollabSession): Promise<PeerConn> {
-        const secret = host.share("partner").secret;
+        const secret = (await host.share("partner")).secret;
         const link = await net.create(SAM)({ discovery: "mdns", relay: true });
         const conn = await link.dial(ALEX);
         conn.send({
@@ -721,7 +723,7 @@ describe("what admitting a peer tells the shell", () => {
     it("claims the connection of a peer it lets in", async () => {
         const claimed: string[] = [];
         const host = (await open(ALEX, { createLink: claiming(ALEX, claimed) }))!;
-        const secret = host.share("partner").secret;
+        const secret = (await host.share("partner")).secret;
 
         await greet(SAM, {
             type: "hello",
@@ -754,5 +756,79 @@ describe("what admitting a peer tells the shell", () => {
 
         expect(host.peers()).toEqual([]);
         expect(claimed).toEqual([]);
+    });
+});
+
+/**
+ * A dial that never lands costs its whole deadline, which is ten seconds and
+ * more on a real transport. Awaiting them one after another means a round that
+ * remembers three absent partners takes three of those to open, with the
+ * debater watching a session that does not exist yet.
+ */
+describe("a round that remembers several peers", () => {
+    it("dials them all at once rather than one after another", async () => {
+        const started: string[] = [];
+        let release = (): void => {};
+        const held = new Promise<void>((resolve) => (release = resolve));
+
+        const slow: PeerLinkFactory = async () => ({
+            async endpointId() {
+                return ALEX;
+            },
+            async relayUrl() {
+                return "";
+            },
+            async listen() {},
+            async dial(target: string) {
+                started.push(target);
+                await held;
+                throw new Error("that peer did not answer");
+            },
+            async stop() {},
+        });
+
+        const opening = open(ALEX, { createLink: slow, dial: [SAM, STRANGER, "kim"] });
+        await settle();
+        expect(started).toEqual([SAM, STRANGER, "kim"]);
+
+        // And the session still waits for all of them, so a caller that dialled
+        // a contact on the way up has its answer by the time it returns.
+        release();
+        expect(await opening).not.toBeNull();
+    });
+
+    /**
+     * Contacting a relay is a round trip to whichever server is nearest, and
+     * the answer is only ever needed by a ticket. Holding the session behind
+     * it would delay every dial that puts a reopened round's partners back,
+     * for a question nobody has asked yet.
+     */
+    it("comes up and dials while the relay is still being found", async () => {
+        const dialled: string[] = [];
+        let answer = (_url: string): void => {};
+        const pending = new Promise<string>((resolve) => (answer = resolve));
+
+        const late: PeerLinkFactory = async () => ({
+            async endpointId() {
+                return ALEX;
+            },
+            relayUrl: () => pending,
+            async listen() {},
+            async dial(target: string) {
+                dialled.push(target);
+                throw new Error("that peer did not answer");
+            },
+            async stop() {},
+        });
+
+        const session = (await open(ALEX, { createLink: late, dial: [SAM] }))!;
+        expect(session).not.toBeNull();
+        expect(dialled).toEqual([SAM]);
+
+        // The ticket is the one thing that waits, because it is the one thing
+        // that carries the answer.
+        const minted = session.share("partner");
+        answer("https://usw1-1.relay.n0.iroh.link./");
+        expect((await minted).relayUrl).toBe("https://usw1-1.relay.n0.iroh.link./");
     });
 });

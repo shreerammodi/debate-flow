@@ -33,6 +33,13 @@ export interface Sidecar {
     peers: string[];
     /** Of those peers, the ones admitted read-only. A grant the contact table never saw. */
     coaches: string[];
+    /**
+     * Where each of those peers was last found. Addressing and not admission,
+     * so a file written by a build that did not record it reads as a round
+     * whose peers are reachable across the room and no further, which is what
+     * that build could do anyway.
+     */
+    relays: Record<string, string>;
     doc: CollabDoc;
 }
 
@@ -41,6 +48,7 @@ export function serializeSidecar(input: {
     flowHash: string;
     peers: string[];
     coaches: string[];
+    relays: Record<string, string>;
     doc: CollabDoc;
 }): string {
     const sidecar: Sidecar = { version: SIDECAR_VERSION, ...input };
@@ -69,6 +77,22 @@ function endpointIds(value: unknown): string[] {
     return value.filter((p): p is string => typeof p === "string" && isEndpointId(p));
 }
 
+/**
+ * Whatever of a stored table still names a peer and an https relay. The value
+ * is a dial target the next time this round opens, so a scheme somebody chose
+ * by hand is not one: an iroh relay is https and nothing else.
+ */
+function relayUrls(value: unknown): Record<string, string> {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+    const out: Record<string, string> = Object.create(null);
+    for (const [peer, url] of Object.entries(value as Record<string, unknown>)) {
+        if (!isEndpointId(peer)) continue;
+        if (typeof url !== "string" || !url.startsWith("https://")) continue;
+        out[peer] = url;
+    }
+    return out;
+}
+
 /** The recovered sidecar, or null for every reason it cannot be trusted. */
 export function parseSidecar(
     text: string | null,
@@ -94,6 +118,7 @@ export function parseSidecar(
         flowHash,
         peers: endpointIds(s.peers),
         coaches: endpointIds(s.coaches),
+        relays: relayUrls(s.relays),
         doc: s.doc,
     };
 }

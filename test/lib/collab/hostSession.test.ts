@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { seedDoc } from "@/lib/collab/doc";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
-import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 import { HEARTBEAT_MS } from "@/lib/collab/presence";
+import { knownRoundRelays } from "@/lib/collab/roundPeers";
 import { startCollabSession, type CollabSession } from "@/lib/collab/session";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
@@ -111,7 +112,7 @@ async function hostAndGuest(): Promise<{
         apply: hostSide.apply,
         schedule: clock.schedule,
     }))!;
-    const ticket = encodeTicket(host.share("partner"));
+    const ticket = encodeTicket(await host.share("partner"));
 
     const guestSide = replicaFor(shared, "sam");
     const guest = (await startCollabSession({
@@ -139,6 +140,47 @@ describe("a hosted session", () => {
     it("reports the connection type each peer got", async () => {
         const { host } = await hostAndGuest();
         expect(["direct", "relayed"]).toContain(host.peers()[0].connectionType);
+    });
+
+    /**
+     * A guest two networks apart has an EndpointId and nothing to send a
+     * packet to: mDNS answers across a room and no further. The ticket is the
+     * only thing that has been handed over by then, so it is what carries the
+     * host's relay, and the dial that redeems it looks there.
+     */
+    it("mints a ticket naming where the host is, and dials there", async () => {
+        await hostAndGuest();
+        const dials = net.calls.filter((c) => c.op === "dial");
+        expect(dials).toEqual([{ op: "dial", endpointId: ALEX, relayUrl: memoryRelay(ALEX) }]);
+    });
+
+    it("names no relay in the ticket when the host would not use one", async () => {
+        useFlowStore.setState({ collabRelayEnabled: false });
+        const hostSide = replicaFor(shared, ALEX);
+        const host = (await startCollabSession({
+            createLink: net.create(ALEX),
+            roundId: shared.id,
+            appVersion: "0.11.0",
+            doc: hostSide.doc,
+            apply: hostSide.apply,
+            schedule: clock.schedule,
+        }))!;
+        expect((await host.share("partner")).relayUrl).toBeUndefined();
+    });
+
+    /**
+     * The ticket is spent once. Every reconnect after it dials by EndpointId,
+     * so where the peer was found has to outlive the connection that found it
+     * or a link that blips two networks apart never comes back.
+     */
+    it("remembers where each peer was found, on both sides", async () => {
+        const { host, guest } = await hostAndGuest();
+        expect(host.peers()[0].relayUrl).toBe(memoryRelay("sam"));
+        expect(guest.peers()[0].relayUrl).toBe(memoryRelay(ALEX));
+        expect(knownRoundRelays(shared.id)).toEqual({
+            sam: memoryRelay("sam"),
+            [ALEX]: memoryRelay(ALEX),
+        });
     });
 
     it("refuses an unknown peer with no ticket, and shows nothing", async () => {
@@ -217,7 +259,7 @@ describe("the name each side broadcasts", () => {
             displayName: hostName,
             schedule: clock.schedule,
         }))!;
-        const ticket = encodeTicket(host.share("partner"));
+        const ticket = encodeTicket(await host.share("partner"));
 
         const guestSide = replicaFor(shared, "sam");
         const guest = (await startCollabSession({
@@ -294,7 +336,7 @@ describe("editing across a session", () => {
             apply: hostSide.apply,
             schedule: clock.schedule,
         }))!;
-        const ticket = encodeTicket(host.share("coach"));
+        const ticket = encodeTicket(await host.share("coach"));
 
         const coachSide = replicaFor(shared, "coach");
         const coach = (await startCollabSession({

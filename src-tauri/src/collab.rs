@@ -27,11 +27,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use iroh::endpoint::{presets, Connection, PortmapperConfig, TransportAddrUsage};
-use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey};
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use parking_lot::Mutex;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -106,6 +106,10 @@ struct PeerEvent {
     conn_id: String,
     endpoint_id: String,
     connection_type: String,
+    /// The relay this peer is homed on, when the path runs through one. What
+    /// makes a peer dialable again from another network: an EndpointId alone
+    /// is a name, and mDNS only answers for it across one room.
+    relay_url: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -161,13 +165,14 @@ impl Events for AppHandle {
     }
 }
 
-/// What a dial hands back. The connection type rides along rather than
-/// arriving as an event, so the caller never has to correlate the two.
+/// What a dial hands back. The path rides along rather than arriving as an
+/// event, so the caller never has to correlate the two.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DialResult {
     conn_id: String,
     connection_type: String,
+    relay_url: Option<String>,
 }
 
 /// One live connection: what to write to it, everything that has to go when it
@@ -555,41 +560,74 @@ fn spawn_conn(
     );
 }
 
-/// Direct or relayed, as the endpoint actually observes it.
+/// How a peer is reached, and where it is homed.
 ///
-/// An address is only direct when it is an IP path that is actually in use.
-/// Anything else reports relayed: a relay disclosure that has to guess must
-/// guess in the direction that over-discloses, never under.
-async fn connection_type(endpoint: &Endpoint, remote: EndpointId) -> String {
-    match endpoint.remote_info(remote).await {
-        Some(info)
-            if info
-                .addrs()
-                .any(|a| matches!(a.usage(), TransportAddrUsage::Active) && a.addr().is_ip()) =>
-        {
-            "direct".to_string()
-        }
-        _ => "relayed".to_string(),
-    }
+/// The first half is direct or relayed, as the endpoint actually observes it:
+/// a path is only direct when it is an IP path that is actually in use, and
+/// anything else reports relayed, because a relay disclosure that has to guess
+/// must guess in the direction that over-discloses, never under.
+///
+/// The second is the peer's relay, when it has one. That is the one piece of
+/// addressing that survives the connection: an EndpointId names a peer but
+/// does not route to them, and the only lookup this build runs is mDNS, which
+/// answers across a room and no further. Handing it back is what lets a
+/// partner met on one network be dialled again from another.
+async fn remote_path(endpoint: &Endpoint, remote: EndpointId) -> (String, Option<String>) {
+    let Some(info) = endpoint.remote_info(remote).await else {
+        return ("relayed".to_string(), None);
+    };
+    let direct = info
+        .addrs()
+        .any(|a| matches!(a.usage(), TransportAddrUsage::Active) && a.addr().is_ip());
+    let relay = info.addrs().find_map(|a| match a.addr() {
+        TransportAddr::Relay(url) => Some(url.to_string()),
+        _ => None,
+    });
+    (if direct { "direct" } else { "relayed" }.to_string(), relay)
+}
+
+/// Runs one blocking piece of shell work off the thread that draws the window.
+///
+/// A `#[tauri::command]` with no `async` runs on the main thread, and every
+/// wait in this module is seconds wide: binding an endpoint reaches the
+/// network, a dial waits out a peer that may never answer, and a stop waits
+/// for QUIC to say goodbye. On the main thread each of those is a frozen app,
+/// which is what a debater sees as a spinning cursor with no session yet.
+///
+/// A blocking-pool thread rather than an async task, because the work below
+/// drives the collaboration runtime with `block_on`, which panics inside
+/// another runtime's async context and is exactly what a blocking thread is
+/// for.
+async fn off_thread<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|_| "The collaboration shell stopped unexpectedly".to_string())?
 }
 
 #[tauri::command]
-pub fn collab_start(
+pub async fn collab_start(
     app: AppHandle,
     window: WebviewWindow,
-    state: State<'_, CollabState>,
     relay: bool,
     mdns: bool,
 ) -> Result<String, String> {
     let holder = window.label().to_string();
-    start_gated(
-        state.inner(),
-        Arc::new(app),
-        relay,
-        mdns,
-        &holder,
-        crate::config::collab_enabled(),
-    )
+    let events: Arc<dyn Events> = Arc::new(app.clone());
+    off_thread(move || {
+        start_gated(
+            &app.state::<CollabState>(),
+            events,
+            relay,
+            mdns,
+            &holder,
+            crate::config::collab_enabled(),
+        )
+    })
+    .await
 }
 
 /// The bind, behind the switch the debater set.
@@ -714,6 +752,7 @@ fn start(
                     };
                     let remote = conn.remote_id();
                     let conn_id = new_conn_id();
+                    let (connection_type, relay_url) = remote_path(&endpoint, remote).await;
                     // No owner. Which round this connection is for arrives in
                     // its hello, above this module, so every window hears
                     // about it and the one that answers claims it.
@@ -722,7 +761,8 @@ fn start(
                         Event::Peer(PeerEvent {
                             conn_id: conn_id.clone(),
                             endpoint_id: remote.to_string(),
-                            connection_type: connection_type(&endpoint, remote).await,
+                            connection_type,
+                            relay_url,
                         }),
                     );
                     spawn_conn(events, conns, conn_id, None, hello, conn, send, recv);
@@ -745,14 +785,39 @@ fn start(
 }
 
 #[tauri::command]
-pub fn collab_dial(
+pub async fn collab_dial(
     app: AppHandle,
     window: WebviewWindow,
-    state: State<'_, CollabState>,
     endpoint_id: String,
+    relay_url: Option<String>,
 ) -> Result<DialResult, String> {
     let holder = window.label().to_string();
-    dial(state.inner(), Arc::new(app), &holder, &endpoint_id)
+    let events: Arc<dyn Events> = Arc::new(app.clone());
+    let addr = dial_target(&endpoint_id, relay_url.as_deref())?;
+    off_thread(move || dial(&app.state::<CollabState>(), events, &holder, addr)).await
+}
+
+/// Where to send the first packet, from what the webview knows.
+///
+/// The relay is a routing hint and never an authorization: it says where the
+/// peer can be found, which is what an EndpointId on its own does not say.
+/// Without one the only lookup this build runs is mDNS, so a peer on another
+/// network is a name with nowhere to send it, and the dial spends its whole
+/// deadline waiting for an address that is never coming. A ticket carries the
+/// host's, and a peer already met carries its own back on the connection.
+///
+/// A relay that will not parse is dropped rather than refused: the dial can
+/// still land over mDNS or over a path this endpoint already holds, and a
+/// round in the room is not worth losing to a malformed field.
+fn dial_target(endpoint_id: &str, relay_url: Option<&str>) -> Result<EndpointAddr, String> {
+    let remote = EndpointId::from_str(endpoint_id).map_err(|_| "Not an endpoint id".to_string())?;
+    let addr = EndpointAddr::new(remote);
+    Ok(
+        match relay_url.and_then(|url| RelayUrl::from_str(url).ok()) {
+            Some(url) => addr.with_relay_url(url),
+            None => addr,
+        },
+    )
 }
 
 /// Dials a peer, and hands the calling window a connection it owns.
@@ -760,9 +825,9 @@ fn dial(
     state: &CollabState,
     events: Arc<dyn Events>,
     holder: &str,
-    endpoint_id: &str,
+    addr: EndpointAddr,
 ) -> Result<DialResult, String> {
-    let remote = EndpointId::from_str(endpoint_id).map_err(|_| "Not an endpoint id".to_string())?;
+    let remote = addr.id;
     // Cloned out of the guard before the first await. Every other collab
     // command takes this same lock, so holding it across a dial would let one
     // peer that answers slowly - or not at all - freeze every window,
@@ -785,8 +850,8 @@ fn dial(
     // Both waits are deadlined. A peer that answers the handshake and then
     // advertises no bidirectional streams withholds credit for as long as it
     // likes, so bounding only the connect would leave the second half open.
-    let (conn, send, recv, kind) = runtime.block_on(async {
-        let conn = timeout(within, endpoint.connect(EndpointAddr::new(remote), ALPN))
+    let (conn, send, recv, kind, relay) = runtime.block_on(async {
+        let conn = timeout(within, endpoint.connect(addr, ALPN))
             .await
             .map_err(|_| "That peer did not answer".to_string())?
             .map_err(|e| format!("Could not reach that peer: {e}"))?;
@@ -794,8 +859,8 @@ fn dial(
             .await
             .map_err(|_| "That peer opened no stream".to_string())?
             .map_err(|e| format!("Could not open a stream: {e}"))?;
-        let kind = connection_type(&endpoint, remote).await;
-        Ok::<_, String>((conn, send, recv, kind))
+        let (kind, relay) = remote_path(&endpoint, remote).await;
+        Ok::<_, String>((conn, send, recv, kind, relay))
     })?;
 
     let conn_id = new_conn_id();
@@ -809,6 +874,7 @@ fn dial(
     Ok(DialResult {
         conn_id,
         connection_type: kind,
+        relay_url: relay,
     })
 }
 
@@ -909,8 +975,57 @@ fn close(state: &CollabState, holder: &str, conn_id: &str) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn collab_stop(window: WebviewWindow, state: State<'_, CollabState>) -> Result<(), String> {
-    stop(state.inner(), window.label())
+pub async fn collab_stop(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    let holder = window.label().to_string();
+    off_thread(move || stop(&app.state::<CollabState>(), &holder)).await
+}
+
+/// Where this endpoint can be reached from another network, for the ticket
+/// that carries it.
+///
+/// A relay is the one address a peer behind a router can hand out: the public
+/// IP this endpoint discovers is the router's, and a hole punched through it
+/// belongs to a path that does not exist yet. So the ticket names the relay,
+/// the guest's first packet arrives over it, and the two sides then find each
+/// other directly with no registry having heard of either.
+///
+/// Empty rather than an error for every reason it cannot be said: relaying is
+/// off, no relay answered in time, or no endpoint is bound. All three mean the
+/// same thing to the ticket, which is a round shareable across the room and
+/// not across the country.
+#[tauri::command]
+pub async fn collab_relay_url(app: AppHandle) -> Result<String, String> {
+    off_thread(move || Ok(relay_url(&app.state::<CollabState>()))).await
+}
+
+/// How long the ticket waits for a relay to answer. Contacting one is a round
+/// trip to whichever server is nearest, and a debater is holding a dialog open
+/// for it, so a slow answer costs the ticket its relay rather than the click.
+const ONLINE_DEADLINE: Duration = Duration::from_secs(8);
+
+fn relay_url(state: &CollabState) -> String {
+    let (runtime, endpoint) = {
+        let held = state.live.lock();
+        let Some(live) = held.as_ref() else {
+            return String::new();
+        };
+        if !live.relay {
+            return String::new();
+        }
+        (live.runtime.clone(), live.endpoint.clone())
+    };
+    runtime.block_on(async {
+        let _ = timeout(ONLINE_DEADLINE, endpoint.online()).await;
+        endpoint
+            .addr()
+            .addrs
+            .into_iter()
+            .find_map(|a| match a {
+                TransportAddr::Relay(url) => Some(url.to_string()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// Lets go of one holder's share of the endpoint.
@@ -1015,6 +1130,46 @@ mod tests {
     fn relay_off_disables_relays_outright() {
         assert_eq!(relay_mode(false), RelayMode::Disabled);
         assert_eq!(relay_mode(true), RelayMode::Default);
+    }
+
+    /// A peer on another network is an EndpointId with nowhere to send the
+    /// first packet, so the relay a ticket carries is what makes the dial land
+    /// at all. It rides in the address rather than in the handshake, because
+    /// it says where the peer is and not who may talk to them.
+    #[test]
+    fn a_relay_hint_becomes_part_of_the_address() {
+        let peer = SecretKey::generate().public().to_string();
+
+        let bare = dial_target(&peer, None).expect("an id is enough to name a peer");
+        assert!(bare.is_empty(), "an id alone routes nowhere");
+
+        let homed = dial_target(&peer, Some("https://usw1-1.relay.n0.iroh.link./"))
+            .expect("a relay is where the peer is");
+        assert_eq!(
+            homed
+                .addrs
+                .iter()
+                .filter_map(|a| match a {
+                    TransportAddr::Relay(url) => Some(url.to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec!["https://usw1-1.relay.n0.iroh.link./"]
+        );
+        assert!(
+            !homed.addrs.iter().any(TransportAddr::is_ip),
+            "and nothing about this machine's own network"
+        );
+
+        // A round in the room still has mDNS and the paths the endpoint
+        // already holds, so junk in this field costs the hint and not the dial.
+        let junk = dial_target(&peer, Some("not a url")).expect("a bad hint is dropped");
+        assert!(junk.is_empty());
+
+        assert_eq!(
+            dial_target("bogus", None).unwrap_err(),
+            "Not an endpoint id"
+        );
     }
 
     #[test]
@@ -1277,6 +1432,41 @@ mod identity {
     }
 }
 
+/// The commands that must never run on the thread that draws the window.
+#[cfg(test)]
+mod off_the_main_thread {
+    /// Every command here waits on the network for seconds at a time: a bind
+    /// reaches a relay, a dial waits out a peer that may never answer, and a
+    /// stop waits for QUIC to say goodbye. Tauri runs a command declared
+    /// without `async` on the main thread, so dropping the keyword on any of
+    /// these turns that wait into a frozen app - which is what a debater sees
+    /// as a spinning cursor after clicking Share, with nothing to click.
+    ///
+    /// The rest of this module's commands are a lock and a channel push, and
+    /// belong where they are.
+    const OFF_THREAD: [&str; 4] = [
+        "collab_start",
+        "collab_dial",
+        "collab_stop",
+        "collab_relay_url",
+    ];
+
+    #[test]
+    fn every_command_that_waits_on_the_network_is_async() {
+        let source = include_str!("collab.rs");
+        for name in OFF_THREAD {
+            assert!(
+                source.contains(&format!("pub async fn {name}(")),
+                "{name} must be an async command"
+            );
+            assert!(
+                !source.contains(&format!("pub fn {name}(")),
+                "{name} is declared without async somewhere"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod preset_guard {
     /// Everything the shipping half of this module must not contain, because
@@ -1453,6 +1643,18 @@ mod loopback {
             })
         }
 
+        /// How each announced peer is reached, and where it is homed.
+        fn paths(&self) -> Vec<(String, Option<String>)> {
+            self.seen
+                .lock()
+                .iter()
+                .filter_map(|(_, event)| match event {
+                    Event::Peer(e) => Some((e.connection_type.clone(), e.relay_url.clone())),
+                    _ => None,
+                })
+                .collect()
+        }
+
         fn pick(&self, of: impl Fn(&Event) -> Option<String>) -> Vec<String> {
             self.seen
                 .lock()
@@ -1525,6 +1727,22 @@ mod loopback {
                     .max_concurrent_bidi_streams(0u32.into())
                     .build(),
             )
+        }
+
+        /// A peer that can reach a relay, for the one test that leaves
+        /// loopback. It waits until it is online, because an endpoint with no
+        /// relay of its own cannot be answered over one.
+        fn relaying() -> Self {
+            Self::with(async {
+                let endpoint = Endpoint::builder(presets::Minimal)
+                    .alpns(vec![ALPN.to_vec()])
+                    .relay_mode(RelayMode::Default)
+                    .bind()
+                    .await
+                    .expect("bind");
+                let _ = timeout(ONLINE_DEADLINE, endpoint.online()).await;
+                endpoint
+            })
         }
 
         /// A peer with a one-kilobyte receive window, so the host's writer
@@ -1873,10 +2091,14 @@ mod loopback {
 
         let stall = Guest::ungenerous();
         stall.accept_and_stall();
-        let target = stall.endpoint.id().to_string();
+        // The full address, so the dial actually reaches this peer and hangs
+        // on the credit it withholds. By EndpointId alone there is nothing to
+        // send the first packet to, and the deadline this proves would never
+        // be the thing that ended the wait.
+        let target = stall.endpoint.addr();
 
         std::thread::scope(|threads| {
-            let dialling = threads.spawn(|| dial(&state, events.clone(), "session", &target));
+            let dialling = threads.spawn(|| dial(&state, events.clone(), "session", target));
 
             // The lock is free while the dial waits, so this returns instead of
             // queueing behind it.
@@ -2244,6 +2466,113 @@ mod loopback {
 
         start_gated(&state, events.clone(), false, false, "session", true).expect("bind");
         assert!(state.live.lock().is_some(), "the switch is what gates it");
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// The relay in a ticket is what a guest on another network sends its
+    /// first packet to, so a session with nothing to name says so plainly
+    /// rather than putting a stale or invented address in front of a debater.
+    #[test]
+    fn a_session_with_no_relay_puts_none_in_the_ticket() {
+        let state = CollabState::default();
+        assert_eq!(relay_url(&state), "", "nothing is bound");
+
+        let events = Arc::new(Recorder::default());
+        start(&state, events, false, false, "session").expect("bind");
+        assert_eq!(
+            relay_url(&state),
+            "",
+            "relaying is off, so there is no relay to be reached at"
+        );
+        stop(&state, "session").expect("stop");
+    }
+
+    /// Every wait in this module happens on the collaboration runtime, driven
+    /// with `block_on`, and moving the commands off the main thread means
+    /// doing that from a thread the shell's own runtime handed out. Tokio
+    /// panics if that thread is one running async tasks, so what makes this
+    /// legal is `off_thread` choosing a blocking one. A future refactor onto
+    /// `spawn` would compile and then panic on the first click.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_command_can_drive_the_collaboration_runtime_from_off_the_main_thread() {
+        let events = Arc::new(Recorder::default());
+        let state = Arc::new(CollabState::default());
+
+        let bound = state.clone();
+        off_thread(move || start(&bound, events, false, false, "session"))
+            .await
+            .expect("bind");
+
+        let held = state.clone();
+        off_thread(move || stop(&held, "session"))
+            .await
+            .expect("stop");
+        assert!(state.live.lock().is_none(), "and the endpoint came down");
+    }
+
+    /// A peer met over loopback is reached directly and is homed on no relay,
+    /// which is the answer that must reach the webview: an invented relay
+    /// would be saved against this contact and dialled forever.
+    #[test]
+    fn a_direct_peer_reports_no_relay() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (_conn, mut send, _recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+
+        assert_eq!(events.paths(), vec![("direct".to_string(), None)]);
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// Two networks apart, over the real relay fleet.
+    ///
+    /// Ignored, because it is the one test here that reaches the internet:
+    /// the rest of this module is loopback on purpose. Run it by hand with
+    /// `cargo test --lib relay_only -- --ignored`.
+    ///
+    /// What it holds is the whole cross-network claim. The guest is handed the
+    /// host's EndpointId and the host's relay and nothing else - no IP, no
+    /// mDNS, no lookup service - which is exactly what a pasted ticket
+    /// carries. If the link stands up from that, a debater on a hotspot can
+    /// reach a partner on home wifi.
+    #[test]
+    #[ignore]
+    fn relay_only_addressing_reaches_a_host_with_no_other_route() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), true, false, "session").expect("bind");
+
+        let host_id = state.live.lock().as_ref().unwrap().endpoint_id.clone();
+        let relay = relay_url(&state);
+        assert!(relay.starts_with("https://"), "the host found a relay");
+
+        let guest = Guest::relaying();
+
+        // The negative half, and what makes the rest mean anything: by
+        // EndpointId alone there is nowhere to send the first packet, which
+        // is the ticket this build used to mint.
+        assert!(
+            guest
+                .try_dial(dial_target(&host_id, None).expect("an id names the host"))
+                .is_err(),
+            "a name with no address reaches nobody"
+        );
+
+        let addr = dial_target(&host_id, Some(&relay)).expect("the ticket's address");
+        assert!(
+            addr.ip_addrs().next().is_none(),
+            "the guest is told a relay and nothing about the host's network"
+        );
+
+        let (_conn, mut send, _recv) = guest.dial(addr);
+        guest.write(&mut send, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
 
         stop(&state, "session").expect("stop");
     }

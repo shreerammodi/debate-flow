@@ -59,6 +59,7 @@ describe("recoverReplica", () => {
                 flowHash: hashText(text),
                 peers: [],
                 coaches: [],
+                relays: {},
                 doc,
             }),
         );
@@ -76,6 +77,7 @@ describe("recoverReplica", () => {
                 flowHash: "stale000",
                 peers: [],
                 coaches: [],
+                relays: {},
                 doc,
             }),
         );
@@ -110,6 +112,7 @@ describe("recoverReplica", () => {
                 flowHash: hashText(text),
                 peers: [SAM, KIM],
                 coaches: [],
+                relays: {},
                 doc: seedDoc(round),
             }),
         );
@@ -129,6 +132,7 @@ describe("recoverReplica", () => {
                 flowHash: hashText(text),
                 peers: [SAM],
                 coaches: [],
+                relays: {},
                 doc: seedDoc(round),
             }),
         );
@@ -158,6 +162,7 @@ describe("persistReplica", () => {
                 flowHash: hashText(text),
                 peers: [SAM],
                 coaches: [],
+                relays: {},
                 doc: seedDoc(round),
             }),
         );
@@ -178,6 +183,7 @@ describe("persistReplica", () => {
                 flowHash: hashText(text),
                 peers: [SAM, KIM],
                 coaches: [KIM],
+                relays: {},
                 doc: seedDoc(round),
             }),
         );

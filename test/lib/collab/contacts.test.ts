@@ -43,6 +43,23 @@ describe("resolveContacts", () => {
         expect(resolveContacts(coach)).toEqual(coach);
     });
 
+    /**
+     * The relay is where this partner was last found, and the only thing that
+     * reaches them from another network. It is also a dial target off a
+     * hand-editable file, so a scheme somebody chose is dropped - which costs
+     * the address and leaves the contact reachable in the room.
+     */
+    it("keeps an https relay and drops anything else, keeping the contact", () => {
+        const homed = { [ALEX]: { name: "Alex", role: "partner", relay: "https://r.example/" } };
+        expect(resolveContacts(homed)).toEqual(homed);
+
+        for (const relay of ["http://r.example/", "ws://r.example/", "", 7]) {
+            expect(resolveContacts({ [ALEX]: { name: "Alex", role: "partner", relay } })).toEqual({
+                [ALEX]: { name: "Alex", role: "partner" },
+            });
+        }
+    });
+
     it("keeps the good entries beside a bad one", () => {
         const mixed = { [ALEX]: { name: "Alex", role: "partner" }, [RIN]: { name: "" } };
         expect(Object.keys(resolveContacts(mixed))).toEqual([ALEX]);

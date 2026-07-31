@@ -17,7 +17,7 @@ import type { FlowRound } from "@/lib/model/flow";
 import { collabSettings } from "./enabled";
 import { hashText } from "./hash";
 import { getReplica, healReplica, replicaRoundId, seedReplica } from "./replica";
-import { knownRoundCoaches, knownRoundPeers, setRoundPeers } from "./roundPeers";
+import { knownRoundCoaches, knownRoundPeers, knownRoundRelays, setRoundPeers } from "./roundPeers";
 import { parseSidecar, serializeSidecar } from "./sidecar";
 import { getSidecarFs } from "./sidecarFs";
 import type { CollabDoc } from "./types";
@@ -43,7 +43,7 @@ export async function recoverReplica(round: FlowRound, flowText: string): Promis
     // because it is the only record of them. Without one the round keeps what
     // it already knows: one taken from an invitation knows its host before any
     // sidecar for it exists.
-    if (recovered) setRoundPeers(round.id, recovered.peers, recovered.coaches);
+    if (recovered) setRoundPeers(round.id, recovered.peers, recovered.coaches, recovered.relays);
     return knownRoundPeers(round.id);
 }
 
@@ -73,6 +73,10 @@ export async function adoptJoinedDoc(
                 flowHash: hashText(flowText),
                 peers,
                 coaches: [],
+                // Where the ticket said the host is, recorded before this file
+                // has ever been opened: the session that opens it re-dials the
+                // host, and by EndpointId alone that dial reaches one room.
+                relays: knownRoundRelays(doc.roundId),
                 doc,
             }),
         );
@@ -97,6 +101,7 @@ export async function persistReplica(round: FlowRound, flowText: string): Promis
                 flowHash: hashText(flowText),
                 peers: knownRoundPeers(round.id),
                 coaches: knownRoundCoaches(round.id),
+                relays: knownRoundRelays(round.id),
                 doc,
             }),
         );

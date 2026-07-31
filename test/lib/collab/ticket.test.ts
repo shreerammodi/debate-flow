@@ -80,6 +80,35 @@ describe("encodeTicket and parseTicket", () => {
         const t = mintTicket({ ...input, role: "coach" });
         expect(parseTicket(encodeTicket(t))!.role).toBe("coach");
     });
+
+    it("carries where the host can be found, so a guest elsewhere can reach it", () => {
+        const t = mintTicket({ ...input, relayUrl: "https://usw1-1.relay.n0.iroh.link./" });
+        expect(parseTicket(encodeTicket(t))!.relayUrl).toBe("https://usw1-1.relay.n0.iroh.link./");
+    });
+
+    // A host running with relaying off has no relay to name, and a blank
+    // field in a pasted ticket reads as a broken one.
+    it("names no relay at all when the host has none", () => {
+        expect("relayUrl" in mintTicket({ ...input, relayUrl: "" })).toBe(false);
+        expect(parseTicket(encodeTicket(mintTicket(input)))!.relayUrl).toBeUndefined();
+    });
+
+    // The relay is a dial target the moment this returns, so a scheme
+    // somebody chose is dropped rather than followed. A ticket without one
+    // still opens the round for a guest in the same room.
+    it("drops a relay that is not an https address, and keeps the ticket", () => {
+        for (const relayUrl of [
+            "http://relay.example/",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            `https://relay.example/${"x".repeat(300)}`,
+            42,
+        ]) {
+            const parsed = parseTicket(wrap({ ...mintTicket(input), relayUrl }));
+            expect(parsed).not.toBeNull();
+            expect(parsed!.relayUrl).toBeUndefined();
+        }
+    });
 });
 
 describe("the endpoint a ticket names", () => {

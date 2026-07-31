@@ -28,7 +28,7 @@ import { merge } from "./merge";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
 import { adoptJoinedDoc } from "./persist";
 import { incomingDoc } from "./rfdSync";
-import { rememberRoundPeers } from "./roundPeers";
+import { rememberRoundPeers, rememberRoundRelay } from "./roundPeers";
 import { parseTicket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
 
@@ -112,7 +112,10 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     try {
         const endpointId = await link.endpointId();
         const name = deps.displayName ?? (await broadcastName());
-        const conn = await link.dial(host.endpointId);
+        // Where the ticket says the host is. Without it the dial has only an
+        // EndpointId, which mDNS answers for across a room and nowhere else -
+        // so a partner on another network is unreachable by name alone.
+        const conn = await link.dial(host.endpointId, ticket?.relayUrl ?? null);
 
         const raw = await new Promise<CollabDoc>((resolve, reject) => {
             conn.onMessage((msg: WireMessage) => {
@@ -180,6 +183,9 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         // The file about to be opened has no sidecar yet, so this is the only
         // record of who to re-dial once it is.
         rememberRoundPeers(doc.roundId, [host.endpointId]);
+        // And where the host was, for the same reason: the session that opens
+        // this file re-dials by EndpointId, which routes across a room only.
+        if (ticket?.relayUrl) rememberRoundRelay(doc.roundId, host.endpointId, ticket.relayUrl);
 
         if (existing)
             return {

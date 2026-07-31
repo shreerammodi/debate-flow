@@ -103,7 +103,7 @@ describe("three peers in a star", () => {
                 appVersion: "0.11.0",
                 doc: s.doc,
                 apply: s.apply,
-                ticket: encodeTicket(host.share("partner")),
+                ticket: encodeTicket(await host.share("partner")),
                 dial: [HOST],
                 schedule: clock.schedule,
             }))!;
@@ -145,7 +145,7 @@ describe("three peers in a star", () => {
                 appVersion: "0.11.0",
                 doc: s.doc,
                 apply: s.apply,
-                ticket: encodeTicket(host.share("partner")),
+                ticket: encodeTicket(await host.share("partner")),
                 dial: [HOST],
                 schedule: clock.schedule,
             }))!;

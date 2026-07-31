@@ -21,10 +21,21 @@ import {
 } from "./peerLink";
 
 export interface MemoryCall {
-    op: "create" | "endpointId" | "listen" | "dial" | "stop";
+    op: "create" | "endpointId" | "relayUrl" | "listen" | "dial" | "stop";
     /** For a dial, the endpoint reached out to; otherwise the local one. */
     endpointId?: string;
+    /** For a dial, the relay it was told to look on, if it was told one. */
+    relayUrl?: string | null;
     config?: PeerLinkConfig;
+}
+
+/**
+ * The relay an endpoint on this net is homed on. Not a server anyone can
+ * reach: `.invalid` never resolves, so a test that leaks one into a real dial
+ * fails rather than wanders onto the network.
+ */
+export function memoryRelay(endpointId: string): string {
+    return `https://relay.invalid/${endpointId}`;
 }
 
 export interface MemoryNet {
@@ -57,6 +68,10 @@ function connect(
         return {
             id,
             connectionType: () => (relayed ? "relayed" : "direct"),
+            // Where the far side is homed, which is what a link learns from a
+            // connection and a saved contact keeps. A direct peer is in the
+            // room and has no relay to report.
+            relayUrl: () => (relayed ? memoryRelay(id) : null),
             send(msg) {
                 if (!open) return;
                 // A real link carries bytes: it serializes, and a line that
@@ -102,13 +117,19 @@ export function createMemoryNet(): MemoryNet {
                         calls.push({ op: "endpointId", endpointId });
                         return endpointId;
                     },
+                    async relayUrl() {
+                        calls.push({ op: "relayUrl", endpointId });
+                        // A link that will not use a relay has none to name,
+                        // which is what puts no relay in its ticket.
+                        return config.relay ? memoryRelay(endpointId) : "";
+                    },
                     async listen(onPeer) {
                         calls.push({ op: "listen", endpointId });
                         const self = endpoints.get(endpointId);
                         if (self) self.onPeer = onPeer;
                     },
-                    async dial(target) {
-                        calls.push({ op: "dial", endpointId: target });
+                    async dial(target, relayUrl) {
+                        calls.push({ op: "dial", endpointId: target, relayUrl: relayUrl ?? null });
                         const far = endpoints.get(target);
                         if (!far?.onPeer) throw new Error(`no peer listening at ${target}`);
                         const { dialler, listener } = connect(

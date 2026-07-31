@@ -116,6 +116,7 @@ pub fn run() {
             collab::collab_close,
             collab::collab_dial,
             collab::collab_endpoint_id,
+            collab::collab_relay_url,
             collab::collab_send,
             collab::collab_start,
             collab::collab_stop,

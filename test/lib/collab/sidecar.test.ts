@@ -13,6 +13,7 @@ const text = serializeSidecar({
     flowHash: "deadbeef",
     peers: [SAM, KIM],
     coaches: [KIM],
+    relays: {},
     doc,
 });
 
@@ -44,6 +45,32 @@ describe("parseSidecar", () => {
         const got = parseSidecar(JSON.stringify(edited), round.id, "deadbeef")!;
         expect(got.peers).toEqual([SAM]);
         expect(got.coaches).toEqual([]);
+    });
+
+    /**
+     * A relay is a dial target the next time this round opens, so a scheme
+     * somebody chose by hand is not one. Addressing and not admission, so junk
+     * here drops the address and never the round.
+     */
+    it("keeps only the https relays, against the peers they name", () => {
+        const edited = JSON.parse(text);
+        edited.relays = {
+            [SAM]: "https://usw1-1.relay.n0.iroh.link./",
+            [KIM]: "http://relay.example/",
+            nobody: "https://relay.example/",
+            __proto__: "https://relay.example/",
+        };
+        const got = parseSidecar(JSON.stringify(edited), round.id, "deadbeef")!;
+        expect(got.relays).toEqual({ [SAM]: "https://usw1-1.relay.n0.iroh.link./" });
+    });
+
+    // Written by a build that recorded no addresses, which is a round whose
+    // peers are reachable across the room and no further - exactly what that
+    // build could do. Not a reason to throw the document away.
+    it("reads a sidecar with no relays at all as a round with none", () => {
+        const noRelays = JSON.parse(text);
+        delete noRelays.relays;
+        expect(parseSidecar(JSON.stringify(noRelays), round.id, "deadbeef")!.relays).toEqual({});
     });
 
     it("discards a sidecar whose flow has moved on", () => {

@@ -84,9 +84,37 @@ function offerToSave(peers: CollabPeer[]): void {
             duration: 20_000,
             action: {
                 label: "Save",
-                onClick: () => saveContact(peer.endpointId, { name, role: peer.role }),
+                // Where they were reached goes with them. Without it the saved
+                // contact is dialable across the room and nowhere else, which
+                // is not what a partner saved on a tournament trip expects of
+                // the next round from a hotel.
+                onClick: () =>
+                    saveContact(peer.endpointId, {
+                        name,
+                        role: peer.role,
+                        ...(peer.relayUrl ? { relay: peer.relayUrl } : {}),
+                    }),
             },
         });
+    }
+}
+
+/**
+ * Keeps a saved contact's relay in step with where they actually are.
+ *
+ * Which relay a peer is homed on follows latency, so a partner who flew to a
+ * tournament is on a different one than the row saved at home. The saved
+ * address is the only thing that reaches them on a round that has no record of
+ * its own, so a stale one is a contact that quietly stops working. Written
+ * only when it changed, because the table lives in the config file.
+ */
+function refreshContactRelays(peers: CollabPeer[]): void {
+    const contacts = useFlowStore.getState().contacts;
+    for (const peer of peers) {
+        if (!peer.relayUrl) continue;
+        const saved = contactOf(contacts, peer.endpointId);
+        if (!saved || saved.relay === peer.relayUrl) continue;
+        saveContact(peer.endpointId, { ...saved, relay: peer.relayUrl });
     }
 }
 
@@ -118,6 +146,7 @@ function publish(peers: CollabPeer[]): void {
             session.roundId,
             view.map((p) => p.endpointId),
         );
+    refreshContactRelays(peers);
     offerToSave(peers);
 }
 

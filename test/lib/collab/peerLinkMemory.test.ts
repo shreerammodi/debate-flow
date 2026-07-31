@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PeerConn, PeerLinkConfig, WireMessage } from "@/lib/collab/peerLink";
-import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 
 const CONFIG: PeerLinkConfig = { discovery: "mdns", relay: true };
 
@@ -106,12 +106,37 @@ describe("peerLinkMemory", () => {
         expect(net.calls[0].config).toEqual(CONFIG);
     });
 
-    it("names the endpoint a dial reached out to", async () => {
+    it("names the endpoint a dial reached out to, and where it looked", async () => {
         const net = createMemoryNet();
         const guest = await net.create("sam")(CONFIG);
         await expect(guest.dial("alex")).rejects.toThrow();
+        await expect(guest.dial("kim", "https://relay.example/1")).rejects.toThrow();
         expect(net.calls.filter((c) => c.op === "dial")).toEqual([
-            { op: "dial", endpointId: "alex" },
+            { op: "dial", endpointId: "alex", relayUrl: null },
+            { op: "dial", endpointId: "kim", relayUrl: "https://relay.example/1" },
         ]);
+    });
+
+    it("is homed on a relay exactly when it would use one", async () => {
+        const net = createMemoryNet();
+        const relaying = await net.create("alex")({ discovery: "mdns", relay: true });
+        const direct = await net.create("sam")({ discovery: "mdns", relay: false });
+        expect(await relaying.relayUrl()).toBe(memoryRelay("alex"));
+        expect(await direct.relayUrl()).toBe("");
+    });
+
+    it("reports where a relayed peer is homed, and nothing for a direct one", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")({ discovery: "mdns", relay: true });
+        const guest = await net.create("sam")({ discovery: "mdns", relay: true });
+        let inbound: PeerConn | null = null;
+        await host.listen((c) => (inbound = c));
+
+        const out = await guest.dial("alex");
+        expect(out.relayUrl()).toBe(memoryRelay("alex"));
+        expect(inbound!.relayUrl()).toBe(memoryRelay("sam"));
+
+        const near = await net.create("kim")({ discovery: "mdns", relay: false });
+        expect((await near.dial("alex")).relayUrl()).toBeNull();
     });
 });

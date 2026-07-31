@@ -156,6 +156,21 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Fixed
 
+- A shared round reaches a partner on another network. An invite carried the
+  host's identity and no way to reach it, and the only lookup ebb runs answers
+  across one room, so two laptops in the same building found each other and two
+  on different networks did not: the join sat for ten seconds and then said it
+  could not reach that peer. An invite now names the relay the host is on, and
+  ebb remembers where each partner was last found, beside the round and beside
+  the contact, so a reconnect and a saved partner work from anywhere too. That
+  address travels in the invite you send by hand. Nothing about this install is
+  published anywhere, and an idle ebb still says nothing about itself.
+- The app no longer freezes while a shared session starts, dials, or ends.
+  Every one of those waits on the network for seconds at a time, and each was
+  run on the thread that draws the window, so clicking Share this round could
+  leave the cursor spinning with nothing to click. A round that remembers
+  several partners also dialled them one after another, spending each one's
+  full timeout in turn; it now reaches all of them at once.
 - Opening a flow you once shared no longer puts you back on the network. A
   `.ebb` remembers the partners it was shared with, and reopening it - from
   Finder, from a file association, from a second launch - reconnected to every

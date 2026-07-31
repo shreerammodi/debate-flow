@@ -75,6 +75,9 @@ export function createFaultNet(): FaultNet {
             return {
                 id: farId,
                 connectionType: () => "direct",
+                // Every link on this net is in the room, so nothing here is
+                // homed on a relay.
+                relayUrl: () => null,
                 send(msg) {
                     if (!open) return;
                     // Serialized at send time, so a queued message carries the
@@ -121,6 +124,9 @@ export function createFaultNet(): FaultNet {
                 return {
                     async endpointId() {
                         return endpointId;
+                    },
+                    async relayUrl() {
+                        return "";
                     },
                     async listen(onPeer) {
                         const self = endpoints.get(endpointId);

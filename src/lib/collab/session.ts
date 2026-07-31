@@ -38,7 +38,13 @@ import {
 } from "./peerLink";
 import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Presence } from "./presence";
 import { retryForever } from "./reconnect";
-import { forgetRoundPeer, knownRoundCoaches, rememberRoundRole } from "./roundPeers";
+import {
+    forgetRoundPeer,
+    knownRoundCoaches,
+    knownRoundRelays,
+    rememberRoundRelay,
+    rememberRoundRole,
+} from "./roundPeers";
 import { attachSync, defaultSchedule, type PeerSync } from "./sync";
 import { mintTicket, parseTicket, type Ticket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
@@ -52,6 +58,12 @@ export interface CollabPeer {
      * saved contact's name is the receiver's own word for them and wins.
      */
     name?: string;
+    /**
+     * The relay this peer is homed on, when the link could say. Saved with a
+     * contact, it is what makes the same partner dialable from another
+     * network: an EndpointId names them and does not route to them.
+     */
+    relayUrl?: string;
 }
 
 export interface CollabSession {
@@ -64,8 +76,15 @@ export interface CollabSession {
      * that let it in said, which is the only place a coach learns it is one.
      */
     role(): Role;
-    /** Mints the ticket the next peer presents. Replaces any unspent one. */
-    share(role: Role): Ticket;
+    /**
+     * Mints the ticket the next peer presents. Replaces any unspent one.
+     *
+     * Async because the ticket names where this host can be reached, and a
+     * relay is contacted after the socket is bound. Only the ticket waits for
+     * it: the session and its dials do not, so a round reopening reconnects
+     * its partners while the answer is still coming.
+     */
+    share(role: Role): Promise<Ticket>;
     /** Dials a peer this round already trusts, with no ticket. */
     invite(endpointId: string): Promise<void>;
     /**
@@ -157,6 +176,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         relay: settings.relay,
     });
     const endpointId = await link.endpointId();
+    // Started here and awaited only by `share`, because a relay is contacted
+    // after the socket is bound and that answer is seconds away. Waiting for
+    // it here would hold the whole session behind it, including the dials
+    // that put a reopened round's partners back. Empty is an ordinary answer:
+    // no relaying, or none reached in time.
+    const homeRelay = link.relayUrl().catch(() => "");
 
     const dial = [...(deps.dial ?? [])];
     const readOnlyPeers = knownRoundCoaches(deps.roundId);
@@ -194,6 +219,19 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * otherwise fire minutes later.
      */
     const retries = new Map<string, () => void>();
+    /**
+     * Where each peer was last found: the round's own record, a saved contact,
+     * the ticket in hand, and then the link itself once a connection stood up.
+     * A reconnect two networks apart has nothing else to go on, because mDNS
+     * answers across a room and an EndpointId is a name and not a route.
+     */
+    const relays = new Map(Object.entries(knownRoundRelays(deps.roundId)));
+    for (const [id, contact] of Object.entries(deps.contacts?.() ?? {}))
+        if (contact.relay) relays.set(id, contact.relay);
+    if (deps.ticket) {
+        const parsed = parseTicket(deps.ticket);
+        if (parsed?.relayUrl) relays.set(parsed.endpointId, parsed.relayUrl);
+    }
     /** Where each peer is. Advisory, and always expiring. */
     let presences: Presence[] = [];
     let stopped = false;
@@ -267,6 +305,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         // Nothing is climbing a backoff for a peer that is here.
         retries.get(peer.endpointId)?.();
         retries.delete(peer.endpointId);
+        // Learned from the link that just stood up, which is the only source
+        // for a peer this side never held a ticket or a contact for. Beside
+        // the round's own record, so tomorrow's open dials an address.
+        if (peer.relayUrl) {
+            relays.set(peer.endpointId, peer.relayUrl);
+            rememberRoundRelay(deps.roundId, peer.endpointId, peer.relayUrl);
+        }
         const existing = live.get(peer.endpointId);
         if (existing) {
             // Resume is symmetric, so an inbound accept and an outbound dial
@@ -424,6 +469,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     endpointId: remoteId,
                     role: verdict.role,
                     connectionType: conn.connectionType(),
+                    relayUrl: conn.relayUrl() ?? undefined,
                     name: typeof msg.name === "string" ? msg.name : undefined,
                 },
                 verdict.role === "coach",
@@ -441,7 +487,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     async function dialPeer(target: string, ticket?: string): Promise<void> {
         if (stopped || gone.has(target)) return;
         dialled.add(target);
-        const conn = await link.dial(target);
+        const conn = await link.dial(target, relays.get(target) ?? null);
         const secret = ticket ? (parseTicket(ticket)?.secret ?? undefined) : undefined;
 
         return new Promise<void>((resolve, reject) => {
@@ -470,6 +516,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                         // and is graded by nobody.
                         role: grantedRole(policy, target) ?? "partner",
                         connectionType: conn.connectionType(),
+                        relayUrl: conn.relayUrl() ?? undefined,
                         name: typeof msg.name === "string" ? msg.name : undefined,
                     },
                     // The host dials too - every remembered peer when it
@@ -519,17 +566,24 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         retries.set(target, retryForever({ dial: () => dialPeer(target), schedule }));
     }
 
-    for (const target of deps.dial ?? []) {
-        try {
-            await dialPeer(target, deps.ticket);
-        } catch (err) {
-            // A peer that is not up yet is ordinary, and a refusal is not a
-            // reason to fail opening the round. Retry runs on its own, except
-            // against a peer who answered: they heard this round offered and
-            // are not holding it, so dialling again would only repeat itself.
-            if (!stopped && !isInvited(err)) redial(target);
-        }
-    }
+    // Every remembered peer at once, not one after another. A peer that is not
+    // up costs its whole dial deadline, and a round that remembers three of
+    // them would spend three of those before the session it is opening for
+    // exists - with the debater watching a round that has not come up yet.
+    await Promise.all(
+        (deps.dial ?? []).map(async (target) => {
+            try {
+                await dialPeer(target, deps.ticket);
+            } catch (err) {
+                // A peer that is not up yet is ordinary, and a refusal is not
+                // a reason to fail opening the round. Retry runs on its own,
+                // except against a peer who answered: they heard this round
+                // offered and are not holding it, so dialling again would only
+                // repeat itself.
+                if (!stopped && !isInvited(err)) redial(target);
+            }
+        }),
+    );
 
     return {
         endpointId,
@@ -543,12 +597,16 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             return myRole;
         },
 
-        share(role) {
+        async share(role) {
             const ticket = mintTicket({
                 endpointId,
                 roundId: deps.roundId,
                 role,
                 relay: settings.relay,
+                // Where this host can be reached, so a guest two networks
+                // away has somewhere to send its first packet. Empty when
+                // there is none, and the ticket then names no relay at all.
+                relayUrl: (await homeRelay) || undefined,
             });
             // The role rides with the secret. What the ticket grants is the
             // host's to decide, so a coach's ticket cannot be spent as a

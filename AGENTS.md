@@ -98,6 +98,23 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
     - A peer link carries one round and nothing else: no folder listing, no path
       access, no arbitrary read. Hold it to the standard
       `docs/security-review.md` sets for the loopback bridge.
+    - **An EndpointId names a peer; it does not route to one.** With DNS
+      discovery off, the only lookup left is mDNS, which answers across a room
+      and no further, so a dial that carries an id alone spends its whole
+      deadline waiting for an address that never comes and then fails. What
+      makes a round work between two networks is a relay URL travelling by
+      hand: a ticket carries the host's, and a peer already met carries its own
+      back on the connection, where it is kept beside the round in its sidecar
+      and beside the peer in the contact table. That is addressing, not a
+      registry - nothing is published, and an idle ebb still says nothing about
+      itself anywhere. Never close this gap by registering a discovery service.
+    - **A collab command that waits on the network must be `async`.** Tauri
+      runs a `#[tauri::command]` declared without it on the main thread, and a
+      bind, a dial and a stop all wait on the network for seconds - which on
+      the main thread is a frozen window. `collab.rs`'s `off_thread` puts the
+      work on a blocking thread, which is also what makes driving the
+      collaboration runtime with `block_on` legal: tokio panics doing that from
+      a thread running async tasks. Both halves are held by the suite.
 - **All flow I/O goes through the `FlowFs` port** (`src/lib/persistence/flowFs.ts`),
   never directly through `invoke` or a Tauri plugin. That is what lets the
   session, recents, and migration be tested against `flowFsMemory` instead of a

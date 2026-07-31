@@ -314,6 +314,14 @@ export interface PeerConn {
     id: string;
     connectionType(): "direct" | "relayed";
     /**
+     * The relay the far side is homed on, when the transport could say. The
+     * one piece of addressing that outlives the connection: an EndpointId
+     * names a peer and does not route to them, and the only lookup this build
+     * runs is mDNS, which answers across a room and no further. Saved with a
+     * contact, it is what makes the same partner reachable from a hotel.
+     */
+    relayUrl(): string | null;
+    /**
      * Takes an accepted connection for this window, which is what admitting
      * its peer means.
      *
@@ -336,13 +344,21 @@ export interface PeerConn {
 
 export interface PeerLink {
     endpointId(): Promise<string>;
+    /**
+     * Where this endpoint can be reached from another network, for the ticket
+     * that carries it. Empty for every reason there is nothing to say:
+     * relaying is off, no relay answered, or the transport has no such notion.
+     */
+    relayUrl(): Promise<string>;
     listen(onPeer: (peer: PeerConn) => void): Promise<void>;
     /**
-     * No secret rides along. The transport authenticates the key and nothing
-     * else; a ticket is spent in the hello, above this line, and a parameter
-     * here would tell a reader the dial itself was authorized.
+     * The relay is where to send the first packet and never a permission to
+     * talk: no secret rides along, because a ticket is spent in the hello,
+     * above this line, and a credential here would tell a reader the dial
+     * itself was authorized. Omitted, the dial reaches whatever mDNS and the
+     * transport's own address book can find, which is one room.
      */
-    dial(endpointId: string): Promise<PeerConn>;
+    dial(endpointId: string, relayUrl?: string | null): Promise<PeerConn>;
     stop(): Promise<void>;
 }
 

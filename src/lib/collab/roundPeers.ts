@@ -32,6 +32,13 @@ interface Membership {
     peers: string[];
     /** The peers of this round that were admitted read-only. */
     readOnly: string[];
+    /**
+     * Where each of them was last found. An EndpointId names a peer and does
+     * not route to them: the only lookup this build runs is mDNS, which
+     * answers across a room and no further, so without this a round reopened
+     * from another network re-dials names it cannot reach.
+     */
+    relays: Record<string, string>;
 }
 
 const rounds = new Map<string, Membership>();
@@ -39,7 +46,7 @@ const rounds = new Map<string, Membership>();
 function entryFor(roundId: string): Membership {
     const held = rounds.get(roundId);
     if (held) return held;
-    const fresh: Membership = { peers: [], readOnly: [] };
+    const fresh: Membership = { peers: [], readOnly: [], relays: {} };
     rounds.set(roundId, fresh);
     return fresh;
 }
@@ -55,11 +62,27 @@ export function setRoundPeers(
     roundId: string,
     peers: readonly string[],
     readOnlyPeers: readonly string[],
+    relays: Record<string, string> = {},
 ): void {
     rounds.set(roundId, {
         peers: [...new Set(peers)],
         readOnly: [...new Set(readOnlyPeers)],
+        relays: { ...relays },
     });
+}
+
+/**
+ * Records where a peer was reached, so the next open dials an address and not
+ * only a name. Overwrites: a peer that moved networks is at the newer one, and
+ * the older is a relay they are no longer connected to.
+ */
+export function rememberRoundRelay(roundId: string, peer: string, relayUrl: string): void {
+    entryFor(roundId).relays[peer] = relayUrl;
+}
+
+/** Where this round's peers were last found, for the dials that reopen it. */
+export function knownRoundRelays(roundId: string): Record<string, string> {
+    return { ...(rounds.get(roundId)?.relays ?? {}) };
 }
 
 /** Adds peers to one round's set. No other round's set is reachable from here. */

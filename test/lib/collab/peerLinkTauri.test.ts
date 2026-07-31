@@ -14,7 +14,13 @@ function fakeBridge() {
             calls.push({ cmd, args });
             if (refuse.has(cmd)) throw new Error("That peer is gone");
             if (cmd === "collab_start") return "alex";
-            if (cmd === "collab_dial") return { connId: "c1", connectionType: "direct" };
+            if (cmd === "collab_relay_url") return "https://usw1-1.relay.n0.iroh.link./";
+            if (cmd === "collab_dial")
+                return {
+                    connId: "c1",
+                    connectionType: "direct",
+                    relayUrl: "https://euw1-1.relay.n0.iroh.link./",
+                };
             return undefined;
         },
         async listen(event, cb) {
@@ -94,6 +100,47 @@ describe("createPeerLink", () => {
     it("reports the path the dial itself returned", async () => {
         const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
         expect((await link.dial("sam")).connectionType()).toBe("direct");
+    });
+
+    it("asks the shell where this endpoint can be reached", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        expect(await link.relayUrl()).toBe("https://usw1-1.relay.n0.iroh.link./");
+    });
+
+    /**
+     * The dial's only chance of landing on a peer two networks apart: mDNS
+     * answers across a room, so an EndpointId with no relay beside it is a
+     * name with nowhere to send the first packet.
+     */
+    it("passes the relay it was told to look on, and null when it was told none", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        await link.dial("sam", "https://relay.example/1");
+        await link.dial("kim");
+        expect(fake.calls.filter((c) => c.cmd === "collab_dial").map((c) => c.args)).toEqual([
+            { endpointId: "sam", relayUrl: "https://relay.example/1" },
+            { endpointId: "kim", relayUrl: null },
+        ]);
+    });
+
+    it("reports where each peer is homed, and nothing for one the shell left out", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        expect((await link.dial("sam")).relayUrl()).toBe("https://euw1-1.relay.n0.iroh.link./");
+
+        const seen: PeerConn[] = [];
+        await link.listen((conn) => seen.push(conn));
+        fake.emit("collab:peer", {
+            connId: "c9",
+            endpointId: "kim",
+            connectionType: "relayed",
+            relayUrl: "https://aps1-1.relay.n0.iroh.link./",
+        });
+        // "" is how the shell says it has none, and an empty hint saved
+        // against a contact would be dialled forever.
+        fake.emit("collab:peer", { connId: "c8", endpointId: "rin", relayUrl: "" });
+        expect(seen.map((c) => c.relayUrl())).toEqual([
+            "https://aps1-1.relay.n0.iroh.link./",
+            null,
+        ]);
     });
 
     it("delivers a message to the connection it belongs to", async () => {

@@ -38,7 +38,7 @@ vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
 import { seedDoc } from "@/lib/collab/doc";
 import { hashText } from "@/lib/collab/hash";
 import type { InviteNotice } from "@/lib/collab/invite";
-import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import { peerNotePath } from "@/lib/collab/rfdSync";
@@ -264,7 +264,7 @@ describe("a session opened for a round", () => {
 describe("a peer nobody has saved", () => {
     /** Brings a guest onto the host's session, the way a ticket does. */
     async function guestJoins(host: CollabSession, displayName?: string): Promise<void> {
-        const ticket = encodeTicket(host.share("partner"));
+        const ticket = encodeTicket(await host.share("partner"));
         await startCollabSession({
             createLink: net.create("sam"),
             roundId: round.id,
@@ -286,11 +286,17 @@ describe("a peer nobody has saved", () => {
         expect(offers[0].message).toBe("Save sam as a partner?");
     });
 
-    it("is saved by the one click, under a name the debater can change", async () => {
+    it("is saved by the one click, with the name and the relay they were reached at", async () => {
         const host = await startForRound(round);
         await guestJoins(host!);
         corners.find((c) => c.action)!.action!.onClick();
-        expect(useFlowStore.getState().contacts.sam).toEqual({ name: "sam", role: "partner" });
+        // Where they were found rides along, or the saved contact is dialable
+        // across the room and nowhere else.
+        expect(useFlowStore.getState().contacts.sam).toEqual({
+            name: "sam",
+            role: "partner",
+            relay: memoryRelay("sam"),
+        });
     });
 
     it("is not offered again once they are saved", async () => {
@@ -312,7 +318,11 @@ describe("a peer nobody has saved", () => {
         const offers = corners.filter((c) => c.message.startsWith("Save "));
         expect(offers.at(-1)!.message).toBe("Save Rin as a partner?");
         offers.at(-1)!.action!.onClick();
-        expect(useFlowStore.getState().contacts.sam).toEqual({ name: "Rin", role: "partner" });
+        expect(useFlowStore.getState().contacts.sam).toEqual({
+            name: "Rin",
+            role: "partner",
+            relay: memoryRelay("sam"),
+        });
     });
 
     it("is not asked about twice while their name stays the same", async () => {
@@ -336,7 +346,11 @@ describe("a peer nobody has saved", () => {
             "Save Rin as a partner?",
         );
         corners.find((c) => c.action)!.action!.onClick();
-        expect(useFlowStore.getState().contacts.sam).toEqual({ name: "Rin", role: "partner" });
+        expect(useFlowStore.getState().contacts.sam).toEqual({
+            name: "Rin",
+            role: "partner",
+            relay: memoryRelay("sam"),
+        });
     });
 
     it("is named in the chip by what they broadcast until they are saved", async () => {
@@ -517,7 +531,7 @@ describe("hanging up on a peer", () => {
             appVersion: "0.11.0",
             doc: () => seedDoc(round),
             apply: () => [],
-            ticket: encodeTicket(host.share("partner")),
+            ticket: encodeTicket(await host.share("partner")),
             dial: [ME],
         });
         for (let i = 0; i < 10; i++) await Promise.resolve();
