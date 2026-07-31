@@ -49,14 +49,16 @@ describe("parseSidecar", () => {
 
     /**
      * A relay is a dial target the next time this round opens, so a scheme
-     * somebody chose by hand is not one. Addressing and not admission, so junk
-     * here drops the address and never the round.
+     * somebody chose by hand is not one, and neither is a string too long to
+     * be an address. Addressing and not admission, so junk here drops the
+     * address and never the round.
      */
     it("keeps only the https relays, against the peers they name", () => {
         const edited = JSON.parse(text);
         edited.relays = {
             [SAM]: "https://usw1-1.relay.n0.iroh.link./",
             [KIM]: "http://relay.example/",
+            ["7".repeat(64)]: `https://relay.example/${"a".repeat(256)}`,
             nobody: "https://relay.example/",
             __proto__: "https://relay.example/",
         };

@@ -12,7 +12,7 @@
  * and last-writer-wins eats a cell.
  */
 
-import { isEndpointId } from "./contacts";
+import { isEndpointId, isRelayUrl } from "./contacts";
 import type { CollabDoc } from "./types";
 
 /**
@@ -87,7 +87,7 @@ function relayUrls(value: unknown): Record<string, string> {
     const out: Record<string, string> = Object.create(null);
     for (const [peer, url] of Object.entries(value as Record<string, unknown>)) {
         if (!isEndpointId(peer)) continue;
-        if (typeof url !== "string" || !url.startsWith("https://")) continue;
+        if (!isRelayUrl(url)) continue;
         out[peer] = url;
     }
     return out;

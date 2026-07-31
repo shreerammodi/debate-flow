@@ -32,6 +32,9 @@ export type Contacts = Record<string, Contact>;
 /** How much of an EndpointId is worth showing when there is no name. */
 const SHORT_ID = 8;
 
+/** No relay this build reaches is anywhere near this; a longer one is a payload. */
+const MAX_RELAY_URL = 256;
+
 /**
  * What iroh will parse back into a key: 64 characters of hex, which is what
  * an endpoint prints, or the 52-character base32 form it also accepts. Only
@@ -40,6 +43,18 @@ const SHORT_ID = 8;
  */
 export function isEndpointId(value: string): boolean {
     return /^[0-9a-f]{64}$/i.test(value) || /^[a-z2-7]{52}$/i.test(value);
+}
+
+/**
+ * A relay URL this build would dial: https, because that is what an iroh
+ * relay is and anything else is a scheme somebody chose for this app to
+ * fetch, and short enough that it is an address rather than a payload. No
+ * relay this build reaches is anywhere near the cap.
+ */
+export function isRelayUrl(value: unknown): value is string {
+    return (
+        typeof value === "string" && value.length <= MAX_RELAY_URL && value.startsWith("https://")
+    );
 }
 
 /**
@@ -66,10 +81,7 @@ export function resolveContacts(raw: unknown): Contacts {
         // A dial target, so a scheme somebody chose by hand is not one: an
         // iroh relay is https. Dropped rather than refused, because it is
         // where this contact is and not whether they may be reached at all.
-        const relay =
-            typeof entry.relay === "string" && entry.relay.startsWith("https://")
-                ? entry.relay
-                : undefined;
+        const relay = isRelayUrl(entry.relay) ? entry.relay : undefined;
         out[endpointId] = relay
             ? { name: entry.name, role: entry.role, relay }
             : { name: entry.name, role: entry.role };

@@ -12,7 +12,7 @@
  * answered by eye, and a later format can be told apart by its prefix.
  */
 
-import { isEndpointId } from "./contacts";
+import { isEndpointId, isRelayUrl } from "./contacts";
 import { isRole, type Role } from "./types";
 
 export const TICKET_PREFIX = "ebb1:";
@@ -22,8 +22,6 @@ const SECRET_LENGTH = 24;
 const SECRET_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 /** Any round id this build mints is far shorter; a longer one is a payload. */
 const MAX_ROUND_ID = 128;
-/** No relay this build reaches is anywhere near this; a longer one is a payload. */
-const MAX_RELAY_URL = 256;
 
 export interface Ticket {
     endpointId: string;
@@ -113,12 +111,7 @@ export function parseTicket(text: string): Ticket | null {
     // ticket without one still opens the round for a guest in the same room;
     // https alone because that is what an iroh relay is, and anything else is
     // a scheme somebody chose for this app to fetch.
-    const relayUrl =
-        typeof t.relayUrl === "string" &&
-        t.relayUrl.length <= MAX_RELAY_URL &&
-        t.relayUrl.startsWith("https://")
-            ? t.relayUrl
-            : undefined;
+    const relayUrl = isRelayUrl(t.relayUrl) ? t.relayUrl : undefined;
 
     const ticket: Ticket = {
         endpointId: t.endpointId,
