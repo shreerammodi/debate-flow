@@ -7,73 +7,6 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
-### Changed
-
-- The round's date is the platform's own date field rather than a calendar that
-  opened in a popover, so it takes a typed date, follows the date format the
-  machine is set to, and reaches the keyboard the way every other field in the
-  panel does. A date written as free text by a much older build is still in the
-  file, but the field shows nothing until a date is picked, and picking one
-  replaces it.
-
-- **Nothing ends the app with an unwritten edit.** Quitting, closing the window,
-  and installing an update all write the open flow first. If that write fails -
-  a full disk, an ejected drive - the exit is cancelled and the round stays on
-  screen instead of going down with the process. Closing a flow behaves the same
-  way: it will not discard a round it could not save.
-- Autosave now writes at least every two seconds during continuous editing.
-  The debounce alone never fired while flowing a fast speech, because each cell
-  reset it, so a crash could cost the whole burst rather than half a second.
-- The first edit after Save As is saved. It was previously mistaken for a
-  freshly opened file and skipped, so a single edit followed by closing the flow
-  was lost with no error.
-- A flow changed outside ebb - by a sync client, a backup tool, or another
-  editor - is no longer silently overwritten. The header reports "Changed on
-  disk" and offers to keep your version.
-
-- **Flows are files now.** A flow is a `.ebb` file on your disk instead of a
-  row in a browser database, so you can move, copy, rename, back up, and sync
-  your rounds with everything else you own. New flows are filed in
-  `~/Documents/ebb` and autosave there from the first keystroke, exactly as
-  before. Save As puts one wherever you like. Writes are atomic - the file is
-  written beside itself and moved into place - so a crash mid-round can cost
-  the last half second, never the file. Flows already in ebb are moved into
-  that folder automatically the first time you open this version, and the move
-  reads every file back before it lets go of the old copy.
-- **The dashboard is now a start screen.** No list of flows to manage: New
-  flow, Open, and Settings, then the six flows you were last in, then links to
-  the docs, the repo, and its author. Every row answers to one key - `n`, `o`,
-  `s`, or `1` through `6` - with `j` and `k` to walk them. The wordmark's caret
-  blinks like the one on ebb.smodi.net.
-- The File menu gained New Flow, Open, Save, Save As, Show in Finder, and
-  Close Flow, above the sheet items that were already there.
-- Existing flows are no longer moved out of the old storage on their own. The
-  first launch asks, shows where they would land, and lets you pick a different
-  folder before anything is written. Declining leaves them untouched and asks
-  again next time, so nothing is stranded.
-- **Flows folder** is now a setting, under Settings > Editor. It decides where
-  new flows are filed. Files already written stay where they are.
-- Double-clicking a `.ebb` file opens it in ebb. macOS and Linux also know a
-  flow is a kind of JSON, so Quick Look previews one and any text editor will
-  open it. ebb stays the default. On Windows and Linux, opening a second flow
-  focuses the window you already have rather than starting a rival copy.
-
-### Removed
-
-- Trash is gone, along with the `/trash` screen. Deleting a flow is deleting a
-  file, which Finder and Explorer already do better, and their own trash
-  already undoes it. Anything sitting in ebb's trash is moved to a `trash`
-  subfolder of your flows folder rather than dropped.
-- Import and Export all are gone. Each flow is already a file, so backing them
-  up is copying the folder. Old `.json` exports still open, and a backup file
-  full of rounds becomes one `.ebb` per round.
-- "Export as JSON" is gone from the editor: a `.ebb` file already is the
-  round's JSON, and Save As writes one anywhere you want. Excel export and the
-  print view are unchanged.
-- The dashboard's keytip overlay went with the dashboard, and `[keytips]` no
-  longer appears in `config.toml`. The start screen shows each key beside the
-  thing it does.
-
 ### Added
 
 - **A Parliamentary flow template**, on `r` in the New flow menu. Five columns
@@ -149,8 +82,70 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   of the browser's: View details, Export to JSON or Excel, and Delete, the same
   actions as the card's three-dot menu.
 
+### Changed
+
+- The round's date is the platform's own date field rather than a calendar that
+  opened in a popover, so it takes a typed date, follows the date format the
+  machine is set to, and reaches the keyboard the way every other field in the
+  panel does. A date written as free text by a much older build is still in the
+  file, but the field shows nothing until a date is picked, and picking one
+  replaces it.
+- **Nothing ends the app with an unwritten edit.** Quitting, closing the window,
+  and installing an update all write the open flow first. If that write fails -
+  a full disk, an ejected drive - the exit is cancelled and the round stays on
+  screen instead of going down with the process. Closing a flow behaves the same
+  way: it will not discard a round it could not save.
+- Autosave now writes at least every two seconds during continuous editing.
+  The debounce alone never fired while flowing a fast speech, because each cell
+  reset it, so a crash could cost the whole burst rather than half a second.
+- The first edit after Save As is saved. It was previously mistaken for a
+  freshly opened file and skipped, so a single edit followed by closing the flow
+  was lost with no error.
+- A flow changed outside ebb - by a sync client, a backup tool, or another
+  editor - is no longer silently overwritten. The header reports "Changed on
+  disk" and offers to keep your version.
+- **Flows are files now.** A flow is a `.ebb` file on your disk instead of a
+  row in a browser database, so you can move, copy, rename, back up, and sync
+  your rounds with everything else you own. New flows are filed in
+  `~/Documents/ebb` and autosave there from the first keystroke, exactly as
+  before. Save As puts one wherever you like. Writes are atomic - the file is
+  written beside itself and moved into place - so a crash mid-round can cost
+  the last half second, never the file. Flows already in ebb are moved into
+  that folder automatically the first time you open this version, and the move
+  reads every file back before it lets go of the old copy.
+- **The dashboard is now a start screen.** No list of flows to manage: New
+  flow, Open, and Settings, then the six flows you were last in, then links to
+  the docs, the repo, and its author. Every row answers to one key - `n`, `o`,
+  `s`, or `1` through `6` - with `j` and `k` to walk them. The wordmark's caret
+  blinks like the one on ebb.smodi.net.
+- The File menu gained New Flow, Open, Save, Save As, Show in Finder, and
+  Close Flow, above the sheet items that were already there.
+- Existing flows are no longer moved out of the old storage on their own. The
+  first launch asks, shows where they would land, and lets you pick a different
+  folder before anything is written. Declining leaves them untouched and asks
+  again next time, so nothing is stranded.
+- **Flows folder** is now a setting, under Settings > Editor. It decides where
+  new flows are filed. Files already written stay where they are.
+- Double-clicking a `.ebb` file opens it in ebb. macOS and Linux also know a
+  flow is a kind of JSON, so Quick Look previews one and any text editor will
+  open it. ebb stays the default. On Windows and Linux, opening a second flow
+  focuses the window you already have rather than starting a rival copy.
+
 ### Removed
 
+- Trash is gone, along with the `/trash` screen. Deleting a flow is deleting a
+  file, which Finder and Explorer already do better, and their own trash
+  already undoes it. Anything sitting in ebb's trash is moved to a `trash`
+  subfolder of your flows folder rather than dropped.
+- Import and Export all are gone. Each flow is already a file, so backing them
+  up is copying the folder. Old `.json` exports still open, and a backup file
+  full of rounds becomes one `.ebb` per round.
+- "Export as JSON" is gone from the editor: a `.ebb` file already is the
+  round's JSON, and Save As writes one anywhere you want. Excel export and the
+  print view are unchanged.
+- The dashboard's keytip overlay went with the dashboard, and `[keytips]` no
+  longer appears in `config.toml`. The start screen shows each key beside the
+  thing it does.
 - A new flow no longer asks whether you are Aff, Neg, or the judge. The New
   flow menu now asks only for the event: Policy, Public Forum (with its
   first-speaker submenu), or Lincoln-Douglas. Every flow holds both sides, so
