@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use notify::{RecursiveMode, Watcher};
 use serde_json::Value as Json;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State, WebviewWindow};
 use toml_edit::{DocumentMut, Item, Table, Value as Toml};
 
 /// Shared "last bytes seen on disk", used both to suppress the echo of our own
@@ -173,10 +173,15 @@ pub fn read_config(state: State<'_, ConfigState>) -> Result<Option<Json>, String
 }
 
 #[tauri::command]
-pub fn write_config(state: State<'_, ConfigState>, config: Json) -> Result<(), String> {
+pub fn write_config<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    state: State<'_, ConfigState>,
+    config: Json,
+) -> Result<(), String> {
     let existing = std::fs::read_to_string(&state.path).ok();
     let rendered = render_toml(existing.as_deref(), &config)?;
-    let bytes = rendered.into_bytes();
+    let bytes = rendered.clone().into_bytes();
 
     // Record our own write BEFORE touching disk so the watcher event it triggers
     // compares equal and is suppressed.
@@ -185,7 +190,31 @@ pub fn write_config(state: State<'_, ConfigState>, config: Json) -> Result<(), S
     if let Some(dir) = state.path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
     }
-    std::fs::write(&state.path, &bytes).map_err(|e| format!("{e}"))
+    std::fs::write(&state.path, &bytes).map_err(|e| format!("{e}"))?;
+    notify_siblings(&app, window.label(), &rendered);
+    Ok(())
+}
+
+/// Hands a window's write to every other window in this process.
+///
+/// Suppressing the echo of our own write is what keeps the writer from applying
+/// its own settings back to itself, and the watcher cannot tell that echo from
+/// the event a sibling needs - so the siblings are told here instead. Without
+/// it a switch thrown in one window never reaches the others: they keep the old
+/// value, and the next thing they write puts it back on disk. Listen for
+/// invites is where that bites, because every window holds its own share of the
+/// one endpoint: a sibling that never hears the switch keeps ebb bound to the
+/// network, on mDNS and on a relay, after Settings reads off.
+fn notify_siblings<R: Runtime>(app: &AppHandle<R>, writer: &str, rendered: &str) {
+    let Ok(json) = parse_toml_to_json(rendered) else {
+        return;
+    };
+    for label in app.webview_windows().keys() {
+        if label == writer {
+            continue;
+        }
+        let _ = app.emit_to(label.as_str(), "config:changed", json.clone());
+    }
 }
 
 // --- Watcher -------------------------------------------------------------------
@@ -326,5 +355,53 @@ mod tests {
             !collab_enabled_in("collab_enabled = tru"),
             "malformed is off"
         );
+    }
+
+    /// Every window in this process shares one endpoint and one config file,
+    /// so a switch thrown in one window has to reach the others: the watcher
+    /// swallows the echo of our own write, which is the only event they would
+    /// otherwise get. The writer stays out of it, or applying its own bytes
+    /// back to itself would fight whatever the debater types next.
+    #[test]
+    fn a_write_reaches_every_window_but_the_writer() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        for label in ["win-0", "win-1", "win-2"] {
+            tauri::WebviewWindowBuilder::new(&handle, label, tauri::WebviewUrl::default())
+                .build()
+                .expect("a window");
+        }
+
+        let dir = std::env::temp_dir().join(format!("ebb-config-fanout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a config dir");
+        handle.manage(ConfigState {
+            path: dir.join("config.toml"),
+            last: Arc::new(Mutex::new(None)),
+        });
+
+        let heard: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        for label in ["win-0", "win-1", "win-2"] {
+            let window = handle.get_webview_window(label).expect("the window");
+            let seen = heard.clone();
+            let who = label.to_string();
+            tauri::Listener::listen(&window, "config:changed", move |_| {
+                seen.lock().unwrap().push(who.clone());
+            });
+        }
+
+        let writer = handle.get_webview_window("win-0").expect("the writer");
+        write_config(
+            handle.clone(),
+            writer,
+            handle.state::<ConfigState>(),
+            json!({ "collab_listen": false }),
+        )
+        .expect("the write");
+
+        let mut told = heard.lock().unwrap().clone();
+        told.sort();
+        assert_eq!(told, ["win-1", "win-2"], "the siblings, and not the writer");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

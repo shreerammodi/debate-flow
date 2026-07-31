@@ -37,6 +37,7 @@ import { createMemoryNet } from "@/lib/collab/peerLinkMemory";
 import { clearReplica } from "@/lib/collab/replica";
 import { currentSession, endSession, startForRound } from "@/lib/collab/runtime";
 import { useInviteWatch } from "@/lib/collab/useInviteWatch";
+import { toAppConfig } from "@/lib/config/configFile";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -168,6 +169,43 @@ describe("turning Allow relay off", () => {
 
         await Promise.resolve();
         expect(net.calls).toEqual([]);
+        view.unmount();
+    });
+});
+
+describe("a switch thrown in another window", () => {
+    // Every window in this process holds its own share of the one endpoint, so
+    // a debater who switches Listen for invites off in the window in front of
+    // them is switching it off for an install, not for a window. The shell
+    // hands a sibling's write to this window as a whole config, which the store
+    // applies wholesale - and what has to follow is the endpoint coming down.
+    it("lets go of the endpoint the other window switched off", async () => {
+        useFlowStore.setState({ collabListenEnabled: true });
+        const view = watch();
+        await waitFor(() => expect(net.calls.filter((c) => c.op === "listen")).toHaveLength(1));
+
+        useFlowStore
+            .getState()
+            .applyExternalConfig(
+                toAppConfig({ collab_enabled: true, collab_relay: true, collab_listen: false }),
+            );
+
+        await waitFor(() => expect(net.calls.filter((c) => c.op === "stop")).toHaveLength(1));
+        expect(net.calls.filter((c) => c.op === "listen")).toHaveLength(1);
+        view.unmount();
+    });
+
+    it("binds when the other window switched it on", async () => {
+        const view = watch();
+        expect(net.calls).toEqual([]);
+
+        useFlowStore
+            .getState()
+            .applyExternalConfig(
+                toAppConfig({ collab_enabled: true, collab_relay: true, collab_listen: true }),
+            );
+
+        await waitFor(() => expect(net.calls.filter((c) => c.op === "listen")).toHaveLength(1));
         view.unmount();
     });
 });

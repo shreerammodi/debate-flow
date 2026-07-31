@@ -87,6 +87,9 @@ wmi = "=0.18.1"
 [dev-dependencies]
 # The loopback transport tests drive real endpoints, which needs a test runtime.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
+# Two windows share one process, so the config fan-out is driven against
+# Tauri's mock runtime rather than against a real webview.
+tauri = { version = "2", features = ["test"] }
 
 [features]
 # This feature is used for production builds where the developer tools are

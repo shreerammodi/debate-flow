@@ -95,6 +95,18 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       itself instead of coming up with the switch off.
       DNS-based peer discovery stays disabled in every state, so an idle ebb
       publishes nothing about itself.
+    - **A switch is thrown for an install, not for a window.** Every window
+      holds its own share of the one endpoint, so Listen for invites is only
+      off once every window has heard it. A window learns what a sibling
+      changed from `write_config`, which hands its rendered config straight to
+      the other webviews (`src-tauri/src/config.rs`): the file watcher cannot
+      carry it, because the write's own echo is what it exists to swallow.
+      Without that hand-off the sibling keeps its hold and ebb stays bound, on
+      mDNS and on a relay, while Settings reads off - and the next thing that
+      sibling writes puts the old value back on disk. The shell half is held
+      to reaching every window but the writer in `config.rs`'s tests, and the
+      app half - a config arriving from elsewhere releasing this window's
+      endpoint - in `test/lib/collab/useInviteWatch.test.tsx`.
     - A peer link carries one round and nothing else: no folder listing, no path
       access, no arbitrary read. Hold it to the standard
       `docs/security-review.md` sets for the loopback bridge.
