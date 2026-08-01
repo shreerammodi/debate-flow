@@ -200,6 +200,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   with that page, taking an unsaved round with it - which a partner or a coach
   could put there as easily as you could. Links you paste for your own
   reference still read the same; they no longer navigate.
+- The cell editor leaves what you type alone. The browser's own text assistance
+  was live in it, so autocorrect rewrote debate shorthand, autocapitalize
+  raised the first letter of a tag, and a red underline sat under most of a
+  round's vocabulary. Autocorrect, autocapitalization, autocomplete, and
+  spellcheck are all off in the editor now.
 
 ## [0.7.2] - 2026-07-25
 
