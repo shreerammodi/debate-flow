@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { COMMANDS } from "@/lib/commands/registry";
 import { configFromState, toAppConfig } from "@/lib/config/configFile";
+import { effectiveKeymap } from "@/lib/keymap/effective";
+import { getPresetKeymap } from "@/lib/keymap/presets";
 import type { AppConfig } from "@/lib/store/useFlowStore";
 
 const aCommandId = Object.keys(COMMANDS)[0];
@@ -121,6 +123,22 @@ describe("toAppConfig validation", () => {
         // under [keymap]; reading must recover them, not drop them.
         const cfg = toAppConfig({ keymap: { "info.open": "z" } });
         expect(cfg.keymapOverrides["info.open"]).toBe("z");
+    });
+
+    it("drops a stale default the preset has since moved to another command", () => {
+        // Files written before New window existed record flow.new = Mod+N. Kept
+        // as an override it outranks the new default, so Mod+N would open the
+        // New flow prompt forever instead of a window.
+        const chord = Object.entries(getPresetKeymap().bindings).find(
+            ([, id]) => id === "window.new",
+        )![0];
+        expect(toAppConfig({ keymap: { "flow.new": chord } }).keymapOverrides).toEqual({});
+        expect(effectiveKeymap({}).bindings[chord]).toBe("window.new");
+    });
+
+    it("keeps a rebind of a command whose default was retired", () => {
+        const cfg = toAppConfig({ keymap: { "flow.new": "Meta+q" } });
+        expect(cfg.keymapOverrides).toEqual({ "flow.new": "Meta+q" });
     });
 
     it("returns a fully-defaulted config for a non-object input", () => {

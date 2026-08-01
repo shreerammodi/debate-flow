@@ -156,6 +156,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Fixed
 
+- Mod+N opens a new window on an install that predates the change, instead of
+  the New flow prompt. `config.toml` records every binding by name, so the
+  chord's old owner stayed behind as an override and outranked the new one on
+  every upgraded install. A binding that only restates a default the app has
+  since moved is now read as the leftover it is and dropped.
 - A shared round reaches a partner on another network. An invite carried the
   host's identity and no way to reach it, and the only lookup ebb runs answers
   across one room, so two laptops in the same building found each other and two

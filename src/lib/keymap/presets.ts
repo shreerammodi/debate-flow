@@ -93,6 +93,21 @@ export const FLAT_KEYMAP: Keymap = {
     },
 };
 
+/**
+ * Chords a command carried as a preset default in an earlier version, keyed by
+ * command. config.toml records every binding explicitly, so a preset that moves
+ * a chord to another command leaves the old value behind in every existing
+ * file - and an override outranks a default forever, which kept Meta+N on New
+ * flow for every install that predates New window. A chord listed here is a
+ * leftover default rather than a choice, so reading the file drops it (see
+ * toAppConfig). The cost is that a debater who rebound the command back to its
+ * old chord by hand loses that binding once; the alternative is an install that
+ * never sees the new default at all.
+ */
+export const RETIRED_DEFAULTS: Record<string, readonly string[]> = {
+    "flow.new": ["Meta+n", "Ctrl+n"],
+};
+
 // --- Registry ------------------------------------------------------------------
 
 /** Returns the flat preset keymap. */

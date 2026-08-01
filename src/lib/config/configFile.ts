@@ -16,7 +16,7 @@ import { resolveContacts } from "@/lib/collab/contacts";
 import { COMMANDS } from "@/lib/commands/registry";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
-import { getPresetKeymap } from "@/lib/keymap/presets";
+import { getPresetKeymap, RETIRED_DEFAULTS } from "@/lib/keymap/presets";
 import {
     type AppConfig,
     bool,
@@ -160,14 +160,16 @@ export function toAppConfig(raw: unknown): AppConfig {
     flattenNamespaces(o.keymap, "", fromFile);
     const keymapOverrides: Record<string, string> = {};
     for (const [commandId, chord] of Object.entries(fromFile)) {
-        // Drop entries for commands that no longer exist, empty chords, and any
-        // chord that just restates the default. The names come from a
-        // hand-editable file and `in` walks the prototype chain, so a table
-        // naming `constructor` or `toString` would register as a command.
+        // Drop entries for commands that no longer exist, empty chords, any
+        // chord that just restates the default, and any that restates a default
+        // the preset has since retired. The names come from a hand-editable
+        // file and `in` walks the prototype chain, so a table naming
+        // `constructor` or `toString` would register as a command.
         if (
             Object.hasOwn(COMMANDS, commandId) &&
             chord.length > 0 &&
-            chord !== defaults[commandId]
+            chord !== defaults[commandId] &&
+            !RETIRED_DEFAULTS[commandId]?.includes(chord)
         ) {
             keymapOverrides[commandId] = chord;
         }
