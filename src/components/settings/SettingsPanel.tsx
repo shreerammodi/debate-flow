@@ -623,7 +623,7 @@ export default function SettingsPanel() {
                                         />
                                         <SettingRow
                                             title="Listen for invites"
-                                            description="Keeps an endpoint open the whole time ebb is running so a saved contact can offer you a round. Off, ebb is on the network only during a session you started."
+                                            description="Keeps an endpoint open the whole time ebb is running so a saved contact can share a round with you."
                                             control={
                                                 <Switch
                                                     checked={collabListenEnabled}

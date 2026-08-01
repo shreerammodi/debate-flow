@@ -30,8 +30,8 @@ export default function SessionControls() {
             title="Session"
             description={
                 live
-                    ? "A session is running. Showing an invite again mints a fresh one, to edit with or to watch by."
-                    : "Sharing starts a session and mints an invite a partner edits through. A view-only invite lets a coach watch instead. Either works once, and carries this round only."
+                    ? "A session is running. Showing an invite again creates a new one."
+                    : "Sharing starts a session and creates an invite a partner can edit or watch your flow with. Each invite works once, and only allows access to this round."
             }
         >
             <div className="flex flex-wrap gap-2" data-testid="session-controls">
