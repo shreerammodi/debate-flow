@@ -21,6 +21,7 @@ import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
+import { disableTextAssistance } from "@/lib/grid/plainTextInput";
 import {
     attachMetaUndo,
     rebaseUndoStacks,
@@ -641,6 +642,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // matters here is that a release always follows a claim: a lock left
     // behind by a pane that unmounted is worse than no locking at all.
     const afterBeginEditing = useCallback((row: number, col: number) => {
+        const input = hotRef.current?.hotInstance?.rootElement.querySelector<HTMLTextAreaElement>(
+            "textarea.handsontableInput",
+        );
+        if (input) disableTextAssistance(input);
         const sid = currentSheetIdRef.current;
         if (sid) claimCell({ sheetId: sid, col, row });
     }, []);
