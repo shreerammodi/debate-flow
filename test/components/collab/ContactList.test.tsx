@@ -49,12 +49,12 @@ describe("ContactList", () => {
         });
     });
 
-    it("re-roles a contact from can edit to view only", async () => {
+    it("re-roles a contact from edit to view", async () => {
         useFlowStore.setState({ contacts: TWO });
         render(<ContactList />);
 
         const role = screen.getByTestId(`contact-role-${ALEX}`);
-        expect(role).toHaveTextContent("can edit");
+        expect(role).toHaveTextContent("edit");
 
         await userEvent.click(role);
         await userEvent.click(await screen.findByTestId(`contact-role-${ALEX}-coach`));
@@ -151,7 +151,7 @@ describe("adding a partner by hand", () => {
         expect(screen.getByTestId("add-contact-save")).toBeDisabled();
     });
 
-    it("saves a coach as view only", async () => {
+    it("saves a coach as view", async () => {
         render(<ContactList />);
 
         await userEvent.type(screen.getByTestId("add-contact-name"), "Coach");

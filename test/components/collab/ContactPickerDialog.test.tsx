@@ -45,8 +45,8 @@ describe("ContactPickerDialog", () => {
         render(<ContactPickerDialog />);
         const picked = open();
 
-        expect(await screen.findByTestId(`contact-pick-${ALEX}`)).toHaveTextContent("can edit");
-        expect(screen.getByTestId(`contact-pick-${RIN}`)).toHaveTextContent("view only");
+        expect(await screen.findByTestId(`contact-pick-${ALEX}`)).toHaveTextContent("edit");
+        expect(screen.getByTestId(`contact-pick-${RIN}`)).toHaveTextContent("view");
 
         await userEvent.keyboard("{Escape}");
         await picked;

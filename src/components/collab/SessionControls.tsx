@@ -1,5 +1,7 @@
 "use client";
 
+import { Eye, ShareNetwork, SignIn, SignOut, UserPlus } from "@phosphor-icons/react";
+
 import SettingRow from "@/components/settings/SettingRow";
 import { Button } from "@/components/ui/button";
 import { executeCommand } from "@/lib/commands/commands";
@@ -40,6 +42,7 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.share")}
                     data-testid="session-share"
                 >
+                    <ShareNetwork />
                     {live ? "Show invite" : "Share this round"}
                 </Button>
                 <Button
@@ -50,6 +53,7 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.shareView")}
                     data-testid="session-share-view"
                 >
+                    <Eye />
                     Share view only
                 </Button>
                 <Button
@@ -60,6 +64,7 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.invite")}
                     data-testid="session-invite"
                 >
+                    <UserPlus />
                     Invite a partner
                 </Button>
                 <Button
@@ -69,16 +74,19 @@ export default function SessionControls() {
                     onClick={() => executeCommand("collab.join")}
                     data-testid="session-join"
                 >
+                    <SignIn />
                     Join with an invite
                 </Button>
                 {live && (
                     <Button
                         type="button"
                         size="sm"
-                        variant="ghost"
+                        variant="outline"
+                        className="text-warn"
                         onClick={() => executeCommand("collab.end")}
                         data-testid="session-end"
                     >
+                        <SignOut />
                         End session
                     </Button>
                 )}

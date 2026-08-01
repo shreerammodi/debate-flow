@@ -106,7 +106,7 @@ describe("SessionChip", () => {
         expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 
-    it("gives a partner the 'can edit' badge and a coach 'view only'", async () => {
+    it("gives a partner the 'edit' badge and a coach 'view'", async () => {
         const user = userEvent.setup();
         live();
         render(<SessionChip />);
@@ -114,9 +114,9 @@ describe("SessionChip", () => {
 
         const [partner, coach] = screen.getAllByTestId("collab-peer-row");
         expect(within(partner).getByText("Alex")).toBeInTheDocument();
-        expect(within(partner).getByTestId("collab-peer-role")).toHaveTextContent("can edit");
+        expect(within(partner).getByTestId("collab-peer-role")).toHaveTextContent("edit");
         expect(within(coach).getByText("Rin")).toBeInTheDocument();
-        expect(within(coach).getByTestId("collab-peer-role")).toHaveTextContent("view only");
+        expect(within(coach).getByTestId("collab-peer-role")).toHaveTextContent("view");
     });
 
     it("tells a coach their own side is view only", async () => {

@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 
 /** What each role may do, in the words the chip shows a debater. */
 const ROLE_LABEL: Record<Role, string> = {
-    partner: "can edit",
-    coach: "view only",
+    partner: "edit",
+    coach: "view",
 };
 
 /**

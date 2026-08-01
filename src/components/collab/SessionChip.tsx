@@ -23,8 +23,8 @@ const STATUS_DOT: Record<LiveStatus, string> = {
 
 /** What each role may do, in the words the chip shows a debater. */
 const ROLE_LABEL: Record<CollabPeerView["role"], string> = {
-    partner: "can edit",
-    coach: "view only",
+    partner: "edit",
+    coach: "view",
 };
 
 function peerCountLabel(count: number): string {

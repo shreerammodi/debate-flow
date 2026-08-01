@@ -18,8 +18,8 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 /** What each role may do, in the words the chip shows a debater. */
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
-    { value: "partner", label: "can edit" },
-    { value: "coach", label: "view only" },
+    { value: "partner", label: "edit" },
+    { value: "coach", label: "view" },
 ];
 
 /** An EndpointId is a long key; a row shows the first eight characters. */
