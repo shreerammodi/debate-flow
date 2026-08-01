@@ -40,7 +40,7 @@ import {
 } from "./fileCommands";
 import { navigateToFlow } from "./flowNav";
 import { EDITS_ROUND, type CommandId } from "./registry";
-import { openNewWindow } from "./windowCommands";
+import { closeCurrentWindow, openNewWindow } from "./windowCommands";
 
 /** Jumps to the Nth (1-indexed, order-sorted) flow sheet, no-op if out of range. */
 function jumpToSheet(n: number): void {
@@ -299,6 +299,9 @@ export function executeCommand(id: CommandId): void {
         // --- Window -------------------------------------------------------------
         case "window.new":
             void openNewWindow();
+            return;
+        case "window.close":
+            void closeCurrentWindow();
             return;
 
         // --- Flow files ---------------------------------------------------------

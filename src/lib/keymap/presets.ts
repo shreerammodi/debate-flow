@@ -21,6 +21,7 @@ const LETTER_BINDINGS: Record<Chord, CommandId> = (() => {
         // outrank a between-rounds action. The start screen binds bare "o"
         // and "n" instead.
         [`${mod}+n`]: "window.new",
+        [`${mod}+w`]: "window.close",
         [`${mod}+s`]: "flow.save",
         [`${mod}+S`]: "flow.saveAs",
         [`${mod}+z`]: "edit.undo",

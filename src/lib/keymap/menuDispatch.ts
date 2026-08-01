@@ -33,11 +33,13 @@ const FLOW_ROUTE = "/flow";
  * panel open for the next flow load.
  *
  * The flow.* commands belong here because they are exactly the ones the start
- * screen needs, and each already no-ops when no flow is open. window.new
- * belongs here for the same reason in reverse: it is not flow-scoped at all.
+ * screen needs, and each already no-ops when no flow is open. window.new and
+ * window.close belong here for the same reason in reverse: neither is
+ * flow-scoped at all.
  */
 const GLOBAL_COMMANDS = new Set<CommandId>([
     "window.new",
+    "window.close",
     "flow.new",
     "flow.open",
     "flow.save",

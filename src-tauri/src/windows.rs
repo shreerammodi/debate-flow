@@ -204,6 +204,15 @@ pub fn new_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     open_dashboard(&app).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Closes the window that asked, through the flush handshake rather than on
+/// the spot. The JS side of `window.close` (Mod+W, the Window menu, the
+/// command palette); closing the last open window quits, exactly as its
+/// native close control does.
+#[tauri::command]
+pub fn close_window<R: Runtime>(app: AppHandle<R>, window: WebviewWindow<R>) {
+    crate::shutdown::request_close(&app, window.label());
+}
+
 // --- Cold-launch bootstrap ------------------------------------------------------
 //
 // A .ebb opened from the file manager reaches Rust as argv (Windows/Linux,

@@ -98,7 +98,10 @@ const GROUPS: { label: string; rows: { commandId: CommandId }[] }[] = [
     },
     {
         label: "Window",
-        rows: [{ commandId: "window.new" as CommandId }],
+        rows: [
+            { commandId: "window.new" as CommandId },
+            { commandId: "window.close" as CommandId },
+        ],
     },
     {
         label: "Flow files",

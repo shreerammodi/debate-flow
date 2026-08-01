@@ -168,10 +168,13 @@ pub fn build<R: Runtime>(
         .item(&cmd("rfd.toggle", "Toggle RFD", "CmdOrCtrl+J")?)
         .build()?;
 
-    // Window: New Window first, matching the platform convention; the rest
-    // are native window commands whose accelerators the OS owns.
+    // Window: New Window first, matching the platform convention; Close
+    // Window is ours rather than the predefined item so it runs through the
+    // flush handshake and follows the keymap. The rest are native window
+    // commands whose accelerators the OS owns.
     let window_menu = SubmenuBuilder::new(app, "Window")
         .item(&cmd("window.new", "New Window", "CmdOrCtrl+N")?)
+        .item(&cmd("window.close", "Close Window", "CmdOrCtrl+W")?)
         .separator()
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .build()?;

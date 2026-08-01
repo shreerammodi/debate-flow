@@ -99,6 +99,7 @@ export function chordToAccelerator(chord: string): string | null {
 /** The menu commands whose accelerators follow the effective keymap. */
 export const MENU_COMMAND_IDS = [
     "window.new",
+    "window.close",
     "flow.new",
     "flow.open",
     "flow.save",

@@ -186,6 +186,18 @@ pub fn request_all<R: Runtime>(app: &AppHandle<R>) {
     arm_timeout(app, attempt);
 }
 
+/// Begins closing the window named `label`, applying the rule that the last
+/// open window closing is a quit while any other close leaves its siblings
+/// alone. Both the window's own close control and the `window.close` command
+/// land here, so neither can disagree about which one it is.
+pub fn request_close<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    if app.webview_windows().len() <= 1 {
+        request_all(app);
+    } else if let Some(window) = app.get_webview_window(label) {
+        request_window(app, &window);
+    }
+}
+
 /// The frontend's answer, from the window that sent it. `saved` false keeps
 /// that window (and, in a full quit, every other window in the same attempt)
 /// open with the round intact; the frontend is responsible for saying why.
@@ -217,6 +229,52 @@ mod tests {
 
     fn labels(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Which action the attempt claiming `label` will run, without waiting
+    /// for the frontend to confirm it.
+    fn action_for(label: &str) -> Option<&'static str> {
+        let state = STATE.lock();
+        let attempt = state.attempts.get(state.owner.get(label)?)?;
+        Some(match attempt.action {
+            Action::ExitProcess => "exit",
+            Action::CloseWindow(_) => "close",
+        })
+    }
+
+    /// Builds a mock app holding one window per label.
+    fn app_with(labels: &[&str]) -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        for label in labels {
+            tauri::WebviewWindowBuilder::new(app.handle(), *label, tauri::WebviewUrl::default())
+                .build()
+                .expect("a window");
+        }
+        app
+    }
+
+    #[test]
+    fn closing_one_of_several_windows_leaves_its_siblings_alone() {
+        let _g = fresh();
+        let app = app_with(&["win-0", "win-1"]);
+
+        request_close(app.handle(), "win-0");
+
+        assert_eq!(action_for("win-0"), Some("close"));
+        assert!(!in_progress("win-1"), "the sibling keeps its round");
+        // Disarm the armed timeout: nothing here should exit the test process.
+        cancel("win-0");
+    }
+
+    #[test]
+    fn closing_the_last_window_is_a_quit() {
+        let _g = fresh();
+        let app = app_with(&["win-0"]);
+
+        request_close(app.handle(), "win-0");
+
+        assert_eq!(action_for("win-0"), Some("exit"));
+        cancel("win-0");
     }
 
     #[test]

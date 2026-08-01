@@ -135,6 +135,7 @@ pub fn run() {
             sidecar::write_sidecar,
             shutdown::finish_quit,
             system_info,
+            windows::close_window,
             windows::new_window,
             windows::report_open_path
         ])
@@ -161,14 +162,7 @@ pub fn run() {
                     return;
                 }
                 api.prevent_close();
-                let app = window.app_handle();
-                // The last open window closing is a quit: every other close
-                // just closes that one window and leaves the rest alone.
-                if app.webview_windows().len() <= 1 {
-                    shutdown::request_all(app);
-                } else if let Some(w) = app.get_webview_window(label) {
-                    shutdown::request_window(app, &w);
-                }
+                shutdown::request_close(window.app_handle(), label);
             }
             _ => {}
         })

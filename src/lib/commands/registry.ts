@@ -9,6 +9,7 @@
 
 export type CommandId =
     | "window.new"
+    | "window.close"
     | "flow.new"
     | "flow.open"
     | "flow.save"
@@ -78,6 +79,7 @@ export interface CommandDef {
 
 export const COMMANDS: Record<CommandId, CommandDef> = {
     "window.new": { id: "window.new", label: "New window" },
+    "window.close": { id: "window.close", label: "Close window" },
     "flow.new": { id: "flow.new", label: "New flow" },
     "flow.open": { id: "flow.open", label: "Open flow" },
     "flow.save": { id: "flow.save", label: "Save flow" },
@@ -172,6 +174,7 @@ export const COLLAB_COMMANDS: readonly CommandId[] = [
  */
 export const EDITS_ROUND: Record<CommandId, boolean> = {
     "window.new": false,
+    "window.close": false,
     "flow.new": false,
     "flow.open": false,
     "flow.save": false,
@@ -247,6 +250,7 @@ export const EDITS_ROUND: Record<CommandId, boolean> = {
  */
 export const GRID_SCOPED: Record<CommandId, boolean> = {
     "window.new": false,
+    "window.close": false,
     "flow.new": false,
     "flow.open": false,
     "flow.save": false,
