@@ -472,7 +472,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             return;
         }
         const hot = hotRef.current?.hotInstance ?? null;
-        setActiveHot(hot, snapshot, currentSheetIdRef.current, spacersRef.current);
+        setActiveHot(hot, snapshot, currentSheetIdRef.current, loadedSpacersRef.current);
         const gainedFocus = !wasFocusedRef.current;
         wasFocusedRef.current = true;
         // A keyboard focus switch (Alt+h/l) moves the accent and command
@@ -491,12 +491,17 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     // The pane owns its spacer count and publishes it, so a command reaching
     // this grid through the registry converts against the number it was drawn
-    // with. Published on its own as well, because the other two writers are a
+    // with. Every writer publishes the loaded count and never the render's:
+    // a command acts on the grid as it stands, which through a switch is the
+    // pad the outgoing sheet was drawn with. The load publishes again once it
+    // has redrawn, so the registry is right at both ends of the gap.
+    //
+    // Published here on its own as well, because the other writers are a
     // selection and a focus change, and flipping the setting is neither.
     useEffect(() => {
         const hot = hotRef.current?.hotInstance ?? null;
         if (hot && getActiveHot() === hot) {
-            setActiveHot(hot, snapshot, currentSheetIdRef.current, spacers);
+            setActiveHot(hot, snapshot, currentSheetIdRef.current, loadedSpacersRef.current);
         }
     }, [spacers, snapshot]);
 
@@ -570,6 +575,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             applyMeta(hot, sheet.meta, prevMeta, lead, prevLead);
         });
         loadedSpacersRef.current = lead;
+        // The grid now carries the new pad, so the registry says so before
+        // anything reaching it through `getActiveSpacers` can act on it.
+        if (getActiveHot() === hot) {
+            setActiveHot(hot, snapshot, sheet.id, lead);
+        }
         // A reload under a changed pad re-keys every column, and both undo
         // histories hold the grid coordinates their action was recorded with.
         // There is nothing to rebase them onto, so an undo replayed here would
@@ -592,11 +602,15 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // The session coalesces the claim onto the heartbeat, so firing per
     // selection costs no extra message.
     const afterSelectionEnd = useCallback(() => {
+        // A selection is a read of the grid as it stands, and so is anything a
+        // command reaching it through the registry will do, so both the claim
+        // and the publish speak in the pad it was drawn with.
+        const lead = loadedSpacersRef.current;
         setActiveHot(
             hotRef.current?.hotInstance ?? null,
             snapshot,
             currentSheetIdRef.current,
-            spacersRef.current,
+            lead,
         );
         const { splitSheetId, focusedPane, focusPane } = useFlowStore.getState();
         if (splitSheetId != null && focusedPane !== pane) focusPane(pane);
@@ -605,7 +619,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         if (sid && cell && cell.row != null && cell.col != null) {
             // A cursor inside the pad is on no cell of this sheet, so the
             // partner hears nothing rather than hearing the first column.
-            const at = toModelCol(gridCol(cell.col), spacersRef.current);
+            const at = toModelCol(gridCol(cell.col), lead);
             if (at !== null) claimCursor({ sheetId: sid, col: at, row: cell.row });
         }
     }, [pane, snapshot]);
