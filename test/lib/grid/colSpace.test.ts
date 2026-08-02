@@ -15,19 +15,41 @@ describe("colSpace", () => {
         expect(toModelCol(gridCol(4), 0)).toBe(4);
     });
 
-    it("round-trips every column of a padded pane", () => {
+    it("round-trips every cell of a padded pane, both directions", () => {
         for (const spacers of [0, 1, 2, 7]) {
             for (let c = 0; c < 12; c++) {
                 expect(toModelCol(toGridCol(modelCol(c), spacers), spacers)).toBe(c);
             }
+            for (let c = spacers; c < 12; c++) {
+                const model = toModelCol(gridCol(c), spacers);
+                expect(model).not.toBeNull();
+                expect(toGridCol(model!, spacers)).toBe(c);
+            }
         }
     });
 
-    it("floors a spacer at the sheet's first column rather than going negative", () => {
-        // A grid column inside the pad belongs to no cell of the sheet. Callers
-        // clamp before converting; a negative model column would index a row
-        // from its end, which is a cell the debater never pointed at.
-        expect(toModelCol(gridCol(0), 2)).toBe(0);
-        expect(toModelCol(gridCol(1), 2)).toBe(0);
+    it("gives a column inside the pad no cell at all", () => {
+        // Clamping would answer 0, which is a real addressable cell, so a
+        // caller that forgot to exclude the pad would act on the sheet's first
+        // column instead of failing.
+        expect(toModelCol(gridCol(0), 2)).toBeNull();
+        expect(toModelCol(gridCol(1), 2)).toBeNull();
+        expect(toModelCol(gridCol(2), 2)).toBe(0);
+    });
+
+    it("keeps the two spaces apart at the type level", () => {
+        // The whole deliverable is this boundary, and every runtime assertion
+        // above passes just as well if the brands dissolve into plain numbers.
+        // @ts-expect-error a grid column is not a cell index
+        toGridCol(gridCol(1), 0);
+        // @ts-expect-error a cell index is not a grid column
+        toModelCol(modelCol(1), 0);
+        // @ts-expect-error a bare number is neither until it is named
+        toGridCol(1, 0);
+        // @ts-expect-error relabelling across the spaces would drop the shift
+        modelCol(gridCol(1));
+        // @ts-expect-error the same, in the other direction
+        gridCol(modelCol(1));
+        expect(true).toBe(true);
     });
 });

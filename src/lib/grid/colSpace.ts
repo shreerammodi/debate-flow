@@ -17,11 +17,22 @@ export type ModelCol = number & { readonly __modelCol: unique symbol };
 export type GridCol = number & { readonly __gridCol: unique symbol };
 
 /**
+ * A number carrying neither brand. The seams take this rather than `number`,
+ * so a column already named in one space cannot be relabelled into the other:
+ * that relabelling drops the spacer shift, and it is the one way around the
+ * conversion the branding exists to force.
+ */
+type Unbranded = number & {
+    readonly __modelCol?: undefined;
+    readonly __gridCol?: undefined;
+};
+
+/**
  * Names a bare number as a model column. The seam for values that arrive
  * already validated: off the wire, out of a file, or out of a store field.
  */
-export function modelCol(n: number): ModelCol {
-    return n as ModelCol;
+export function modelCol(n: Unbranded): ModelCol {
+    return n as unknown as ModelCol;
 }
 
 /**
@@ -29,17 +40,23 @@ export function modelCol(n: number): ModelCol {
  * hands back, whose API is untyped; this is the only place a bare number
  * becomes a grid column, so the casts are greppable.
  */
-export function gridCol(n: number): GridCol {
-    return n as GridCol;
+export function gridCol(n: Unbranded): GridCol {
+    return n as unknown as GridCol;
 }
 
 /**
- * The cell a grid column points at. Clamped at zero: a column inside the pad
- * belongs to no cell of the sheet, and a negative index would read a row from
- * its end instead of failing.
+ * The cell a grid column points at, or null for a column inside the pad,
+ * which stands for a speech the sheet does not hold and so points at no cell
+ * of it.
+ *
+ * Null rather than a clamp: clamping returns 0, which is a real addressable
+ * cell, so a caller that forgot to exclude the pad would act on the sheet's
+ * first column instead of failing. The one that would have - a spacer's own
+ * render asking who is on this cell - would have painted a partner's cursor
+ * on the pad and on the first column at once.
  */
-export function toModelCol(col: GridCol, spacers: number): ModelCol {
-    return Math.max(col - spacers, 0) as ModelCol;
+export function toModelCol(col: GridCol, spacers: number): ModelCol | null {
+    return col < spacers ? null : ((col - spacers) as ModelCol);
 }
 
 /** Where a cell sits on a pane carrying `spacers` inert columns. */
