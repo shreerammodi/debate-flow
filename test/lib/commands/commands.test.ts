@@ -6,12 +6,14 @@ vi.mock("sonner", () => ({
 
 import { toast } from "sonner";
 
+import { projectDoc } from "@/lib/collab/doc";
+import { clearReplica, getReplica, seedReplica } from "@/lib/collab/replica";
 import { executeCommand } from "@/lib/commands/commands";
 import { COMMANDS, EDITS_ROUND, type CommandId } from "@/lib/commands/registry";
 import { BOLD_CLASS, GROUP_CLASS, HIGHLIGHT_CLASS, KICKED_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
-import { makeFlowRound } from "@/lib/model/flow";
+import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useContactPicker } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -26,6 +28,7 @@ function loadRound() {
 
 beforeEach(() => {
     setActiveHot(null, null);
+    clearReplica();
     useFlowStore.setState({
         round: null,
         activeSheetId: null,
@@ -339,6 +342,100 @@ describe("grid commands", () => {
         executeCommand("cell.move");
 
         expect(movingBlock()).toBeNull();
+    });
+});
+
+/**
+ * An aligned pane leads with one inert column per speech the sheet does not
+ * show. A command reads its column off the grid and puts it on the wire, so it
+ * converts against the count the pane published; without that, a decoration or
+ * an opened cell lands on a partner's speech.
+ */
+describe("grid commands on a padded pane", () => {
+    /** One spacer, so grid column 1 is the sheet's first cell. */
+    const SPACERS = 1;
+
+    function paddedRound(data: (string | null)[][] = []) {
+        const round = makeFlowRound({});
+        const sheet = round.sheets.find((s) => s.kind !== "cx")!;
+        sheet.data = data;
+        // One decoration under the cell the cursor names and one under the
+        // grid slot it sits in, so which key a command read is visible.
+        sheet.meta = { "0,0": { bold: true }, "0,1": { highlight: true } };
+        useFlowStore.getState().loadRound(round);
+        useFlowStore.setState({ activeSheetId: sheet.id });
+        const stored = useFlowStore.getState().round!;
+        // Seeded without that meta, so an op reporting a decoration shows up
+        // in the projection instead of matching what was already there.
+        seedReplica({ ...stored, sheets: stored.sheets.map((s) => ({ ...s, meta: {} })) });
+        return { round: stored, sheetId: sheet.id };
+    }
+
+    const projected = (round: FlowRound, sheetId: string) =>
+        projectDoc(getReplica()!, round).sheets.find((s) => s.id === sheetId)!;
+
+    afterEach(() => clearReplica());
+
+    it("cell.insert opens the cell the selected column stands for", () => {
+        const { round, sheetId } = paddedRound([
+            ["a", "x"],
+            ["b", "y"],
+            ["c", "z"],
+        ]);
+        const data = [
+            ["pad", "a"],
+            ["pad", "b"],
+            ["pad", "c"],
+        ];
+        const fakeHot = {
+            getSelectedLast: () => [1, 1],
+            countRows: () => data.length,
+            countCols: () => 2,
+            getDataAtCell: (r: number, c: number) => data[r][c],
+            getCellMeta: () => ({}),
+            setCellMeta: vi.fn(),
+            setDataAtCell: (changes: [number, number, string | null][]) => {
+                for (const [r, c, v] of changes) data[r][c] = v as string;
+            },
+            render: vi.fn(),
+        };
+        setActiveHot(fakeHot as never, vi.fn(), sheetId, SPACERS);
+
+        executeCommand("cell.insert");
+
+        // The grid shifts the column the cursor is in ...
+        expect(data.map((row) => row[1])).toEqual(["a", "", "b"]);
+        // ... and the op opens the cell that column names, leaving the
+        // speech beside it exactly where a partner still has it.
+        const sheet = projected(round, sheetId);
+        expect(sheet.data.map((row) => row[0])).toEqual(["a", null, "b", "c"]);
+        expect(sheet.data.map((row) => row[1])).toEqual(["x", "y", "z", null]);
+    });
+
+    it("a decoration records the cell it marks, with that cell's own meta", () => {
+        const { round, sheetId } = paddedRound([["a", "x"]]);
+        const meta = metaStore();
+        const hot = {
+            getSelectedRange: () => [
+                {
+                    highlight: { row: 0, col: 1 },
+                    getTopLeftCorner: () => ({ row: 0, col: 1 }),
+                    getBottomRightCorner: () => ({ row: 0, col: 1 }),
+                },
+            ],
+            getCellMeta: meta.getCellMeta,
+            setCellMeta: meta.setCellMeta,
+            render: vi.fn(),
+        };
+        setActiveHot(hot as never, vi.fn(), sheetId, SPACERS);
+
+        executeCommand("format.toggleBold");
+
+        // The class goes on the grid cell the cursor is in, and the op names
+        // the cell that column stands for, carrying the meta stored under
+        // that cell's own key rather than the grid slot's.
+        expect(meta.at(0, 1).className).toBe(BOLD_CLASS);
+        expect(projected(round, sheetId).meta).toEqual({ "0,0": { bold: true } });
     });
 });
 

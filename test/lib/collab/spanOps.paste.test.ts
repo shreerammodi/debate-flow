@@ -7,6 +7,7 @@ import { applyOp, type CollabOp, type OpContext } from "@/lib/collab/ops";
 import { openSpanOps } from "@/lib/collab/spanOps";
 import { createClock } from "@/lib/collab/stamp";
 import type { CollabDoc } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 /**
@@ -52,7 +53,7 @@ beforeEach(() => {
 describe("openSpanOps", () => {
     it("opens the run from the top, pushing the tail down", () => {
         const alex = ctxFor("alex", 1_000);
-        const opened = run(base, alex, openSpanOps(sheetId, 0, 1, 2));
+        const opened = run(base, alex, openSpanOps(sheetId, modelCol(0), 1, 2));
         expect(column(opened, 0)).toEqual(["perm", null, null, "cap bad", "extend"]);
         // The neighbouring column is untouched: a paste lands where it lands.
         expect(column(opened, 1)).toEqual(["link", "turn", "drop", null, null]);
@@ -63,13 +64,13 @@ describe("openSpanOps", () => {
         const bolded = run(base, alex, [
             { kind: "cellMeta", sheetId, col: 0, row: 1, meta: { bold: true } },
         ]);
-        const opened = run(bolded, alex, openSpanOps(sheetId, 0, 1, 1));
+        const opened = run(bolded, alex, openSpanOps(sheetId, modelCol(0), 1, 1));
         expect(projectSheet(opened.sheets[sheetId]).meta["2,0"]).toEqual({ bold: true });
         expect(projectSheet(opened.sheets[sheetId]).meta["1,0"]).toBeUndefined();
     });
 
     it("opens nothing for a run of no rows", () => {
-        expect(openSpanOps(sheetId, 0, 0, 0)).toEqual([]);
+        expect(openSpanOps(sheetId, modelCol(0), 0, 0)).toEqual([]);
     });
 });
 
@@ -80,7 +81,7 @@ describe("a paste both machines see", () => {
 
         // Alex pastes two rows in at row 1, the way beforePaste records it,
         // then the text lands the way afterChange records it.
-        let mine = run(base, alex, openSpanOps(sheetId, 0, 1, 2));
+        let mine = run(base, alex, openSpanOps(sheetId, modelCol(0), 1, 2));
         mine = run(mine, alex, [
             { kind: "cellText", sheetId, col: 0, row: 1, text: "pasted one" },
             { kind: "cellText", sheetId, col: 0, row: 2, text: "pasted two" },
@@ -109,8 +110,8 @@ describe("a paste both machines see", () => {
     it("does not double the column when both sides paste at once", () => {
         const alex = ctxFor("alex", 1_000);
         const sam = ctxFor("sam", 5_000);
-        const mine = run(base, alex, openSpanOps(sheetId, 0, 1, 1));
-        const theirs = run(base, sam, openSpanOps(sheetId, 0, 1, 1));
+        const mine = run(base, alex, openSpanOps(sheetId, modelCol(0), 1, 1));
+        const theirs = run(base, sam, openSpanOps(sheetId, modelCol(0), 1, 1));
 
         const onMine = merge(mine, theirs).doc;
         const onTheirs = merge(theirs, mine).doc;

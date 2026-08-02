@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { projectDoc } from "@/lib/collab/doc";
-import { isReplicatedSource, rowOpFromHook, textOpsFromChanges } from "@/lib/collab/gridOps";
+import {
+    isReplicatedSource,
+    rowOpFromHook,
+    textOpsFromChanges,
+    type ModelChange,
+} from "@/lib/collab/gridOps";
 import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, driftedSheetIds, getReplica, recordOp } from "@/lib/collab/replica";
 import { setSidecarFs, type SidecarFs } from "@/lib/collab/sidecarFs";
-import type { GridChange } from "@/lib/grid/staleSource";
+import { modelCol } from "@/lib/grid/colSpace";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { serializeFlow } from "@/lib/persistence/flowFile";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -32,7 +37,7 @@ function fakeFs(): FakeSidecarFs {
  * mounting a grid. `afterChange` hands its payload to `textOpsFromChanges`
  * once the source passes; the row hooks hand theirs to `rowOpFromHook`.
  */
-function typeInto(sheetId: string, changes: GridChange[]): void {
+function typeInto(sheetId: string, changes: ModelChange[]): void {
     expect(isReplicatedSource("edit")).toBe(true);
     for (const op of textOpsFromChanges(sheetId, changes)) recordOp(op);
 }
@@ -62,9 +67,9 @@ describe("a round of editing survives a restart", () => {
         await recoverReplica(round, serializeFlow(round));
 
         // A speech: typed cells, a row inserted above, one more cell.
-        typeInto(sheetId, [[0, 0, "perm do both", "perm do both, then CP"]]);
+        typeInto(sheetId, [[0, modelCol(0), "perm do both", "perm do both, then CP"]]);
         for (const op of rowOpFromHook("insert", sheetId, 1, 1, undefined)) recordOp(op);
-        typeInto(sheetId, [[1, 1, null, "extend Smith"]]);
+        typeInto(sheetId, [[1, modelCol(1), null, "extend Smith"]]);
         recordOp({ kind: "cellMeta", sheetId, col: 0, row: 0, meta: { bold: true } });
 
         // The store follows, the way the grid snapshot makes it.
@@ -97,7 +102,7 @@ describe("a round of editing survives a restart", () => {
     it("falls back to the file when the flow changed outside ebb", async () => {
         const { round, sheetId } = openedRound();
         await recoverReplica(round, serializeFlow(round));
-        typeInto(sheetId, [[0, 0, "perm do both", "typed in this session"]]);
+        typeInto(sheetId, [[0, modelCol(0), "perm do both", "typed in this session"]]);
         await persistReplica(round, serializeFlow(round));
 
         // Someone edited the .ebb while ebb was closed, so the hash no longer
@@ -141,7 +146,7 @@ describe("a round of editing survives a restart", () => {
         await recoverReplica(round, serializeFlow(round));
 
         // The replica still tracks every edit: one code path, not two.
-        typeInto(sheetId, [[0, 0, "perm do both", "still replicated"]]);
+        typeInto(sheetId, [[0, modelCol(0), "perm do both", "still replicated"]]);
         await persistReplica(round, serializeFlow(round));
 
         const sheet = projectDoc(getReplica()!, round).sheets.find((s) => s.id === sheetId)!;

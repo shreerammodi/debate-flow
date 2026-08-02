@@ -5,6 +5,7 @@ import { gridPatchFor } from "@/lib/collab/gridPatch";
 import { applyOp, type CollabOp, type OpContext } from "@/lib/collab/ops";
 import { createClock } from "@/lib/collab/stamp";
 import type { CollabDoc, CollabSheet } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 let base: FlowRound;
@@ -103,7 +104,7 @@ describe("the grid writes a partner's change comes down to", () => {
         );
         const held = liveCells(next, 0)[0];
         const patch = gridPatchFor(before.sheets[sheetId], next, [
-            { col: 0, rank: held.rank, actor: held.actor },
+            { col: modelCol(0), rank: held.rank, actor: held.actor },
         ]);
         expect(patch.writes).toEqual([{ row: 1, col: 0, text: "also theirs" }]);
     });

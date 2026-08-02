@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleBridgeRequest, resetRevealCycle } from "@/lib/bridge/inbound";
+import { projectDoc } from "@/lib/collab/doc";
+import { clearReplica, getReplica, seedReplica } from "@/lib/collab/replica";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { resetMetaUndo } from "@/lib/grid/metaUndo";
 import { makeFlowRound, type CellMeta } from "@/lib/model/flow";
@@ -68,6 +70,7 @@ beforeEach(() => {
     // The bridge is desktop-only, so every route needs the shell's global.
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     setActiveHot(null, null);
+    clearReplica();
     resetMetaUndo();
     resetRevealCycle();
     useFlowStore.setState({
@@ -247,6 +250,53 @@ describe("the flow route", () => {
         expect(grid.data.length).toBeGreaterThanOrEqual(6);
         expect(grid.data[2][0]).toBe("Perm solves");
         expect(grid.data[5][0]).toBe("");
+    });
+});
+
+/**
+ * An aligned pane leads with one inert column per speech the sheet does not
+ * show, so the grid column the cursor sits in is not the cell it names. The
+ * pane publishes the count and the bridge converts against it; a send that
+ * skipped that would put a card on the wire against a partner's speech.
+ */
+describe("the flow route on a padded pane", () => {
+    /** The active flow sheet, with a replica open so the ops are observable. */
+    function paddedRound() {
+        loadRound();
+        const round = useFlowStore.getState().round!;
+        const sheetId = useFlowStore.getState().activeSheetId!;
+        seedReplica(round);
+        return { round, sheetId };
+    }
+
+    it("records a send against the sheet's own column, not the grid's", () => {
+        const { round, sheetId } = paddedRound();
+        const grid = makeGrid(10, 3);
+        grid.select(0, 1);
+        // One spacer, so grid column 1 is the sheet's first cell.
+        setActiveHot(grid.hot as never, vi.fn(), sheetId, 1);
+
+        const reply = send([tag]);
+
+        // Drawn where the cursor is, reported and recorded as the cell it names.
+        expect(grid.data[0][1]).toBe("Perm solves");
+        expect(reply.body).toMatchObject({ ok: true, col: 0 });
+        const sheet = projectDoc(getReplica()!, round).sheets.find((s) => s.id === sheetId)!;
+        expect(sheet.data[0][0]).toBe("Perm solves");
+        expect(sheet.data[0][1] ?? null).toBeNull();
+    });
+
+    it("refuses a send aimed at a spacer, which names no cell of the sheet", () => {
+        const { round, sheetId } = paddedRound();
+        const grid = makeGrid(10, 3);
+        grid.select(0, 0);
+        setActiveHot(grid.hot as never, vi.fn(), sheetId, 1);
+
+        expect(send([tag]).body).toMatchObject({ ok: false, error: "no-active-cell" });
+        expect(grid.data[0][0]).toBeNull();
+        expect(projectDoc(getReplica()!, round).sheets.find((s) => s.id === sheetId)!.data).toEqual(
+            [],
+        );
     });
 });
 

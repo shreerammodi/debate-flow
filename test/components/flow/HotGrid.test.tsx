@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
 import { afterEach, describe, expect, it } from "vitest";
 
-import HotGrid, { applyMeta, collectMeta, COL_WIDTH } from "@/components/flow/HotGrid";
+import HotGrid, { applyMeta, collectMeta } from "@/components/flow/HotGrid";
 import { getActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -97,13 +97,13 @@ describe("collectMeta / applyMeta", () => {
 });
 
 /**
- * Aligning pads the pane by the speeches a sheet does not show, so the same
- * speech lands at the same place on every sheet of the round.
+ * Aligning gives a sheet one inert column per speech it does not show, so the
+ * same speech lands at the same place on every sheet of the round.
  */
 describe("speech alignment", () => {
     const round = makeFlowRound();
     // makeFlowRound opens a policy round with the cx sheet first and one aff
-    // flow sheet after it; the round needs a neg sheet to have an offset one.
+    // flow sheet after it; the round needs a neg sheet to have a padded one.
     const affSheet = round.sheets[1];
     const negSheet = makeFlowSheet({ title: "2.", group: "neg", order: 1 });
     round.sheets.push(negSheet);
@@ -117,33 +117,66 @@ describe("speech alignment", () => {
         });
     });
 
-    function padOf(sheetId: string, alignSpeeches: boolean): string {
-        useFlowStore.setState({
-            round,
-            activeSheetId: sheetId,
-            splitSheetId: null,
-            alignSpeeches,
-        });
+    async function mount(sheetId: string, alignSpeeches: boolean) {
+        useFlowStore.setState({ round, activeSheetId: sheetId, splitSheetId: null, alignSpeeches });
         render(<HotGrid sheetId={sheetId} pane={1} />);
-        const pad = screen.getByTestId("grid-pad");
-        expect(pad.style.zoom).not.toBe("");
-        return pad.style.paddingLeft;
+        return await waitFor(() => {
+            const h = getActiveHot();
+            expect(h).not.toBeNull();
+            return h!;
+        });
     }
 
-    it("pads a neg sheet by the speech that opens the round", () => {
-        expect(padOf(negSheet.id, true)).toBe(`${COL_WIDTH}px`);
+    it("leads a neg sheet with the speech that opens the round", async () => {
+        const hot = await mount(negSheet.id, true);
+        expect(hot.countCols()).toBe(7);
+        expect(hot.getColHeader(0)).toBe("1AC");
+        expect(hot.getColHeader(1)).toBe("1NC");
     });
 
-    it("leaves the sheet that opens the round flush", () => {
-        expect(padOf(affSheet.id, true)).toBe("0px");
+    it("leaves the sheet that opens the round unpadded", async () => {
+        const hot = await mount(affSheet.id, true);
+        expect(hot.getColHeader(0)).toBe("1AC");
+        expect(hot.countCols()).toBe(7);
     });
 
-    it("pads nothing while the setting is off", () => {
-        expect(padOf(negSheet.id, false)).toBe("0px");
+    it("adds no column while the setting is off", async () => {
+        const hot = await mount(negSheet.id, false);
+        expect(hot.countCols()).toBe(6);
+        expect(hot.getColHeader(0)).toBe("1NC");
     });
 
-    it("leaves a cx sheet flush, since its columns are periods", () => {
-        expect(padOf(round.sheets[0].id, true)).toBe("0px");
+    it("leaves a cx sheet unpadded, since its columns are periods", async () => {
+        const hot = await mount(round.sheets[0].id, true);
+        expect(hot.getColHeader(0)).toBe("Question");
+    });
+
+    it("greys the spacer and inks it with its own speech's side", async () => {
+        const hot = await mount(negSheet.id, true);
+        expect(hot.getCell(0, 0)!.classList.contains("cell-spacer")).toBe(true);
+        expect(hot.getCell(0, 0)!.classList.contains("cell-aff")).toBe(true);
+        expect(hot.getCell(0, 1)!.classList.contains("cell-spacer")).toBe(false);
+    });
+
+    it("writes a cell into the sheet's own column, not the padded one", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.setDataAtCell(0, 1, "extend");
+        const saved = useFlowStore.getState().round!.sheets.find((s) => s.id === negSheet.id)!;
+        expect(saved.data[0][0]).toBe("extend");
+    });
+
+    it("holds the cursor on its own cell when the setting is flipped", async () => {
+        const hot = await mount(negSheet.id, true);
+        // 2AC: the sheet's second cell, one right of the spacer.
+        hot.selectCell(1, 2);
+
+        act(() => useFlowStore.setState({ alignSpeeches: false }));
+        await waitFor(() => expect(hot.countCols()).toBe(6));
+        expect(hot.getSelectedLast()).toEqual([1, 1, 1, 1]);
+
+        act(() => useFlowStore.setState({ alignSpeeches: true }));
+        await waitFor(() => expect(hot.countCols()).toBe(7));
+        expect(hot.getSelectedLast()).toEqual([1, 2, 1, 2]);
     });
 });
 

@@ -15,6 +15,8 @@
  * on a live link.
  */
 
+import type { ModelCol } from "@/lib/grid/colSpace";
+
 /** Refresh cadence while a peer is anywhere at all. */
 export const HEARTBEAT_MS = 250;
 /** An entry nothing refreshed inside this window is gone. */
@@ -23,7 +25,7 @@ export const PRESENCE_TTL_MS = 1_000;
 export interface Presence {
     endpointId: string;
     sheetId: string;
-    col: number;
+    col: ModelCol;
     row: number;
     /** When the peer last said it was still there. */
     heldAt: number;

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isReplicatedSource, rowOpFromHook, textOpsFromChanges } from "@/lib/collab/gridOps";
-import type { GridChange } from "@/lib/grid/staleSource";
+import {
+    isReplicatedSource,
+    rowOpFromHook,
+    textOpsFromChanges,
+    type ModelChange,
+} from "@/lib/collab/gridOps";
+import { modelCol } from "@/lib/grid/colSpace";
 
 describe("isReplicatedSource", () => {
     it("accepts the writes that change text without moving any cell", () => {
@@ -30,9 +35,9 @@ describe("isReplicatedSource", () => {
 
 describe("textOpsFromChanges", () => {
     it("turns each changed cell into one independent write", () => {
-        const changes: GridChange[] = [
-            [0, 1, "old", "new"],
-            [3, 0, null, "fresh"],
+        const changes: ModelChange[] = [
+            [0, modelCol(1), "old", "new"],
+            [3, modelCol(0), null, "fresh"],
         ];
         expect(textOpsFromChanges("sheet-1", changes)).toEqual([
             { kind: "cellText", sheetId: "sheet-1", col: 1, row: 0, text: "new" },
@@ -41,17 +46,17 @@ describe("textOpsFromChanges", () => {
     });
 
     it("carries an emptied cell as empty text, not as a delete", () => {
-        expect(textOpsFromChanges("s", [[2, 2, "gone", ""]])).toEqual([
+        expect(textOpsFromChanges("s", [[2, modelCol(2), "gone", ""]])).toEqual([
             { kind: "cellText", sheetId: "s", col: 2, row: 2, text: "" },
         ]);
     });
 
     it("drops a change that reports no actual difference", () => {
-        expect(textOpsFromChanges("s", [[0, 0, "same", "same"]])).toEqual([]);
+        expect(textOpsFromChanges("s", [[0, modelCol(0), "same", "same"]])).toEqual([]);
     });
 
     it("ignores a non-numeric column, which a keyed data source would give", () => {
-        expect(textOpsFromChanges("s", [[0, "title" as never, "a", "b"]])).toEqual([]);
+        expect(textOpsFromChanges("s", [[0, "title", "a", "b"]])).toEqual([]);
     });
 });
 

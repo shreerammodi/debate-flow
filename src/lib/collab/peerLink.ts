@@ -8,6 +8,7 @@
  * flowFsMemory.
  */
 
+import type { ModelCol } from "@/lib/grid/colSpace";
 import { isDesktop } from "@/lib/update/adapter";
 
 import type { Stamp } from "./stamp";
@@ -28,7 +29,7 @@ export const HANDSHAKE_MS = 10_000;
 /** A grid slot a peer is on. */
 export interface CellRef {
     sheetId: string;
-    col: number;
+    col: ModelCol;
     row: number;
 }
 
@@ -121,7 +122,12 @@ function isStamp(value: unknown): value is Stamp {
     );
 }
 
-/** A cell a peer claims, and nothing that only looks like one. */
+/**
+ * A cell a peer claims, and nothing that only looks like one. The column is
+ * checked as a plain count and named a model column by the predicate alone: a
+ * peer speaks in cells, so what arrives is a model column whatever this side's
+ * alignment happens to be.
+ */
 export function isCellRef(value: unknown): value is CellRef {
     return isRecord(value) && isField(value.sheetId) && isCount(value.col) && isCount(value.row);
 }

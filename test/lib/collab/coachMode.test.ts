@@ -23,6 +23,7 @@ import {
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket, parseTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { getPresences, setPresences } from "@/lib/grid/presenceBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -267,7 +268,7 @@ describe("what a coach may do to the round", () => {
         // Presence is not a write. A coach following the round is the whole
         // reason the role exists.
         const { host, guest } = await hostAndGuest("coach");
-        guest.setCursor({ sheetId, col: 1, row: 3 });
+        guest.setCursor({ sheetId, col: modelCol(1), row: 3 });
         await settle();
 
         expect(getPresences()[0]).toMatchObject({
@@ -284,7 +285,7 @@ describe("what a coach may do to the round", () => {
         // another name. A coach that could make one would lock the host out of
         // the cell they are mid-speech in.
         const viewer = await hostAndGuest("coach");
-        viewer.guest.setPresence({ sheetId, col: 1, row: 3 });
+        viewer.guest.setPresence({ sheetId, col: modelCol(1), row: 3 });
         await settle();
         expect(getPresences()[0]).toMatchObject({ endpointId: RAE, col: 1, row: 3 });
         expect(getPresences()[0].editing).toBe(false);
@@ -295,7 +296,7 @@ describe("what a coach may do to the round", () => {
         clock.reset();
         setPresences([]);
         const editor = await hostAndGuest("partner", SAM);
-        editor.guest.setPresence({ sheetId, col: 1, row: 3 });
+        editor.guest.setPresence({ sheetId, col: modelCol(1), row: 3 });
         await settle();
         expect(getPresences()[0]).toMatchObject({ endpointId: SAM, editing: true });
         await editor.host.stop();
@@ -496,7 +497,7 @@ describe("a coach on a link the host dialled", () => {
 
     it("cannot claim a cell on that link either", async () => {
         const { host, coach } = await hostDialsCoach();
-        coach.setPresence({ sheetId, col: 2, row: 4 });
+        coach.setPresence({ sheetId, col: modelCol(2), row: 4 });
         await settle();
 
         expect(getPresences()[0]).toMatchObject({ endpointId: RAE, col: 2, row: 4 });

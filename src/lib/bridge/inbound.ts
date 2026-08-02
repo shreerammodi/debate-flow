@@ -13,7 +13,8 @@ import { openSpanOps } from "@/lib/collab/spanOps";
 import type { CellChange } from "@/lib/grid/cellShift";
 import { shiftSpan } from "@/lib/grid/cellShift";
 import { metaToClassName } from "@/lib/grid/codec";
-import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
+import { gridCol, toModelCol } from "@/lib/grid/colSpace";
+import { getActiveHot, getActiveSpacers, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
@@ -41,7 +42,14 @@ function applyFlow(req: FlowRequest): BridgeReply {
     const selection = hot.getSelectedLast();
     if (!selection) return bridgeError("no-active-cell");
 
-    const [row, col] = selection;
+    const [row, gcol] = selection;
+    // The pane publishes its inert leading column count, so a send converts
+    // against the number the grid was drawn with rather than deriving its own.
+    const col = gridCol(gcol);
+    const at = toModelCol(col, getActiveSpacers());
+    // A spacer stands for a speech this sheet does not hold, so it is no more
+    // a place to send a card to than an empty pane is.
+    if (at === null) return bridgeError("no-active-cell");
     const cells = planFlowWrite(req.items, req.mode, req.docTitle, req.space);
     // Insert-paste pushes the column's tail down, so the grid has to hold the
     // whole displaced run; an overwrite only has to hold the write itself.
@@ -75,16 +83,18 @@ function applyFlow(req: FlowRequest): BridgeReply {
     // from its row position, and a partner holding the old keys would merge
     // the two sets rather than recognise them.
     if (state.insertPaste) {
-        for (const op of openSpanOps(sheet.id, col, row, cells.length)) recordOp(op);
+        for (const op of openSpanOps(sheet.id, at, row, cells.length)) recordOp(op);
     }
     cells.forEach((cell, i) => {
-        recordOp({ kind: "cellText", sheetId: sheet.id, col, row: row + i, text: cell.text });
-        recordOp({ kind: "cellMeta", sheetId: sheet.id, col, row: row + i, meta: cell.meta });
+        // `at` is the model column the grid column `col` converts to, so what
+        // goes on the wire is the cell and not the slot it is drawn in.
+        recordOp({ kind: "cellText", sheetId: sheet.id, col: at, row: row + i, text: cell.text });
+        recordOp({ kind: "cellMeta", sheetId: sheet.id, col: at, row: row + i, meta: cell.meta });
     });
     return {
         status: 200,
         // The empty separator cells are not items, so they do not count.
-        body: { ok: true, written: cells.length - req.space, sheet: sheet.title, row, col },
+        body: { ok: true, written: cells.length - req.space, sheet: sheet.title, row, col: at },
     };
 }
 

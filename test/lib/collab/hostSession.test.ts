@@ -10,6 +10,7 @@ import { startCollabSession, type CollabSession } from "@/lib/collab/session";
 import { createClock } from "@/lib/collab/stamp";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { getPresences, setPresences } from "@/lib/grid/presenceBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -382,7 +383,7 @@ describe("the opt-in gate still holds", () => {
 describe("presence across a session", () => {
     it("shows the cell a partner has an editor open on", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setPresence({ sheetId, col: 1, row: 4 });
+        guest.setPresence({ sheetId, col: modelCol(1), row: 4 });
         await settle();
         expect(getPresences()).toHaveLength(1);
         expect(getPresences()[0]).toMatchObject({
@@ -396,7 +397,7 @@ describe("presence across a session", () => {
 
     it("releases it the moment their editor closes", async () => {
         const { guest } = await hostAndGuest();
-        guest.setPresence({ sheetId, col: 1, row: 4 });
+        guest.setPresence({ sheetId, col: modelCol(1), row: 4 });
         await settle();
         guest.setPresence(null);
         await settle();
@@ -405,7 +406,7 @@ describe("presence across a session", () => {
 
     it("leaves an unreachable peer holding nothing", async () => {
         const { guest } = await hostAndGuest();
-        guest.setPresence({ sheetId, col: 0, row: 0 });
+        guest.setPresence({ sheetId, col: modelCol(0), row: 0 });
         await settle();
         expect(getPresences()).toHaveLength(1);
 
@@ -419,7 +420,7 @@ describe("presence across a session", () => {
 describe("a partner's cursor across a session", () => {
     it("shows the cell they are on, claiming nothing", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 1, row: 4 });
+        guest.setCursor({ sheetId, col: modelCol(1), row: 4 });
         await settle();
         expect(getPresences()).toHaveLength(1);
         expect(getPresences()[0]).toMatchObject({
@@ -433,12 +434,12 @@ describe("a partner's cursor across a session", () => {
 
     it("keeps arrowing off the wire, and the heartbeat carries where they landed", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 0, row: 0 });
+        guest.setCursor({ sheetId, col: modelCol(0), row: 0 });
         await settle();
 
         // A debater holding the down arrow moves faster than anything needs to
         // hear about, so only the first of a burst goes out at once.
-        for (let row = 1; row <= 8; row++) guest.setCursor({ sheetId, col: 0, row });
+        for (let row = 1; row <= 8; row++) guest.setCursor({ sheetId, col: modelCol(0), row });
         await settle();
         expect(getPresences()[0]).toMatchObject({ row: 0 });
 
@@ -450,7 +451,7 @@ describe("a partner's cursor across a session", () => {
 
     it("hands the cell back the moment they leave the grid", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 2, row: 1 });
+        guest.setCursor({ sheetId, col: modelCol(2), row: 1 });
         await settle();
         expect(getPresences()).toHaveLength(1);
 
@@ -462,14 +463,14 @@ describe("a partner's cursor across a session", () => {
 
     it("does not downgrade an open editor, because the editor speaks for both", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 1, row: 3 });
-        guest.setPresence({ sheetId, col: 1, row: 3 });
+        guest.setCursor({ sheetId, col: modelCol(1), row: 3 });
+        guest.setPresence({ sheetId, col: modelCol(1), row: 3 });
         await settle();
         expect(getPresences()[0].editing).toBe(true);
 
         // A selection cannot move under an open editor, but a stray claim must
         // not unlock the cell either.
-        guest.setCursor({ sheetId, col: 1, row: 3 });
+        guest.setCursor({ sheetId, col: modelCol(1), row: 3 });
         clock.advance(HEARTBEAT_MS * 2);
         for (let i = 0; i < 10; i++) await Promise.resolve();
         expect(getPresences()[0].editing).toBe(true);
@@ -478,8 +479,8 @@ describe("a partner's cursor across a session", () => {
 
     it("goes back to a plain cursor when the editor closes on the cell they keep", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 1, row: 3 });
-        guest.setPresence({ sheetId, col: 1, row: 3 });
+        guest.setCursor({ sheetId, col: modelCol(1), row: 3 });
+        guest.setPresence({ sheetId, col: modelCol(1), row: 3 });
         await settle();
         expect(getPresences()[0].editing).toBe(true);
 
@@ -494,7 +495,7 @@ describe("a partner's cursor across a session", () => {
 
     it("stops the heartbeat once a peer is nowhere, so an idle pane costs no timer", async () => {
         const { host, guest } = await hostAndGuest();
-        guest.setCursor({ sheetId, col: 0, row: 0 });
+        guest.setCursor({ sheetId, col: modelCol(0), row: 0 });
         await settle();
         guest.setCursor(null);
         await settle();

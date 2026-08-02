@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { gridCol } from "@/lib/grid/colSpace";
 import {
     beginMove,
     cellIsMoving,
@@ -104,10 +105,10 @@ describe("cellIsMoving", () => {
         ]);
         beginMove(g, { startRow: 0, endRow: 0, startCol: 0, endCol: 1 });
 
-        expect(cellIsMoving(g, 0, 0)).toBe(true);
-        expect(cellIsMoving(g, 0, 1)).toBe(true);
-        expect(cellIsMoving(g, 0, 2)).toBe(false);
-        expect(cellIsMoving(g, 1, 0)).toBe(false);
+        expect(cellIsMoving(g, 0, gridCol(0))).toBe(true);
+        expect(cellIsMoving(g, 0, gridCol(1))).toBe(true);
+        expect(cellIsMoving(g, 0, gridCol(2))).toBe(false);
+        expect(cellIsMoving(g, 1, gridCol(0))).toBe(false);
     });
 });
 

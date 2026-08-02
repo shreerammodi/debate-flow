@@ -8,6 +8,8 @@
  * is mid-speech and cannot afford to be moved.
  */
 
+import { modelCol, type ModelCol } from "@/lib/grid/colSpace";
+
 import { liveCells } from "./doc";
 import { followSelection, type CellRef } from "./selection";
 import type { CollabDoc, CollabSheet } from "./types";
@@ -15,8 +17,8 @@ import type { StructuralChange } from "./undoRebase";
 
 export interface ApplyContext {
     editorOpen: boolean;
-    editorCell: { sheetId: string; col: number; row: number } | null;
-    selection: { sheetId: string; col: number; row: number } | null;
+    editorCell: { sheetId: string; col: ModelCol; row: number } | null;
+    selection: { sheetId: string; col: ModelCol; row: number } | null;
     activeSheetId: string | null;
 }
 
@@ -97,7 +99,7 @@ export function planRemoteApply(before: CollabDoc, after: CollabDoc, ctx: ApplyC
         const cell = sheet ? liveCells(sheet, ctx.editorCell.col)[ctx.editorCell.row] : undefined;
         if (cell) {
             plan.deferredCells.push({
-                col: cell.col,
+                col: modelCol(cell.col),
                 rank: cell.rank,
                 actor: cell.actor,
             });

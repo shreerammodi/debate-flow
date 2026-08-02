@@ -11,13 +11,15 @@
 
 import type { CellSource } from "@/lib/model/flow";
 
+import { gridCol, type GridCol } from "./colSpace";
+
 /** A single `setDataAtCell` change tuple. */
 export type CellChange = [row: number, col: number, value: string | null];
 
 /** The block a `shift_down` paste displaces, in visual grid coordinates. */
 export interface PasteShift {
     row: number;
-    col: number;
+    col: GridCol;
     width: number;
     height: number;
 }
@@ -62,7 +64,7 @@ const sourceAt = (grid: CellGrid, row: number, col: number) =>
  */
 export function shiftSpan(
     grid: CellGrid,
-    col: number,
+    col: GridCol,
     start: number,
     end: number,
     delta: number,
@@ -90,7 +92,7 @@ export function shiftSpan(
  * row's content falls off the bottom. The opened cell is bare: it inherits
  * neither the decoration nor the provenance of the text it displaced.
  */
-export function insertCell(grid: CellGrid, row: number, col: number): CellChange[] {
+export function insertCell(grid: CellGrid, row: number, col: GridCol): CellChange[] {
     const changes = shiftSpan(grid, col, row, grid.countRows() - 1, 1);
     grid.setCellMeta(row, col, "className", "");
     grid.setCellMeta(row, col, "source", undefined);
@@ -108,8 +110,9 @@ export function insertCell(grid: CellGrid, row: number, col: number): CellChange
  */
 export function shiftMetaDown(grid: CellGrid, { row, col, width, height }: PasteShift): void {
     const rows = grid.countRows();
-    const lastCol = Math.min(col + width, grid.countCols());
-    for (let c = col; c < lastCol; c++) {
+    const span = Math.min(col + width, grid.countCols()) - col;
+    for (let i = 0; i < span; i++) {
+        const c = gridCol(col + i);
         shiftSpan(grid, c, row, rows, height, { metaOnly: true });
         for (let r = row; r < Math.min(row + height, rows); r++) {
             grid.setCellMeta(r, c, "className", "");
@@ -127,7 +130,7 @@ export function shiftMetaDown(grid: CellGrid, { row, col, width, height }: Paste
  */
 export function moveBlock(
     grid: CellGrid,
-    col: number,
+    col: GridCol,
     blockStart: number,
     height: number,
     delta: number,

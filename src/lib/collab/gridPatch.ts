@@ -11,6 +11,7 @@
  * so what lands on the grid and what lands in the store agree cell for cell.
  */
 
+import { modelCol, type ModelCol } from "@/lib/grid/colSpace";
 import type { CellMeta } from "@/lib/model/flow";
 
 import { liveCells, sheetWidth } from "./doc";
@@ -19,13 +20,13 @@ import type { CollabSheet } from "./types";
 
 export interface CellWrite {
     row: number;
-    col: number;
+    col: ModelCol;
     text: string | null;
 }
 
 export interface MetaWrite {
     row: number;
-    col: number;
+    col: ModelCol;
     /** Null clears the cell's decoration and provenance. */
     meta: CellMeta | null;
 }
@@ -67,12 +68,12 @@ export function gridPatchFor(
             const mine = was[row];
             const theirs = now[row];
             const text = theirs?.text ?? null;
-            if ((mine?.text ?? null) !== text) patch.writes.push({ row, col, text });
+            if ((mine?.text ?? null) !== text) patch.writes.push({ row, col: modelCol(col), text });
 
             const nextMeta = theirs && Object.keys(theirs.meta).length > 0 ? theirs.meta : null;
             const mineMeta = mine && Object.keys(mine.meta).length > 0 ? mine.meta : null;
             if (JSON.stringify(mineMeta) !== JSON.stringify(nextMeta)) {
-                patch.meta.push({ row, col, meta: nextMeta as CellMeta | null });
+                patch.meta.push({ row, col: modelCol(col), meta: nextMeta as CellMeta | null });
             }
         }
     }

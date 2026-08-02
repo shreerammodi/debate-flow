@@ -20,7 +20,13 @@ import {
     KICKED_CLASS,
     toggleClassToken,
 } from "@/lib/grid/codec";
-import { getActiveHot, getActiveSheetId, notifyGridMutated } from "@/lib/grid/hotInstance";
+import { gridCol, toModelCol } from "@/lib/grid/colSpace";
+import {
+    getActiveHot,
+    getActiveSheetId,
+    getActiveSpacers,
+    notifyGridMutated,
+} from "@/lib/grid/hotInstance";
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
@@ -95,13 +101,19 @@ function toggleDecoration(
     const sheetId = getActiveSheetId();
     const sheet = useFlowStore.getState().round?.sheets.find((s) => s.id === sheetId);
     if (sheetId && sheet) {
+        const spacers = getActiveSpacers();
         for (const [row, col] of flipped) {
+            // `flipped` holds grid columns; a stored meta key and an op both
+            // name a cell, so both are read at the converted column. A cursor
+            // cannot reach a spacer, so a null here decorates nothing.
+            const at = toModelCol(gridCol(col), spacers);
+            if (at === null) continue;
             recordOp({
                 kind: "cellMeta",
                 sheetId,
-                col,
+                col: at,
                 row,
-                meta: sheet.meta[`${row},${col}`] ?? {},
+                meta: sheet.meta[`${row},${at}`] ?? {},
             });
         }
     }
@@ -126,7 +138,7 @@ function runInsertCell(where: "at" | "below"): void {
     const hot = getActiveHot();
     const sel = hot?.getSelectedLast();
     if (!hot || !sel) return;
-    const col = sel[1];
+    const col = gridCol(sel[1]);
     const row = where === "below" ? sel[0] + 1 : sel[0];
     if (row > hot.countRows() - 1) return;
 
@@ -140,7 +152,10 @@ function runInsertCell(where: "at" | "below"): void {
     // op can describe the shift, rather than the whole column arriving as a
     // few hundred unrelated text writes.
     const sheetId = getActiveSheetId();
-    if (sheetId) recordOp({ kind: "insertCell", sheetId, col, row });
+    // The op names a cell, so the grid column converts; a spacer takes no
+    // cursor, so a null here opens nothing.
+    const at = toModelCol(col, getActiveSpacers());
+    if (sheetId && at !== null) recordOp({ kind: "insertCell", sheetId, col: at, row });
 }
 
 /**

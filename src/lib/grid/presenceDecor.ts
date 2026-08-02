@@ -11,6 +11,8 @@
 
 import { expire, lockAt, presenceAt, type Presence } from "@/lib/collab/presence";
 
+import type { ModelCol } from "./colSpace";
+
 /** Marks a cell a peer's cursor is on. */
 export const PEER_CLASS = "ebb-peer";
 /** Marks a cell a peer has an editor open on, which also wears PEER_CLASS. */
@@ -20,7 +22,7 @@ export const LOCK_CLASS = "ebb-locked";
 export function presenceOn(
     list: readonly Presence[],
     sheetId: string,
-    col: number,
+    col: ModelCol,
     row: number,
     now: number,
 ): Presence | null {
@@ -46,7 +48,7 @@ export function peerInitial(name: string): string {
 export function lockLabel(
     list: readonly Presence[],
     sheetId: string,
-    col: number,
+    col: ModelCol,
     row: number,
     now: number,
     nameOf: (endpointId: string) => string,

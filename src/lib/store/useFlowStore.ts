@@ -94,9 +94,10 @@ export interface FlowState {
     /** Mod+scroll (and trackpad pinch) zooms the grid; off leaves the wheel alone. */
     scrollZoom: boolean;
     /**
-     * Every flow sheet's grid sits at the round's speaking order, padded by
-     * the speeches it does not show, so a speech holds one screen position
-     * across sheets. Off, a sheet starts flush at its own first speech.
+     * Every flow sheet's grid sits at the round's speaking order, leading with
+     * one inert column per speech it does not show, so a speech holds one
+     * screen position across sheets. Off, a sheet starts flush at its own
+     * first speech.
      */
     alignSpeeches: boolean;
     /** Hover tips on buttons and controls; off renders the trigger bare. */

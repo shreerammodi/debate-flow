@@ -8,7 +8,8 @@
  * its own call site.
  */
 
-import { STRUCTURED_WRITE, type GridChange } from "@/lib/grid/staleSource";
+import type { ModelCol } from "@/lib/grid/colSpace";
+import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 
 import type { CollabOp } from "./ops";
 
@@ -38,7 +39,20 @@ export function isReplicatedSource(source: unknown): boolean {
     return REPLAYED_SOURCES[source] === true;
 }
 
-export function textOpsFromChanges(sheetId: string, changes: readonly GridChange[]): CollabOp[] {
+/**
+ * One `afterChange` entry, its column already named in the model's space.
+ * Handsontable reports a grid column, so a padded pane owes this seam a shift
+ * before the change reaches it; the brand is what makes that shift a compiler
+ * demand rather than a habit.
+ */
+export type ModelChange = [
+    row: number,
+    prop: string | ModelCol,
+    oldValue: unknown,
+    newValue: unknown,
+];
+
+export function textOpsFromChanges(sheetId: string, changes: readonly ModelChange[]): CollabOp[] {
     const ops: CollabOp[] = [];
     for (const [row, prop, oldValue, newValue] of changes) {
         // A flow sheet holds array rows, so Handsontable's prop is the column.

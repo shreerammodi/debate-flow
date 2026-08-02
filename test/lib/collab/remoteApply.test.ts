@@ -5,6 +5,7 @@ import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { planRemoteApply, type ApplyContext } from "@/lib/collab/remoteApply";
 import { createClock } from "@/lib/collab/stamp";
 import type { CollabDoc } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 let round: FlowRound;
@@ -34,7 +35,7 @@ function ctx(over: Partial<ApplyContext> = {}): ApplyContext {
     return {
         editorOpen: false,
         editorCell: null,
-        selection: { sheetId, col: 0, row: 2 },
+        selection: { sheetId, col: modelCol(0), row: 2 },
         activeSheetId: sheetId,
         ...over,
     };
@@ -80,7 +81,7 @@ describe("a partner edits the cell your editor is open on", () => {
         const plan = planRemoteApply(
             before,
             after({ kind: "cellText", sheetId, col: 0, row: 1, text: "theirs" }),
-            ctx({ editorOpen: true, editorCell: { sheetId, col: 0, row: 1 } }),
+            ctx({ editorOpen: true, editorCell: { sheetId, col: modelCol(0), row: 1 } }),
         );
         expect(plan.deferredCells).toHaveLength(1);
         expect(plan.deferredCells[0]).toMatchObject({ col: 0 });
@@ -93,7 +94,7 @@ describe("a partner edits the cell your editor is open on", () => {
                 { kind: "cellText", sheetId, col: 0, row: 1, text: "theirs" },
                 { kind: "cellText", sheetId, col: 1, row: 2, text: "elsewhere" },
             ),
-            ctx({ editorOpen: true, editorCell: { sheetId, col: 0, row: 1 } }),
+            ctx({ editorOpen: true, editorCell: { sheetId, col: modelCol(0), row: 1 } }),
         );
         expect(plan.writeCells).toBe(true);
         expect(plan.deferredCells).toHaveLength(1);

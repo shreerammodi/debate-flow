@@ -237,6 +237,9 @@ html .ht-theme-main {
     --aff: #1d4ed8;
     --neg: #c0271f;
     --partner: #c2410c;
+    /* The spacer wash, re-pinned for the same reason: a token that followed
+       the app theme would black out the column on this white paper. */
+    --muted: oklch(0.955 0.003 286.3);
 }
 /* Header ink stays put on hover and while its column is selected; the theme
    otherwise recolors hovered and highlighted th. */
@@ -279,6 +282,20 @@ html .ht-theme-main {
 }
 .handsontable td.cell-neg {
     color: var(--neg);
+}
+/* An aligned pane's inert leading columns: a speech this sheet does not hold,
+   kept so the ones it does hold sit where they do on every other sheet. The
+   wash is a background, so the gridlines stay at full strength and the column
+   reads as part of the grid. It outranks the theme's even/odd row striping
+   (.handsontable tr.ht__row_even td), which is otherwise the more specific
+   rule and leaves every other row white. */
+.handsontable tbody tr td.cell-spacer {
+    background-color: var(--muted);
+}
+.handsontable th.hd-spacer,
+.handsontable th.hd-spacer:hover,
+.handsontable th.hd-spacer.ht__highlight {
+    opacity: 0.55;
 }
 .flow-bold {
     font-weight: 700;

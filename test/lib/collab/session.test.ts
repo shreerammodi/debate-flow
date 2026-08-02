@@ -15,6 +15,7 @@ import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/r
 import { startCollabSession, type CollabPeer, type CollabSession } from "@/lib/collab/session";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { CollabDoc } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { getPresences } from "@/lib/grid/presenceBridge";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -638,7 +639,7 @@ describe("a peer's claim on a cell", () => {
             expect(getPresences()).toEqual([]);
         }
 
-        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: modelCol(1), row: 2 } });
         await settle();
         expect(getPresences()).toEqual([
             {
@@ -659,7 +660,7 @@ describe("a peer's claim on a cell", () => {
         const host = (await open(ALEX))!;
         const conn = await admitted(host);
 
-        conn.send({ type: "cursor", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        conn.send({ type: "cursor", cell: { sheetId: "sheet_1", col: modelCol(1), row: 2 } });
         await settle();
         expect(getPresences()).toEqual([
             {
@@ -674,7 +675,7 @@ describe("a peer's claim on a cell", () => {
 
         // One entry per peer either way round: a cursor that started editing
         // is the same peer in the same place, not a second mark.
-        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: 1, row: 2 } });
+        conn.send({ type: "presence", cell: { sheetId: "sheet_1", col: modelCol(1), row: 2 } });
         await settle();
         expect(getPresences()).toHaveLength(1);
         expect(getPresences()[0].editing).toBe(true);

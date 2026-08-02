@@ -20,6 +20,8 @@
 
 import type { Presence } from "@/lib/collab/presence";
 
+import type { ModelCol } from "./colSpace";
+
 /** One array backs every empty table, so a clear changes no identity. */
 const NO_PRESENCE: readonly Presence[] = [];
 
@@ -48,8 +50,12 @@ export function onPresenceChanged(cb: () => void): () => void {
     };
 }
 
-/** A cell a pane is on, or null when it is on none. */
-export type HeldCell = { sheetId: string; col: number; row: number } | null;
+/**
+ * A cell a pane is on, or null when it is on none. The column is the model's:
+ * a partner draws this side's cursor against their own sheet, and their pane
+ * may be padded differently or not at all.
+ */
+export type HeldCell = { sheetId: string; col: ModelCol; row: number } | null;
 
 let claimHandler: ((cell: HeldCell) => void) | null = null;
 let cursorHandler: ((cell: HeldCell) => void) | null = null;

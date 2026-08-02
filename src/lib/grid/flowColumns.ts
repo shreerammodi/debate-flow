@@ -125,6 +125,26 @@ export function spacerColumns(round: FlowRound, sheet: FlowSheet): SpeechCol[] {
 }
 
 /**
+ * A pane's inert leading column count: how many spacers the sheet named by
+ * `sheetId` takes, or none while alignment is off or the round does not hold
+ * that sheet.
+ *
+ * One derivation for both readers of it. The pane renders the spacers and the
+ * bridge converts against them, and a bridge that counted differently would
+ * land a CardMirror send one column off on padded sheets alone, which is the
+ * hardest kind of wrong to see.
+ */
+export function spacerCount(
+    round: FlowRound | null | undefined,
+    sheetId: string | null | undefined,
+    aligned: boolean,
+): number {
+    if (!aligned || !round || !sheetId) return 0;
+    const sheet = round.sheets.find((s) => s.id === sheetId);
+    return sheet ? speechOffset(round, sheet) : 0;
+}
+
+/**
  * The widest `columnsForFlowSheet` ever returns: the most columns any event
  * derives, over its speeches and over its cross-examination periods.
  *

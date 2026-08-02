@@ -3,6 +3,7 @@ import { registerAllModules } from "handsontable/registry";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { insertCell, moveBlock, shiftMetaDown, shiftSpan } from "@/lib/grid/cellShift";
+import { gridCol } from "@/lib/grid/colSpace";
 import type { CellSource } from "@/lib/model/flow";
 
 import { fakeGrid } from "../../support/fakeHot";
@@ -19,7 +20,7 @@ describe("shiftSpan", () => {
     it("moves a span down, dropping what runs off the last row", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]], { "1,0": "bold" });
 
-        g.setDataAtCell(shiftSpan(g, 0, 1, 4, 1));
+        g.setDataAtCell(shiftSpan(g, gridCol(0), 1, 4, 1));
 
         // Row 1 is a source, never a target, so its stale value stays for the
         // caller to blank. "d" fell off.
@@ -30,7 +31,7 @@ describe("shiftSpan", () => {
     it("moves a span up, dropping what runs off row 0", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]]);
 
-        g.setDataAtCell(shiftSpan(g, 0, 1, 4, -1));
+        g.setDataAtCell(shiftSpan(g, gridCol(0), 1, 4, -1));
 
         expect(g.col(0)).toEqual(["b", "c", "d", "d"]);
     });
@@ -38,7 +39,7 @@ describe("shiftSpan", () => {
     it("moves decorations alone when metaOnly is set", () => {
         const g = fakeGrid([["a"], ["b"], ["c"]], { "0,0": "bold" });
 
-        const changes = shiftSpan(g, 0, 0, 3, 1, { metaOnly: true });
+        const changes = shiftSpan(g, gridCol(0), 0, 3, 1, { metaOnly: true });
 
         expect(changes).toEqual([]);
         expect(g.col(0)).toEqual(["a", "b", "c"]);
@@ -51,7 +52,7 @@ describe("shiftSpan", () => {
             ["b", "y"],
         ]);
 
-        g.setDataAtCell(shiftSpan(g, 0, 0, 2, 1));
+        g.setDataAtCell(shiftSpan(g, gridCol(0), 0, 2, 1));
 
         expect(g.col(1)).toEqual(["x", "y"]);
     });
@@ -59,7 +60,7 @@ describe("shiftSpan", () => {
     it("carries provenance with the text it describes", () => {
         const g = fakeGrid([["a"], ["b"], ["c"], ["d"]], {}, { "1,0": src("k-b") });
 
-        g.setDataAtCell(shiftSpan(g, 0, 1, 4, 1));
+        g.setDataAtCell(shiftSpan(g, gridCol(0), 1, 4, 1));
 
         expect(g.col(0)).toEqual(["a", "b", "b", "c"]);
         expect(g.sources).toEqual({ "1,0": src("k-b"), "2,0": src("k-b") });
@@ -72,7 +73,7 @@ describe("shiftSpan", () => {
             { "0,0": src("k-a"), "1,0": src("k-b"), "2,0": src("k-c") },
         );
 
-        g.setDataAtCell(shiftSpan(g, 0, 0, 3, 1));
+        g.setDataAtCell(shiftSpan(g, gridCol(0), 0, 3, 1));
 
         // "c" had nowhere to go, so k-c went off the bottom with it. Row 0 is a
         // source, never a target, so its stale text and provenance both stay.
@@ -89,7 +90,7 @@ describe("insertCell", () => {
     it("blanks the target and pushes the column down, dropping the last row", () => {
         const g = fakeGrid([["a"], ["b"], ["c"]], { "0,0": "bold", "1,0": "hl" });
 
-        g.setDataAtCell(insertCell(g, 1, 0));
+        g.setDataAtCell(insertCell(g, 1, gridCol(0)));
 
         expect(g.col(0)).toEqual(["a", "", "b"]);
         expect(g.classNames).toEqual({ "0,0": "bold", "2,0": "hl" });
@@ -98,7 +99,7 @@ describe("insertCell", () => {
     it("leaves the opened cell with no provenance", () => {
         const g = fakeGrid([["a"], ["b"], ["c"]], {}, { "1,0": src("k-b") });
 
-        g.setDataAtCell(insertCell(g, 1, 0));
+        g.setDataAtCell(insertCell(g, 1, gridCol(0)));
 
         expect(g.col(0)).toEqual(["a", "", "b"]);
         expect(g.sources).toEqual({ "2,0": src("k-b") });
@@ -109,7 +110,7 @@ describe("moveBlock", () => {
     it("rotates the cells a downward block passes over, losing nothing", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]], { "1,0": "bold" });
 
-        g.setDataAtCell(moveBlock(g, 0, 1, 1, 2));
+        g.setDataAtCell(moveBlock(g, gridCol(0), 1, 1, 2));
 
         expect(g.col(0)).toEqual(["A", "C", "D", "B", "E"]);
         expect(g.classNames).toEqual({ "3,0": "bold" });
@@ -118,7 +119,7 @@ describe("moveBlock", () => {
     it("rotates the cells an upward block passes over, losing nothing", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]], { "3,0": "bold" });
 
-        g.setDataAtCell(moveBlock(g, 0, 3, 1, -2));
+        g.setDataAtCell(moveBlock(g, gridCol(0), 3, 1, -2));
 
         expect(g.col(0)).toEqual(["A", "D", "B", "C", "E"]);
         expect(g.classNames).toEqual({ "1,0": "bold" });
@@ -127,7 +128,7 @@ describe("moveBlock", () => {
     it("moves a multi-row block", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]]);
 
-        g.setDataAtCell(moveBlock(g, 0, 0, 2, 2));
+        g.setDataAtCell(moveBlock(g, gridCol(0), 0, 2, 2));
 
         expect(g.col(0)).toEqual(["C", "D", "A", "B", "E"]);
     });
@@ -135,7 +136,7 @@ describe("moveBlock", () => {
     it("handles a travel distance longer than the block itself", () => {
         const g = fakeGrid([["A"], ["B"], ["C"], ["D"], ["E"]]);
 
-        g.setDataAtCell(moveBlock(g, 0, 0, 1, 3));
+        g.setDataAtCell(moveBlock(g, gridCol(0), 0, 1, 3));
 
         expect(g.col(0)).toEqual(["B", "C", "D", "A", "E"]);
     });
@@ -143,7 +144,7 @@ describe("moveBlock", () => {
     it("is a no-op at delta zero", () => {
         const g = fakeGrid([["A"], ["B"]]);
 
-        expect(moveBlock(g, 0, 0, 1, 0)).toEqual([]);
+        expect(moveBlock(g, gridCol(0), 0, 1, 0)).toEqual([]);
         expect(g.col(0)).toEqual(["A", "B"]);
     });
 
@@ -154,7 +155,7 @@ describe("moveBlock", () => {
             { "1,0": src("k-b"), "2,0": src("k-c") },
         );
 
-        g.setDataAtCell(moveBlock(g, 0, 1, 1, 2));
+        g.setDataAtCell(moveBlock(g, gridCol(0), 1, 1, 2));
 
         expect(g.col(0)).toEqual(["A", "C", "D", "B", "E"]);
         expect(g.sources).toEqual({ "1,0": src("k-c"), "3,0": src("k-b") });
@@ -165,7 +166,7 @@ describe("shiftMetaDown", () => {
     it("moves the displaced classes down and leaves the pasted block bare", () => {
         const hot = fakeGrid(blank(6, 3), { "1,0": "bold", "2,0": "hl" });
 
-        shiftMetaDown(hot, { row: 1, col: 0, width: 1, height: 2 });
+        shiftMetaDown(hot, { row: 1, col: gridCol(0), width: 1, height: 2 });
 
         expect(hot.classNames).toEqual({ "3,0": "bold", "4,0": "hl" });
     });
@@ -173,7 +174,7 @@ describe("shiftMetaDown", () => {
     it("leaves rows above the paste and columns beside it untouched", () => {
         const hot = fakeGrid(blank(6, 3), { "0,0": "bold", "1,1": "card", "1,2": "group" });
 
-        shiftMetaDown(hot, { row: 1, col: 0, width: 2, height: 1 });
+        shiftMetaDown(hot, { row: 1, col: gridCol(0), width: 2, height: 1 });
 
         expect(hot.classNames).toEqual({ "0,0": "bold", "2,1": "card", "1,2": "group" });
     });
@@ -181,7 +182,7 @@ describe("shiftMetaDown", () => {
     it("drops classes pushed past the last row, as their text is", () => {
         const hot = fakeGrid(blank(3, 1), { "2,0": "bold" });
 
-        shiftMetaDown(hot, { row: 0, col: 0, width: 1, height: 2 });
+        shiftMetaDown(hot, { row: 0, col: gridCol(0), width: 1, height: 2 });
 
         expect(hot.classNames).toEqual({});
     });
@@ -189,7 +190,7 @@ describe("shiftMetaDown", () => {
     it("clamps a paste wider than the grid", () => {
         const hot = fakeGrid(blank(3, 2), { "0,1": "bold" });
 
-        shiftMetaDown(hot, { row: 0, col: 0, width: 5, height: 1 });
+        shiftMetaDown(hot, { row: 0, col: gridCol(0), width: 5, height: 1 });
 
         expect(hot.classNames).toEqual({ "1,1": "bold" });
     });
@@ -197,7 +198,7 @@ describe("shiftMetaDown", () => {
     it("re-lays provenance below the pasted block and bares the block", () => {
         const hot = fakeGrid(blank(6, 3), {}, { "1,0": src("k-1"), "2,0": src("k-2") });
 
-        shiftMetaDown(hot, { row: 1, col: 0, width: 1, height: 2 });
+        shiftMetaDown(hot, { row: 1, col: gridCol(0), width: 1, height: 2 });
 
         expect(hot.sources).toEqual({ "3,0": src("k-1"), "4,0": src("k-2") });
     });
@@ -253,7 +254,7 @@ describe("shift_down paste on a live grid", () => {
         h.setCellMeta(0, 1, "className", "cell-card");
 
         paste(h, 0, 0, [["X"], ["Y"]]);
-        shiftMetaDown(h, { row: 0, col: 0, width: 1, height: 2 });
+        shiftMetaDown(h, { row: 0, col: gridCol(0), width: 1, height: 2 });
 
         expect(h.getDataAtCell(2, 0)).toBe("tag");
         expect(h.getCellMeta(2, 0).className).toBe("cell-bold");

@@ -379,7 +379,7 @@ export default function SettingsPanel() {
                                 />
                                 <SettingRow
                                     title="Visually align speeches"
-                                    description="Line every sheet up on the round's speaking order, so a speech keeps one place on screen as you move between sheets. A sheet that does not open the round starts further right, with empty space where the speeches it skips would be."
+                                    description="Line every sheet up on the round's speaking order, so a speech keeps one place on screen as you move between sheets. A sheet that does not open the round leads with a greyed column per speech it skips, labelled with that speech."
                                     control={
                                         <Switch
                                             checked={alignSpeeches}

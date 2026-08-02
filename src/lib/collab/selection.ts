@@ -13,17 +13,19 @@
  * change lands and resolved back to an index afterwards.
  */
 
+import type { ModelCol } from "@/lib/grid/colSpace";
+
 import { liveCells } from "./doc";
 import type { CollabSheet } from "./types";
 
 export interface CellRef {
-    col: number;
+    col: ModelCol;
     rank: string;
     actor: string;
 }
 
 /** What the cursor is on, named so a structural change cannot rename it. */
-export function selectionIdentity(sheet: CollabSheet, row: number, col: number): CellRef | null {
+export function selectionIdentity(sheet: CollabSheet, row: number, col: ModelCol): CellRef | null {
     const cell = liveCells(sheet, col)[row];
     return cell ? { col, rank: cell.rank, actor: cell.actor } : null;
 }
@@ -47,7 +49,7 @@ export function followSelection(
     before: CollabSheet,
     after: CollabSheet,
     row: number,
-    col: number,
+    col: ModelCol,
 ): number {
     const ref = selectionIdentity(before, row, col);
     if (!ref) return row;

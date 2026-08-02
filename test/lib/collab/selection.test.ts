@@ -5,6 +5,7 @@ import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { followSelection, rowOfIdentity, selectionIdentity } from "@/lib/collab/selection";
 import { createClock } from "@/lib/collab/stamp";
 import type { CollabDoc, CollabSheet } from "@/lib/collab/types";
+import { modelCol } from "@/lib/grid/colSpace";
 import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
 
 let round: FlowRound;
@@ -41,25 +42,25 @@ function remote(...ops: Parameters<typeof applyOp>[1][]): [CollabSheet, CollabSh
 
 describe("selectionIdentity", () => {
     it("names the cell under the cursor by something no insert can change", () => {
-        const ref = selectionIdentity(sheet(doc), 2, 0)!;
+        const ref = selectionIdentity(sheet(doc), 2, modelCol(0))!;
         expect(ref.col).toBe(0);
         expect(ref.rank).toBeTruthy();
         expect(rowOfIdentity(sheet(doc), ref)).toBe(2);
     });
 
     it("has nothing to name past the end of a column", () => {
-        expect(selectionIdentity(sheet(doc), 99, 0)).toBeNull();
+        expect(selectionIdentity(sheet(doc), 99, modelCol(0))).toBeNull();
     });
 
     it("has nothing to name in a column that holds no cells", () => {
-        expect(selectionIdentity(sheet(doc), 0, 7)).toBeNull();
+        expect(selectionIdentity(sheet(doc), 0, modelCol(7))).toBeNull();
     });
 });
 
 describe("followSelection", () => {
     it("moves down one when a partner inserts a row above the cursor", () => {
         const [before, after] = remote({ kind: "insertRow", sheetId, row: 1 });
-        expect(followSelection(before, after, 2, 0)).toBe(3);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(3);
     });
 
     it("moves down two when a partner inserts two rows above", () => {
@@ -67,32 +68,32 @@ describe("followSelection", () => {
             { kind: "insertRow", sheetId, row: 0 },
             { kind: "insertRow", sheetId, row: 0 },
         );
-        expect(followSelection(before, after, 2, 0)).toBe(4);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(4);
     });
 
     it("stays put when a partner inserts below the cursor", () => {
         const [before, after] = remote({ kind: "insertRow", sheetId, row: 3 });
-        expect(followSelection(before, after, 1, 0)).toBe(1);
+        expect(followSelection(before, after, 1, modelCol(0))).toBe(1);
     });
 
     it("moves up one when a partner deletes a row above the cursor", () => {
         const [before, after] = remote({ kind: "removeRow", sheetId, row: 0 });
-        expect(followSelection(before, after, 2, 0)).toBe(1);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(1);
     });
 
     it("holds its index when a partner deletes the row the cursor sits in", () => {
         const [before, after] = remote({ kind: "removeRow", sheetId, row: 2 });
-        expect(followSelection(before, after, 2, 0)).toBe(2);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(2);
     });
 
     it("moves down one when a partner inserts a cell above in the same column", () => {
         const [before, after] = remote({ kind: "insertCell", sheetId, col: 0, row: 1 });
-        expect(followSelection(before, after, 2, 0)).toBe(3);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(3);
     });
 
     it("stays put when the insert lands in another column", () => {
         const [before, after] = remote({ kind: "insertCell", sheetId, col: 1, row: 0 });
-        expect(followSelection(before, after, 2, 0)).toBe(2);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(2);
     });
 
     it("stays put for a write that moves nothing", () => {
@@ -103,12 +104,12 @@ describe("followSelection", () => {
             row: 0,
             text: "typed",
         });
-        expect(followSelection(before, after, 2, 0)).toBe(2);
+        expect(followSelection(before, after, 2, modelCol(0))).toBe(2);
     });
 
     it("holds an index it cannot name, rather than guessing", () => {
         const [before, after] = remote({ kind: "insertRow", sheetId, row: 0 });
-        expect(followSelection(before, after, 99, 0)).toBe(99);
-        expect(followSelection(before, after, 0, 7)).toBe(0);
+        expect(followSelection(before, after, 99, modelCol(0))).toBe(99);
+        expect(followSelection(before, after, 0, modelCol(7))).toBe(0);
     });
 });

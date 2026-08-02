@@ -9,16 +9,25 @@ import type Handsontable from "handsontable";
 let active: Handsontable | null = null;
 let onMutated: (() => void) | null = null;
 let activeSheetId: string | null = null;
+let activeSpacers = 0;
 
-/** HotGrid registers its instance (and snapshot callback) on mount, null on unmount. */
+/**
+ * HotGrid registers its instance (and snapshot callback) on mount, null on
+ * unmount. `spacers` is the pane's inert leading column count: the pane owns
+ * it and publishes it here so a command reaching the grid through this
+ * registry converts against the number the grid was drawn with, rather than
+ * deriving its own and drifting on padded sheets alone.
+ */
 export function setActiveHot(
     hot: Handsontable | null,
     mutated?: (() => void) | null,
     sheetId?: string | null,
+    spacers = 0,
 ): void {
     active = hot;
     onMutated = mutated ?? null;
     activeSheetId = sheetId ?? null;
+    activeSpacers = spacers;
 }
 
 export function getActiveHot(): Handsontable | null {
@@ -28,6 +37,11 @@ export function getActiveHot(): Handsontable | null {
 /** The sheet the registered grid is showing, so a command can name it. */
 export function getActiveSheetId(): string | null {
     return activeSheetId;
+}
+
+/** How many inert leading columns the registered grid is drawing. */
+export function getActiveSpacers(): number {
+    return activeSpacers;
 }
 
 /** Commands call this after writing cell meta so the snapshot/autosave runs. */
@@ -44,6 +58,8 @@ export function notifyGridMutated(): void {
 export function focusActiveHot(): boolean {
     if (!active) return false;
     const sel = active.getSelectedLast();
-    active.selectCell(sel?.[0] ?? 0, sel?.[1] ?? 0);
+    // The fallback is the first real column: a spacer stands for a speech this
+    // sheet does not hold, so the cursor has no cell to land on there.
+    active.selectCell(sel?.[0] ?? 0, sel?.[1] ?? activeSpacers);
     return true;
 }

@@ -3,6 +3,7 @@ import { registerAllModules } from "handsontable/registry";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { insertCell } from "@/lib/grid/cellShift";
+import { gridCol } from "@/lib/grid/colSpace";
 import {
     attachMetaUndo,
     onRedoStackChange,
@@ -52,7 +53,7 @@ describe("metaUndo on a live grid", () => {
     /** What commands.runInsertCell does, minus the store plumbing. */
     function doInsert(h: Handsontable, row: number, col: number) {
         const before = snapshotClasses(h, [col]);
-        h.setDataAtCell(insertCell(h, row, col));
+        h.setDataAtCell(insertCell(h, row, gridCol(col)));
         attachMetaUndo({ cols: [col], before, after: snapshotClasses(h, [col]) });
     }
 

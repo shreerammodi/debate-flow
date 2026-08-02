@@ -11,6 +11,7 @@
  */
 
 import { moveBlock, type CellChange, type CellGrid } from "./cellShift";
+import { gridCol, type GridCol } from "./colSpace";
 import { attachMetaUndo, snapshotClasses, type ClassEntry } from "./metaUndo";
 import { STRUCTURED_WRITE } from "./staleSource";
 
@@ -29,7 +30,7 @@ export interface MoveRange {
 
 /** What the grid needs to draw and step the block. */
 export interface MoveBlockView {
-    cols: number[];
+    cols: GridCol[];
     blockStart: number;
     height: number;
 }
@@ -47,8 +48,8 @@ let session: Session | null = null;
 
 /** Snapshots every selected column's data and meta, then opens the session. */
 export function beginMove(grid: MoveGrid, range: MoveRange): void {
-    const cols: number[] = [];
-    for (let c = range.startCol; c <= range.endCol; c++) cols.push(c);
+    const cols: GridCol[] = [];
+    for (let c = range.startCol; c <= range.endCol; c++) cols.push(gridCol(c));
     const rows = grid.countRows();
 
     session = {
@@ -75,7 +76,7 @@ export function movingBlock(): MoveBlockView | null {
 }
 
 /** True for a cell inside the travelling block. Called once per rendered cell. */
-export function cellIsMoving(grid: MoveGrid | null, row: number, col: number): boolean {
+export function cellIsMoving(grid: MoveGrid | null, row: number, col: GridCol): boolean {
     if (!session || session.grid !== grid) return false;
     return (
         row >= session.blockStart &&

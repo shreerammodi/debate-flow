@@ -9,6 +9,8 @@
  * travels, which is the whole difference.
  */
 
+import type { ModelCol } from "@/lib/grid/colSpace";
+
 import type { CollabOp } from "./ops";
 
 /**
@@ -20,7 +22,7 @@ import type { CollabOp } from "./ops";
  */
 export function replaceSpanOps(
     sheetId: string,
-    col: number,
+    col: ModelCol,
     at: number,
     texts: readonly (string | null)[],
 ): CollabOp[] {
@@ -50,7 +52,7 @@ export function replaceSpanOps(
  * re-derive the sheet afterwards instead, which re-keys every cell from its
  * row position and leaves a peer holding keys that no longer name anything.
  */
-export function openSpanOps(sheetId: string, col: number, at: number, count: number): CollabOp[] {
+export function openSpanOps(sheetId: string, col: ModelCol, at: number, count: number): CollabOp[] {
     return Array.from(
         { length: Math.max(count, 0) },
         (): CollabOp => ({ kind: "insertCell", sheetId, col, row: at }),

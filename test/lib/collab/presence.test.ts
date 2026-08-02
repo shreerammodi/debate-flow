@@ -11,6 +11,7 @@ import {
     releasePeer,
     type Presence,
 } from "@/lib/collab/presence";
+import { modelCol } from "@/lib/grid/colSpace";
 
 const at = (
     endpointId: string,
@@ -21,7 +22,7 @@ const at = (
 ): Presence => ({
     endpointId,
     sheetId,
-    col: 0,
+    col: modelCol(0),
     row,
     heldAt,
     editing,

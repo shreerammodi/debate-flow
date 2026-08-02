@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Presence } from "@/lib/collab/presence";
+import { modelCol } from "@/lib/grid/colSpace";
 import {
     claimCell,
     claimCursor,
@@ -21,7 +22,7 @@ afterEach(() => {
 const on = (endpointId: string, editing = true): Presence => ({
     endpointId,
     sheetId: "sheet_1",
-    col: 0,
+    col: modelCol(0),
     row: 3,
     heldAt: 1_000,
     editing,
@@ -67,7 +68,7 @@ describe("the cell this side is editing", () => {
         const claims: HeldCell[] = [];
         setClaimHandler((cell) => claims.push(cell));
 
-        claimCell({ sheetId: "sheet_1", col: 2, row: 7 });
+        claimCell({ sheetId: "sheet_1", col: modelCol(2), row: 7 });
         claimCell(null);
 
         expect(claims).toEqual([{ sheetId: "sheet_1", col: 2, row: 7 }, null]);
@@ -76,15 +77,15 @@ describe("the cell this side is editing", () => {
     // A debater flowing alone announces nothing to anybody, and the grid does
     // not know whether anyone is listening.
     it("is a no-op with no session", () => {
-        expect(() => claimCell({ sheetId: "sheet_1", col: 0, row: 0 })).not.toThrow();
+        expect(() => claimCell({ sheetId: "sheet_1", col: modelCol(0), row: 0 })).not.toThrow();
     });
 
     it("stops reaching a session that has ended", () => {
         const claims: HeldCell[] = [];
         setClaimHandler((cell) => claims.push(cell));
-        claimCell({ sheetId: "sheet_1", col: 0, row: 0 });
+        claimCell({ sheetId: "sheet_1", col: modelCol(0), row: 0 });
         setClaimHandler(null);
-        claimCell({ sheetId: "sheet_1", col: 1, row: 1 });
+        claimCell({ sheetId: "sheet_1", col: modelCol(1), row: 1 });
         expect(claims).toHaveLength(1);
     });
 });
@@ -96,7 +97,7 @@ describe("the cell this side's cursor is on", () => {
         setClaimHandler((cell) => claims.push(cell));
         setCursorHandler((cell) => cursors.push(cell));
 
-        claimCursor({ sheetId: "sheet_1", col: 1, row: 4 });
+        claimCursor({ sheetId: "sheet_1", col: modelCol(1), row: 4 });
         claimCursor(null);
 
         expect(cursors).toEqual([{ sheetId: "sheet_1", col: 1, row: 4 }, null]);
@@ -104,15 +105,15 @@ describe("the cell this side's cursor is on", () => {
     });
 
     it("is a no-op with no session", () => {
-        expect(() => claimCursor({ sheetId: "sheet_1", col: 0, row: 0 })).not.toThrow();
+        expect(() => claimCursor({ sheetId: "sheet_1", col: modelCol(0), row: 0 })).not.toThrow();
     });
 
     it("stops reaching a session that has ended", () => {
         const cursors: HeldCell[] = [];
         setCursorHandler((cell) => cursors.push(cell));
-        claimCursor({ sheetId: "sheet_1", col: 0, row: 0 });
+        claimCursor({ sheetId: "sheet_1", col: modelCol(0), row: 0 });
         setCursorHandler(null);
-        claimCursor({ sheetId: "sheet_1", col: 1, row: 1 });
+        claimCursor({ sheetId: "sheet_1", col: modelCol(1), row: 1 });
         expect(cursors).toHaveLength(1);
     });
 });

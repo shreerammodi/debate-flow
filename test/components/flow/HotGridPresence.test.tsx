@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import HotGrid from "@/components/flow/HotGrid";
 import { PRESENCE_TTL_MS, type Presence } from "@/lib/collab/presence";
+import { modelCol } from "@/lib/grid/colSpace";
 import { getActiveHot } from "@/lib/grid/hotInstance";
 import { setPresences } from "@/lib/grid/presenceBridge";
 import { LOCK_CLASS, PEER_CLASS } from "@/lib/grid/presenceDecor";
@@ -26,7 +27,7 @@ const at = (
 ): Presence => ({
     endpointId,
     sheetId,
-    col,
+    col: modelCol(col),
     row,
     heldAt,
     editing,
