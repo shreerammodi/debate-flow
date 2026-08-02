@@ -16,17 +16,19 @@ let activeSpacers = 0;
  * unmount. `spacers` is the pane's inert leading column count: the pane owns
  * it and publishes it here so a command reaching the grid through this
  * registry converts against the number the grid was drawn with, rather than
- * deriving its own and drifting on padded sheets alone.
+ * deriving its own and drifting on padded sheets alone. Every argument is
+ * required, so a caller that forgets the count cannot quietly republish zero
+ * over a padded pane's real one.
  */
 export function setActiveHot(
     hot: Handsontable | null,
-    mutated?: (() => void) | null,
-    sheetId?: string | null,
-    spacers = 0,
+    mutated: (() => void) | null,
+    sheetId: string | null,
+    spacers: number,
 ): void {
     active = hot;
-    onMutated = mutated ?? null;
-    activeSheetId = sheetId ?? null;
+    onMutated = mutated;
+    activeSheetId = sheetId;
     activeSpacers = spacers;
 }
 

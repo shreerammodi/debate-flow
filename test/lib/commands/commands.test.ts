@@ -27,7 +27,7 @@ function loadRound() {
 }
 
 beforeEach(() => {
-    setActiveHot(null, null);
+    setActiveHot(null, null, null, 0);
     clearReplica();
     useFlowStore.setState({
         round: null,
@@ -208,7 +208,7 @@ describe("grid commands", () => {
         const meta = metaStore();
         const onMutated = vi.fn();
         const hot = selectionHot(1, meta);
-        setActiveHot(hot as never, onMutated);
+        setActiveHot(hot as never, onMutated, null, 0);
 
         executeCommand("format.toggleBold");
         expect(meta.at(0, 0).className).toBe(BOLD_CLASS);
@@ -223,7 +223,7 @@ describe("grid commands", () => {
 
     it("toggleGroup writes the group className over the selection", () => {
         const meta = metaStore();
-        setActiveHot(selectionHot(2, meta) as never, vi.fn());
+        setActiveHot(selectionHot(2, meta) as never, vi.fn(), null, 0);
 
         executeCommand("format.toggleGroup");
         expect(meta.at(0, 0).className).toBe(GROUP_CLASS);
@@ -233,7 +233,7 @@ describe("grid commands", () => {
 
     it("toggleKicked marks a run without disturbing a highlight it already wears", () => {
         const meta = metaStore([["1,0", { className: HIGHLIGHT_CLASS }]]);
-        setActiveHot(selectionHot(1, meta) as never, vi.fn());
+        setActiveHot(selectionHot(1, meta) as never, vi.fn(), null, 0);
 
         executeCommand("format.toggleKicked");
         expect(meta.at(0, 0).className).toBe(KICKED_CLASS);
@@ -257,7 +257,7 @@ describe("grid commands", () => {
             },
             render: vi.fn(),
         };
-        setActiveHot(fakeHot as never, onMutated);
+        setActiveHot(fakeHot as never, onMutated, null, 0);
 
         executeCommand("cell.insert");
         // Row 0 untouched, row 1 blanked, "b" pushed to row 2 ("c" falls off).
@@ -283,7 +283,7 @@ describe("grid commands", () => {
             },
             render: vi.fn(),
         };
-        setActiveHot(fakeHot as never, vi.fn());
+        setActiveHot(fakeHot as never, vi.fn(), null, 0);
 
         executeCommand("cell.insertBelow");
         // "b" stays put, row 2 blanked, "c" pushed down ("d" falls off).
@@ -302,7 +302,7 @@ describe("grid commands", () => {
             setDataAtCell: vi.fn(),
             render: vi.fn(),
         };
-        setActiveHot(fakeHot as never, vi.fn());
+        setActiveHot(fakeHot as never, vi.fn(), null, 0);
 
         executeCommand("cell.insertBelow");
         expect(fakeHot.setDataAtCell).not.toHaveBeenCalled();
@@ -323,7 +323,7 @@ describe("grid commands", () => {
             setCellMeta: vi.fn(),
             render: vi.fn(),
         };
-        setActiveHot(fakeHot as never, vi.fn());
+        setActiveHot(fakeHot as never, vi.fn(), null, 0);
 
         executeCommand("cell.move");
 
@@ -337,7 +337,7 @@ describe("grid commands", () => {
             getSelectedRangeLast: () => undefined,
             render: vi.fn(),
         };
-        setActiveHot(fakeHot as never, vi.fn());
+        setActiveHot(fakeHot as never, vi.fn(), null, 0);
 
         executeCommand("cell.move");
 

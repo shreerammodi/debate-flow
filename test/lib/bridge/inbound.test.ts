@@ -69,7 +69,7 @@ function activeSheetTitle(): string {
 beforeEach(() => {
     // The bridge is desktop-only, so every route needs the shell's global.
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-    setActiveHot(null, null);
+    setActiveHot(null, null, null, 0);
     clearReplica();
     resetMetaUndo();
     resetRevealCycle();
@@ -91,7 +91,7 @@ describe("the flow route", () => {
         loadRound();
         const grid = makeGrid(10, 3);
         grid.select(2, 1);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         const reply = send([block, tag, cite]);
 
@@ -113,7 +113,7 @@ describe("the flow route", () => {
         loadRound();
         const grid = makeGrid(10, 3);
         grid.select(2, 1);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([block, tag]);
         expect(grid.hot.getSelectedLast()).toEqual([4, 1]);
@@ -126,7 +126,7 @@ describe("the flow route", () => {
         const grid = makeGrid(10, 3);
         grid.data[0][0] = "old";
         grid.data[1][0] = "keep";
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([tag]);
         expect(grid.data[0][0]).toBe("Perm solves");
@@ -140,7 +140,7 @@ describe("the flow route", () => {
         grid.data[0][0] = "old";
         grid.data[1][0] = "older";
         grid.at(0, 0).className = "flow-bold";
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([tag]);
         expect(grid.data[0][0]).toBe("Perm solves");
@@ -154,7 +154,7 @@ describe("the flow route", () => {
         loadRound();
         const grid = makeGrid(2, 1);
         grid.select(1, 0);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([block, tag, { kind: "analytic", text: "No link" }]);
         expect(grid.data).toHaveLength(4);
@@ -164,7 +164,7 @@ describe("the flow route", () => {
     it("names the sheet it wrote to and reports the cell count", () => {
         loadRound();
         const grid = makeGrid(10, 1);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         expect(send([tag, cite], "cell").body).toMatchObject({
             ok: true,
@@ -179,7 +179,7 @@ describe("the flow route", () => {
 
         loadRound();
         const grid = makeGrid(10, 1);
-        setActiveHot({ ...grid.hot, getSelectedLast: () => undefined } as never, vi.fn());
+        setActiveHot({ ...grid.hot, getSelectedLast: () => undefined } as never, vi.fn(), null, 0);
         expect(send([tag]).body).toEqual({ ok: false, error: "no-active-cell" });
     });
 
@@ -195,7 +195,7 @@ describe("the flow route", () => {
         loadRound();
         const grid = makeGrid(10, 3);
         grid.select(0, 0);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         const reply = send([block, tag], "column", 2);
 
@@ -213,7 +213,7 @@ describe("the flow route", () => {
         const grid = makeGrid(10, 3);
         grid.data[1][0] = "old note";
         grid.at(1, 0).className = "flow-highlight";
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([tag], "column", 1);
 
@@ -228,7 +228,7 @@ describe("the flow route", () => {
         const grid = makeGrid(10, 3);
         grid.data[0][0] = "old";
         grid.at(0, 0).className = "flow-bold";
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([tag], "column", 1);
 
@@ -243,7 +243,7 @@ describe("the flow route", () => {
         loadRound();
         const grid = makeGrid(3, 3);
         grid.select(2, 0);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
 
         send([tag], "column", 3);
 
@@ -361,7 +361,7 @@ describe("the desktop-only gate", () => {
     it("turns every route away when the switch is off, without touching the grid", () => {
         loadRound();
         const grid = makeGrid(10, 3);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
         useFlowStore.setState({ cardmirrorEnabled: false });
 
         expect(send([tag]).body).toEqual({ ok: false, error: "integration-disabled" });
@@ -375,7 +375,7 @@ describe("the desktop-only gate", () => {
     it("turns every route away on the web build", () => {
         loadRound();
         const grid = makeGrid(10, 3);
-        setActiveHot(grid.hot as never, vi.fn());
+        setActiveHot(grid.hot as never, vi.fn(), null, 0);
         delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 
         expect(send([tag]).body).toEqual({ ok: false, error: "integration-disabled" });

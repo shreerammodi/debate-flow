@@ -40,7 +40,7 @@ const lastToast = () => toasted.mock.calls.at(-1)?.[0];
 beforeEach(() => {
     invoked.mockReset();
     toasted.mockReset();
-    setActiveHot(null, null);
+    setActiveHot(null, null, null, 0);
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     useFlowStore.setState({ cardmirrorTextType: "analytic", cardmirrorEnabled: true });
 });
@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe("jump to source", () => {
     it("hands the cell's token to the host and stays quiet on success", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         invoked.mockResolvedValue({ ok: true });
 
         await runJumpToSource();
@@ -61,14 +61,14 @@ describe("jump to source", () => {
     });
 
     it("says so on a cell that was typed here", async () => {
-        setActiveHot(makeGrid("typed") as never, vi.fn());
+        setActiveHot(makeGrid("typed") as never, vi.fn(), null, 0);
         await runJumpToSource();
         expect(invoked).not.toHaveBeenCalled();
         expect(lastToast()).toBe("This cell did not come from CardMirror.");
     });
 
     it("names the document to open when it is closed", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         invoked.mockResolvedValue({ ok: false, error: "doc-not-open", docTitle: "AT - Cap K" });
 
         await runJumpToSource();
@@ -76,7 +76,7 @@ describe("jump to source", () => {
     });
 
     it("explains a card that is gone and a source it cannot read", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
 
         invoked.mockResolvedValue({ ok: false, error: "not-found" });
         await runJumpToSource();
@@ -88,7 +88,7 @@ describe("jump to source", () => {
     });
 
     it("reports each transport failure in its own words", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         const cases: [string, string][] = [
             ["not-registered", "CardMirror has never run on this machine."],
             ["not-running", "CardMirror is not running."],
@@ -103,7 +103,7 @@ describe("jump to source", () => {
     });
 
     it("falls back to a readable message on an unnamed failure", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         invoked.mockRejectedValue(new Error("boom"));
         await runJumpToSource();
         expect(lastToast()).toBe("CardMirror sent something ebb could not read.");
@@ -112,7 +112,7 @@ describe("jump to source", () => {
 
 describe("send to doc", () => {
     it("sends the selected text with the configured type", async () => {
-        setActiveHot(makeGrid("Perm solves") as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves") as never, vi.fn(), null, 0);
         useFlowStore.setState({ cardmirrorTextType: "tag" });
         invoked.mockResolvedValue({ ok: true, inserted: true, docTitle: "1AR" });
 
@@ -145,6 +145,8 @@ describe("send to doc", () => {
                 getDataAtCell: (r: number, c: number) => texts[`${r},${c}`] ?? null,
             } as never,
             vi.fn(),
+            null,
+            0,
         );
         invoked.mockResolvedValue({ ok: true, inserted: true });
 
@@ -157,14 +159,14 @@ describe("send to doc", () => {
     });
 
     it("asks for text before sending an empty selection", async () => {
-        setActiveHot(makeGrid(null) as never, vi.fn());
+        setActiveHot(makeGrid(null) as never, vi.fn(), null, 0);
         await runSendToDoc();
         expect(invoked).not.toHaveBeenCalled();
         expect(lastToast()).toBe("Select a cell with text to send.");
     });
 
     it("explains every insert refusal", async () => {
-        setActiveHot(makeGrid("Perm solves") as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves") as never, vi.fn(), null, 0);
         const cases: [string, string][] = [
             ["no-target-doc", "Open a document in CardMirror first."],
             ["doc-readonly", "That CardMirror document is in read mode."],
@@ -181,7 +183,7 @@ describe("send to doc", () => {
 
 describe("the desktop-only gate", () => {
     it("makes both commands silent no-ops when the switch is off", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         useFlowStore.setState({ cardmirrorEnabled: false });
 
         await runJumpToSource();
@@ -192,7 +194,7 @@ describe("the desktop-only gate", () => {
     });
 
     it("makes both commands silent no-ops on the web build", async () => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
         delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 
         await runJumpToSource();
@@ -207,7 +209,7 @@ describe("CardMirror's consent gate", () => {
     const WAITING = "Waiting for approval in CardMirror. No need to try again.";
 
     beforeEach(() => {
-        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn());
+        setActiveHot(makeGrid("Perm solves", SOURCE) as never, vi.fn(), null, 0);
     });
 
     it("waits instead of claiming a send that has not happened yet", async () => {
@@ -309,7 +311,7 @@ describe("a cell a partner sourced", () => {
                 source: { app: "cardmirror", token: "theirs", key: "k", title: "Aff Core" },
             }),
         };
-        setActiveHot(hot as never, vi.fn(), flow.id);
+        setActiveHot(hot as never, vi.fn(), flow.id, 0);
 
         await runJumpToSource();
         // The bridge is never asked: that token means nothing on this machine.

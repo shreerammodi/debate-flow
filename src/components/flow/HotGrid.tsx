@@ -45,6 +45,7 @@ import {
     rebaseUndoStacks,
     onRedoStackChange,
     onUndoStackChange,
+    resetMetaUndo,
     restoreMetaRedo,
     restoreMetaUndo,
     snapshotClasses,
@@ -201,24 +202,28 @@ export function collectMeta(hot: Handsontable, spacers = 0): Record<string, Cell
  * null only when the outgoing sheet is gone from the store (it was just
  * deleted), where the full grid must be scanned to catch its orphans.
  *
- * A stored key names a model column, so the inject pass shifts it up past the
- * pad. Both clearing passes stay in the grid's own space and scan from column
- * 0: a stale decoration can only have been written by a previous sheet's
- * load, and removing exactly those is what they are for.
+ * Every stored key names a model column, on both sides. So the keyed clearing
+ * pass shifts up past `prevSpacers`, the pad the outgoing sheet was drawn
+ * with, and the inject pass shifts up past `spacers`, the pad the incoming one
+ * is about to be drawn with. The two differ when the pane is reloaded under a
+ * changed pad, which is the one case where a key has to be swept off one
+ * column and written onto another; the `key in meta` shortcut is only sound
+ * while they agree. The scanning pass needs neither, sweeping the whole grid.
  */
 export function applyMeta(
     hot: Handsontable,
     meta: Record<string, CellMeta>,
     prevMeta: Record<string, CellMeta> | null,
     spacers = 0,
+    prevSpacers = spacers,
 ): void {
     if (prevMeta) {
         for (const key of Object.keys(prevMeta)) {
-            if (key in meta) continue;
+            if (prevSpacers === spacers && key in meta) continue;
             const [r, c] = key.split(",").map(Number);
             if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
-            hot.setCellMeta(r, c, "className", "");
-            hot.setCellMeta(r, c, "source", undefined);
+            hot.setCellMeta(r, c + prevSpacers, "className", "");
+            hot.setCellMeta(r, c + prevSpacers, "source", undefined);
         }
     } else {
         for (let r = 0; r < hot.countRows(); r++) {
@@ -284,8 +289,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // count is above zero, and every value crossing to the model converts.
     // The selector returns a number, so a render only follows a change in it.
     const spacers = useFlowStore((s) => spacerCount(s.round, sheetId, s.alignSpeeches));
-    // What the imperative callbacks read: they run outside React's render and
-    // must not be re-created per keystroke to pick the count up.
+    // What the imperative callbacks read, since they run outside React's
+    // render and must not be re-created per keystroke to pick the count up.
+    // This is the count the current render wants; `loadedSpacersRef` below is
+    // the one the grid is holding.
     const spacersRef = useRef(0);
     spacersRef.current = spacers;
     // A coach reads the flow; the host drops their writes, so text typed here
@@ -303,10 +310,18 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const [ready, setReady] = useState(false);
     const currentSheetIdRef = useRef<string | null>(null);
     const viewCache = useRef(new Map<string, { row: number; col: ModelCol }>());
-    // The pad the grid currently carries, which the load below is the only
-    // writer of. Neither `spacers` nor the store answers this: both already
-    // hold the incoming count by the time that load runs, and the cursor it
-    // reads off the grid was placed under the outgoing one.
+    // The pad the grid currently carries, written only by the load below.
+    //
+    // It and `spacersRef` disagree from the render that changes the count
+    // until the load that redraws the grid, a passive effect later in the same
+    // commit, and that gap is what every conversion in this file turns on.
+    // Anything that can fire inside it - the save, the change hook, the
+    // closing editor's op, a partner's patch, the outgoing cursor - is looking
+    // at cells the old pad drew, so it reads this ref. Only `afterRenderer`
+    // and `afterGetColHeader` read `spacersRef`: they run from the load
+    // itself, which has already settled the new pad while this ref has not yet
+    // caught up. The store answers for neither, holding the incoming count as
+    // early as the render does.
     const loadedSpacersRef = useRef(0);
     // afterRenderer and afterGetColHeader run once per cell per render cycle, so
     // they index this instead of re-deriving the column list per cell. A sheet's
@@ -326,7 +341,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         const hot = hotRef.current?.hotInstance;
         const sid = currentSheetIdRef.current;
         if (!hot || !sid) return;
-        const lead = spacersRef.current;
+        const lead = loadedSpacersRef.current;
         const rows = (hot.getData() as (string | null)[][]).map((row) => row.slice(lead));
         useFlowStore.getState().updateSheetData(sid, trimGrid(rows), collectMeta(hot, lead));
     }, []);
@@ -341,7 +356,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             grid?.removeShortcutsByKeys(["control/meta", "shift", "z"]);
         }
         return () => {
-            if (getActiveHot() === hot) setActiveHot(null, null);
+            if (getActiveHot() === hot) setActiveHot(null, null, null, 0);
         };
     }, []);
 
@@ -357,7 +372,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             const editor = hot.getActiveEditor();
             const editorOpen = Boolean(editor?.isOpened?.());
             const sel = hot.getSelectedLast();
-            const lead = spacersRef.current;
+            const lead = loadedSpacersRef.current;
             // Null for a cursor inside the pad: it names no cell of this
             // sheet, so the plan is made as if nothing were selected rather
             // than against the sheet's first column.
@@ -505,13 +520,18 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         const lead = spacerCount(round, sheet.id, aligned);
 
         const prev = currentSheetIdRef.current;
-        // The decorations live on the grid belong to the sheet being left; clear
-        // exactly those. null when that sheet is gone (just deleted) or on the
-        // first swap, cueing applyMeta to scan or skip.
-        const prevMeta =
-            prev && prev !== sheet.id
-                ? (round.sheets.find((s) => s.id === prev)?.meta ?? null)
-                : {};
+        const prevLead = loadedSpacersRef.current;
+        // The decorations live on the grid belong to the sheet being left, at
+        // the pad it was drawn with; clear exactly those. A reload of the same
+        // sheet under a changed pad is leaving its own decorations behind, so
+        // there the sheet names them itself. null when the outgoing sheet is
+        // gone (just deleted), cueing applyMeta to scan; {} on the first load,
+        // where the grid carries nothing to clear.
+        const prevMeta = !prev
+            ? {}
+            : prev === sheet.id
+              ? sheet.meta
+              : (round.sheets.find((s) => s.id === prev)?.meta ?? null);
         if (prev) {
             // Sheet stepping carries the platform modifier, so it arrives with
             // the editor open and mid-word. The editor closes onto its own
@@ -525,7 +545,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // Converted against the pad the grid was drawn with, which is the
             // outgoing sheet's and not the incoming one's. Null is a cursor
             // inside that pad, which names no cell to remember.
-            const at = sel ? toModelCol(gridCol(sel[1]), loadedSpacersRef.current) : null;
+            const at = sel ? toModelCol(gridCol(sel[1]), prevLead) : null;
             if (sel && at !== null) viewCache.current.set(prev, { row: sel[0], col: at });
         }
         currentSheetIdRef.current = sheet.id;
@@ -547,9 +567,17 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 data: padGrid(sheet.data, width, MIN_ROWS, lead),
                 ...headerSettings(sheet, cols, lead + width),
             });
-            applyMeta(hot, sheet.meta, prevMeta, lead);
+            applyMeta(hot, sheet.meta, prevMeta, lead, prevLead);
         });
         loadedSpacersRef.current = lead;
+        // A reload under a changed pad re-keys every column, and both undo
+        // histories hold the grid coordinates their action was recorded with.
+        // There is nothing to rebase them onto, so an undo replayed here would
+        // write one column off; dropping them is the honest option.
+        if (prev === sheet.id && prevLead !== lead) {
+            hot.getPlugin("undoRedo")?.clear();
+            resetMetaUndo();
+        }
         const v = viewCache.current.get(sheet.id) ?? { row: 0, col: modelCol(0) };
         hot.selectCell(v.row, toGridCol(v.col, lead));
         setReady(true);
@@ -733,7 +761,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             }
             const sid = currentSheetIdRef.current;
             if (sid && isReplicatedSource(source)) {
-                const lead = spacersRef.current;
+                const lead = loadedSpacersRef.current;
                 const named: ModelChange[] = [];
                 for (const [row, prop, oldValue, newValue] of changes as GridChange[]) {
                     // Nothing can write in the pad, so a change there is a bug

@@ -1,10 +1,16 @@
 import { act, render, waitFor } from "@testing-library/react";
 import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
+import { useLayoutEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import HotGrid, { applyMeta, collectMeta } from "@/components/flow/HotGrid";
+import { seedDoc } from "@/lib/collab/doc";
+import { applyOp, type OpContext } from "@/lib/collab/ops";
+import { clearReplica, getReplica, seedReplica } from "@/lib/collab/replica";
+import { createClock } from "@/lib/collab/stamp";
 import { getActiveHot } from "@/lib/grid/hotInstance";
+import { applyRemote } from "@/lib/grid/remoteBridge";
 import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -16,6 +22,45 @@ const SRC: CellSource = {
     key: "doc1|perm solves",
     title: "AT - Cap K",
 };
+
+/**
+ * A policy round with alignment on, whose aff sheet opens it and so leads with
+ * nothing, and whose neg sheet leads with one spacer for the speech it skips.
+ * Both carry three cells of text, so a column lost or gained is visible.
+ */
+function alignedPair() {
+    const round = makeFlowRound();
+    const aff = round.sheets[1];
+    aff.data = [["kritik", "perm", "extend"]];
+    const neg = makeFlowSheet({ title: "2.", group: "neg", order: 1 });
+    neg.data = [["link", "impact", "block"]];
+    round.sheets.push(neg);
+    useFlowStore.setState({
+        round,
+        activeSheetId: aff.id,
+        splitSheetId: null,
+        alignSpeeches: true,
+    });
+    return { round, aff, neg };
+}
+
+/** The pane's instance, once the first load has published it. */
+function mounted() {
+    return waitFor(() => {
+        const h = getActiveHot();
+        expect(h).not.toBeNull();
+        return h!;
+    });
+}
+
+/** Opens the editor on a cell and leaves a half-typed word in it. */
+function typeInto(hot: Handsontable, row: number, col: number, text: string) {
+    hot.selectCell(row, col);
+    hot.getActiveEditor()!.beginEditing();
+    const input = document.querySelector<HTMLTextAreaElement>("textarea.handsontableInput");
+    expect(input).not.toBeNull();
+    input!.value = text;
+}
 
 /**
  * The two halves of a sheet switch, driven against a real grid: the pane saves
@@ -237,7 +282,13 @@ describe("speech alignment", () => {
  */
 describe("sheet switch under an open editor", () => {
     afterEach(() => {
-        useFlowStore.setState({ round: null, activeSheetId: null, splitSheetId: null });
+        clearReplica();
+        useFlowStore.setState({
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+            alignSpeeches: false,
+        });
     });
 
     it("keeps the half-typed cell on the sheet being left", async () => {
@@ -264,5 +315,181 @@ describe("sheet switch under an open editor", () => {
 
         const left = useFlowStore.getState().round!.sheets.find((s) => s.id === from.id)!;
         expect(left.data[0][0]).toBe("perm solves");
+    });
+
+    /**
+     * The same step with alignment on, which is what makes the two sheets
+     * disagree about where the pad is. The save runs inside the switch, while
+     * the grid still holds the sheet being left, so it owes that sheet the pad
+     * the grid was drawn with rather than the one the next render asked for.
+     */
+    it("keeps every column of an unpadded sheet stepped off onto a padded one", async () => {
+        const { aff, neg } = alignedPair();
+
+        const { rerender } = render(<HotGrid sheetId={aff.id} pane={1} />);
+        const hot = await mounted();
+        // The aff sheet opens the round and so leads with nothing: grid column
+        // 2 is its own third cell.
+        typeInto(hot, 0, 2, "turn");
+
+        rerender(<HotGrid sheetId={neg.id} pane={1} />);
+
+        const left = useFlowStore.getState().round!.sheets.find((s) => s.id === aff.id)!;
+        // The trailing null is the sheet's fourth column, still empty: nothing
+        // shifted, and the sheet keeps the width the grid drew it at.
+        expect(left.data[0].slice(0, 4)).toEqual(["kritik", "perm", "turn", null]);
+    });
+
+    it("keeps every column of a padded sheet stepped off onto an unpadded one", async () => {
+        const { aff, neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+
+        const { rerender } = render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        // One spacer, so grid column 3 is the neg sheet's third cell.
+        typeInto(hot, 0, 3, "turn");
+
+        rerender(<HotGrid sheetId={aff.id} pane={1} />);
+
+        const left = useFlowStore.getState().round!.sheets.find((s) => s.id === neg.id)!;
+        expect(left.data[0].slice(0, 4)).toEqual(["link", "impact", "turn", null]);
+    });
+
+    /**
+     * The op the closing editor produces names a cell of the sheet being left,
+     * so it is the outgoing pad that turns the reported grid column into it.
+     */
+    it("records the closing word against the pad the grid was drawn with", async () => {
+        const { round, aff, neg } = alignedPair();
+        seedReplica(round);
+
+        const { rerender } = render(<HotGrid sheetId={aff.id} pane={1} />);
+        const hot = await mounted();
+        typeInto(hot, 0, 2, "turn");
+
+        rerender(<HotGrid sheetId={neg.id} pane={1} />);
+
+        const cells = Object.values(getReplica()!.sheets[aff.id].cells);
+        expect(cells.find((c) => c.col === 2)!.text).toBe("turn");
+        expect(cells.find((c) => c.col === 1)!.text).toBe("perm");
+    });
+});
+
+/**
+ * A decoration sits on the grid at its model column plus the pad, so both ends
+ * of a load have to name the pad each side is in: the sheet being left is
+ * cleared at the pad it was drawn with, the sheet arriving is injected at the
+ * pad it is about to be drawn with.
+ */
+describe("decorations across a change of pad", () => {
+    afterEach(() => {
+        useFlowStore.setState({
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+            alignSpeeches: false,
+        });
+    });
+
+    function decoratedPair() {
+        const pair = alignedPair();
+        pair.neg.meta = { "0,0": { bold: true } };
+        useFlowStore.setState({ activeSheetId: pair.neg.id });
+        return pair;
+    }
+
+    it("takes a padded sheet's decoration off the grid when the sheet is left", async () => {
+        const { aff, neg } = decoratedPair();
+
+        const { rerender } = render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        // One spacer, so the neg sheet's first cell is grid column 1.
+        expect(hot.getCellMeta(0, 1).className).toBe("flow-bold");
+
+        rerender(<HotGrid sheetId={aff.id} pane={1} />);
+        await waitFor(() => expect(hot.getDataAtCell(0, 0)).toBe("kritik"));
+
+        expect(hot.getCellMeta(0, 1).className).toBe("");
+        // The aff sheet never wore it, so its next save must not collect it.
+        hot.setDataAtCell(0, 0, "kritik turns");
+        const saved = useFlowStore.getState().round!.sheets.find((s) => s.id === aff.id)!;
+        expect(saved.meta).toEqual({});
+    });
+
+    it("moves a decoration rather than doubling it when alignment is flipped", async () => {
+        const { neg } = decoratedPair();
+
+        render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        expect(hot.getCellMeta(0, 1).className).toBe("flow-bold");
+
+        act(() => useFlowStore.setState({ alignSpeeches: false }));
+        await waitFor(() => expect(hot.countCols()).toBe(6));
+
+        expect(hot.getCellMeta(0, 0).className).toBe("flow-bold");
+        expect(hot.getCellMeta(0, 1).className).toBe("");
+        hot.setDataAtCell(0, 0, "link turns");
+        const saved = useFlowStore.getState().round!.sheets.find((s) => s.id === neg.id)!;
+        expect(saved.meta).toEqual({ "0,0": { bold: true } });
+    });
+});
+
+/**
+ * React flushes passive effects in their own task, so a partner's patch can
+ * land after the render that changed the count and before the load that acts
+ * on it. A sibling's layout effect stands in for that window: it runs after
+ * HotGrid has rendered and before HotGrid's own effect reloads the grid.
+ */
+describe("a partner's patch landing between the render and the load", () => {
+    afterEach(() => {
+        useFlowStore.setState({
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+            alignSpeeches: false,
+        });
+    });
+
+    it("writes into the grid the pane is still showing", async () => {
+        const { round, neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+
+        let atCommit: (() => void) | null = null;
+        // Subscribed to the same setting, so the flip re-renders this beside
+        // the pane and its layout effect lands in the pane's own window.
+        function AtCommit() {
+            useFlowStore((s) => s.alignSpeeches);
+            useLayoutEffect(() => atCommit?.());
+            return null;
+        }
+        render(
+            <>
+                <HotGrid sheetId={neg.id} pane={1} />
+                <AtCommit />
+            </>,
+        );
+        const hot = await mounted();
+        expect(hot.countCols()).toBe(7);
+
+        let t = 5_000;
+        const ctx: OpContext = { actor: "sam", clock: createClock("sam", () => t++) };
+        const before = seedDoc(round);
+        const after = applyOp(
+            before,
+            { kind: "cellText", sheetId: neg.id, col: 0, row: 0, text: "theirs" },
+            ctx,
+        );
+
+        let landed: unknown[] | null = null;
+        atCommit = () => {
+            applyRemote(before, after);
+            landed = [hot.getDataAtCell(0, 0), hot.getDataAtCell(0, 1)];
+        };
+        act(() => useFlowStore.setState({ alignSpeeches: false }));
+        atCommit = null;
+
+        // The grid was still carrying its pad, so the partner's first cell is
+        // grid column 1 and the spacer it leads with stays empty.
+        expect(landed).toEqual([null, "theirs"]);
     });
 });

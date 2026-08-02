@@ -32,7 +32,7 @@ function openRound(): void {
 
 beforeEach(() => {
     clearReplica();
-    setActiveHot(null, null, null);
+    setActiveHot(null, null, null, 0);
     useFlowStore.setState({ round: null, activeSheetId: null, splitSheetId: null });
 });
 
@@ -49,7 +49,7 @@ describe("a decoration toggle reaches the replica", () => {
                     "1,0": { bold: true },
                 });
         };
-        setActiveHot(grid as never, mutated, sheetId);
+        setActiveHot(grid as never, mutated, sheetId, 0);
 
         executeCommand("format.toggleBold");
 
@@ -60,7 +60,7 @@ describe("a decoration toggle reaches the replica", () => {
 
     it("records nothing when no grid names a sheet", () => {
         openRound();
-        setActiveHot(selectionHot(1) as never, vi.fn(), null);
+        setActiveHot(selectionHot(1) as never, vi.fn(), null, 0);
         const before = getReplica();
         executeCommand("format.toggleBold");
         expect(getReplica()).toBe(before);
@@ -85,7 +85,7 @@ describe("a cell insert reaches the replica as one shift", () => {
             setDataAtCell: vi.fn(),
             render: vi.fn(),
         };
-        setActiveHot(grid as never, vi.fn(), sheetId);
+        setActiveHot(grid as never, vi.fn(), sheetId, 0);
 
         executeCommand("cell.insert");
 
