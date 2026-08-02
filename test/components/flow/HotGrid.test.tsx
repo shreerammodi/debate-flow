@@ -1,9 +1,11 @@
+import { render, screen } from "@testing-library/react";
 import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { applyMeta, collectMeta } from "@/components/flow/HotGrid";
-import type { CellMeta, CellSource } from "@/lib/model/flow";
+import HotGrid, { applyMeta, collectMeta, COL_WIDTH } from "@/components/flow/HotGrid";
+import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
+import { useFlowStore } from "@/lib/store/useFlowStore";
 
 registerAllModules();
 
@@ -90,5 +92,45 @@ describe("collectMeta / applyMeta", () => {
         expect(h.getCellMeta(1, 0).source).toBeUndefined();
         expect(h.getCellMeta(0, 1).source).toBeUndefined();
         expect(collectMeta(h)).toEqual({});
+    });
+});
+
+/**
+ * Aligning pads the pane by the speeches a sheet does not show, so the same
+ * speech lands at the same place on every sheet of the round.
+ */
+describe("speech alignment", () => {
+    const round = makeFlowRound();
+    // makeFlowRound opens a policy round with the cx sheet first and one aff
+    // flow sheet after it; the round needs a neg sheet to have an offset one.
+    const affSheet = round.sheets[1];
+    const negSheet = makeFlowSheet({ title: "2.", group: "neg", order: 1 });
+    round.sheets.push(negSheet);
+
+    afterEach(() => {
+        useFlowStore.setState({ alignSpeeches: false });
+    });
+
+    function padOf(sheetId: string, alignSpeeches: boolean): string {
+        useFlowStore.setState({
+            round,
+            activeSheetId: sheetId,
+            splitSheetId: null,
+            alignSpeeches,
+        });
+        render(<HotGrid sheetId={sheetId} pane={1} />);
+        return screen.getByTestId("grid-pad").style.paddingLeft;
+    }
+
+    it("pads a neg sheet by the speech that opens the round", () => {
+        expect(padOf(negSheet.id, true)).toBe(`${COL_WIDTH}px`);
+    });
+
+    it("leaves the sheet that opens the round flush", () => {
+        expect(padOf(affSheet.id, true)).toBe("0px");
+    });
+
+    it("pads nothing while the setting is off", () => {
+        expect(padOf(negSheet.id, false)).toBe("0px");
     });
 });

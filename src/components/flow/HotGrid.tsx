@@ -19,7 +19,12 @@ import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
 import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "@/lib/grid/codec";
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
-import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
+import {
+    columnsForFlowSheet,
+    headerSettings,
+    speechOffset,
+    type SpeechCol,
+} from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
 import {
     attachMetaUndo,
@@ -63,6 +68,10 @@ registerAllModules();
 // the grid further as cells past this fill, so it is headroom, not a cap; kept
 // modest because every sheet switch re-renders and re-measures the full pad.
 const MIN_ROWS = 250;
+
+// Every speech column is this wide, and an aligned pane pads itself by whole
+// columns of it, so the two are one number.
+export const COL_WIDTH = 280;
 
 const ARROW_DELTAS: Record<string, { dr: number; dc: number }> = {
     ArrowUp: { dr: -1, dc: 0 },
@@ -237,6 +246,16 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const splitSheetId = useFlowStore((s) => s.splitSheetId);
     const focusedPane = useFlowStore((s) => s.focusedPane);
     const gridZoom = useFlowStore((s) => s.gridZoom);
+    // Columns of empty pane left of this sheet's first speech. Aligning pads
+    // the pane and not the grid, so the grid's column indices stay the model's
+    // and nothing that carries one - an op on the wire, a peer's cursor, a
+    // paste, a search hit - has to be translated. The selector returns a
+    // number, so a render only follows a change in the number.
+    const padCols = useFlowStore((s) => {
+        if (!s.alignSpeeches || !s.round) return 0;
+        const sheet = s.round.sheets.find((x) => x.id === sheetId);
+        return sheet ? speechOffset(s.round, sheet) : 0;
+    });
     // A coach reads the flow; the host drops their writes, so text typed here
     // would vanish on the next merge. Refusing the keystroke is honest where
     // silently losing it is not, and the same rule takes away the context menu,
@@ -358,12 +377,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         lockHintTimer.current = setTimeout(() => setLockHint(null), LOCK_HINT_MS);
     }, []);
 
-    // Zoom scales the grid via CSS on the wrapper; Handsontable measures its
-    // viewport once, so re-measure it against the new zoomed box or the last
-    // rows/cols stay clipped or leave a gap.
+    // Zoom scales the grid via CSS on the wrapper and alignment pads it;
+    // Handsontable measures its viewport once, so re-measure it against the
+    // new box or the last rows/cols stay clipped or leave a gap.
     useEffect(() => {
         hotRef.current?.hotInstance?.refreshDimensions();
-    }, [gridZoom]);
+    }, [gridZoom, padCols]);
 
     // Mod+scroll zooms only the grid. Native listener (not React onWheel) so the
     // preventDefault sticks and the browser's own page zoom never fires. Trackpad
@@ -906,12 +925,28 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 width/height:100% child still fills this pane exactly (CSS zoom
                 resolves the percentage against the pane), and Handsontable reads
                 its own clientHeight (pane / zoom) to fill the visible box, so its
-                scrollbars stay at the pane edges instead of overflowing. */}
-            <div style={{ zoom: gridZoom, width: "100%", height: "100%" }}>
+                scrollbars stay at the pane edges instead of overflowing.
+
+                The alignment pad sits inside the zoom, so it scales with the
+                columns it stands in for, and border-box keeps the padded pane
+                exactly the pane's width. A sheet's columns are the order minus
+                its offset, so every sheet of the round ends up one extent and
+                one maximum scroll, and the alignment holds however far the
+                debater has scrolled. */}
+            <div
+                data-testid="grid-pad"
+                style={{
+                    zoom: gridZoom,
+                    width: "100%",
+                    height: "100%",
+                    boxSizing: "border-box",
+                    paddingLeft: padCols * COL_WIDTH,
+                }}
+            >
                 <HotTable
                     ref={hotRef}
                     rowHeaders={false}
-                    colWidths={280}
+                    colWidths={COL_WIDTH}
                     wordWrap={true}
                     autoRowSize={true}
                     autoColumnSize={false}
