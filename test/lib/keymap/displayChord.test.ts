@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 import { prettyChord, buildChordMap, keyHintFor } from "@/lib/keymap/displayChord";
 import { effectiveKeymap } from "@/lib/keymap/useKeymap";
+import { isMacPlatform } from "@/lib/platform";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 describe("displayChord", () => {
@@ -25,7 +26,7 @@ describe("displayChord", () => {
 
     it("maps a bound command to its chord", () => {
         const map = buildChordMap();
-        expect(map["sheet.next"]).toBe("]");
+        expect(map["sheet.next"]).toBe(`${isMacPlatform() ? "Meta" : "Ctrl"}+]`);
     });
 
     it("returns a pretty hint for a bound command", () => {

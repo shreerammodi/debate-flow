@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
 import { afterEach, describe, expect, it } from "vitest";
 
 import HotGrid, { applyMeta, collectMeta, COL_WIDTH } from "@/components/flow/HotGrid";
+import { getActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
@@ -143,5 +144,43 @@ describe("speech alignment", () => {
 
     it("leaves a cx sheet flush, since its columns are periods", () => {
         expect(padOf(round.sheets[0].id, true)).toBe("0px");
+    });
+});
+
+/**
+ * Stepping between sheets carries the platform modifier so it reaches the app
+ * from inside an open cell editor. Arriving mid-word, the switch has to take
+ * the word with it: the editor is closed against the sheet being left, before
+ * the pane retargets, so the text lands where it was typed.
+ */
+describe("sheet switch under an open editor", () => {
+    afterEach(() => {
+        useFlowStore.setState({ round: null, activeSheetId: null, splitSheetId: null });
+    });
+
+    it("keeps the half-typed cell on the sheet being left", async () => {
+        const round = makeFlowRound();
+        const from = round.sheets[1];
+        const to = makeFlowSheet({ title: "2.", group: "neg", order: 1 });
+        round.sheets.push(to);
+        useFlowStore.setState({ round, activeSheetId: from.id, splitSheetId: null });
+
+        const { rerender } = render(<HotGrid sheetId={from.id} pane={1} />);
+        const hot = await waitFor(() => {
+            const h = getActiveHot();
+            expect(h).not.toBeNull();
+            return h!;
+        });
+
+        hot.selectCell(0, 0);
+        hot.getActiveEditor()!.beginEditing();
+        const input = document.querySelector<HTMLTextAreaElement>("textarea.handsontableInput");
+        expect(input).not.toBeNull();
+        input!.value = "perm solves";
+
+        rerender(<HotGrid sheetId={to.id} pane={1} />);
+
+        const left = useFlowStore.getState().round!.sheets.find((s) => s.id === from.id)!;
+        expect(left.data[0][0]).toBe("perm solves");
     });
 });

@@ -146,6 +146,13 @@ describe("toAppConfig validation", () => {
         expect(cfg.keymapOverrides).toEqual({ "flow.new": "Meta+q" });
     });
 
+    it("drops the bare brackets a file written before the sheet steps moved", () => {
+        // Kept as overrides they outrank the new defaults, so every existing
+        // install would keep a chord the cell editor swallows.
+        const cfg = toAppConfig({ keymap: { sheet: { next: "]", prev: "[" } } });
+        expect(cfg.keymapOverrides).toEqual({});
+    });
+
     it("returns a fully-defaulted config for a non-object input", () => {
         const cfg = toAppConfig(null);
         expect(cfg.theme).toBe("system");

@@ -123,9 +123,12 @@ describe("eventToChord under Alt (macOS composes e.key)", () => {
 });
 
 describe("resolveCommand (flat keymap)", () => {
-    it("] resolves to sheet.next and [ to sheet.prev", () => {
-        expect(resolveCommand(FLAT_KEYMAP, ev("]"))).toBe("sheet.next");
-        expect(resolveCommand(FLAT_KEYMAP, ev("["))).toBe("sheet.prev");
+    it("the platform modifier and a bracket resolve to the sheet steps", () => {
+        const held = isMacPlatform() ? { metaKey: true } : { ctrlKey: true };
+        expect(resolveCommand(FLAT_KEYMAP, ev("]", held))).toBe("sheet.next");
+        expect(resolveCommand(FLAT_KEYMAP, ev("[", held))).toBe("sheet.prev");
+        // Bare, a bracket is text the cell editor keeps.
+        expect(resolveCommand(FLAT_KEYMAP, ev("]"))).toBeNull();
     });
 
     it("Enter is unbound (the grid owns it)", () => {

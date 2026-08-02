@@ -102,4 +102,15 @@ describe("reservedChords", () => {
         setPlatform("MacIntel");
         expect(reservedChords().has("Meta+j")).toBe(true);
     });
+
+    it("reserves the platform modifier+brackets (sheet stepping / history)", () => {
+        // Cmd+[ and Cmd+] are the browser's back and forward, so a debater
+        // stepping between sheets on the web build would leave the flow.
+        setPlatform("MacIntel");
+        expect(reservedChords().has("Meta+[")).toBe(true);
+        expect(reservedChords().has("Meta+]")).toBe(true);
+        setPlatform("Win32");
+        expect(reservedChords().has("Ctrl+[")).toBe(true);
+        expect(reservedChords().has("Ctrl+]")).toBe(true);
+    });
 });

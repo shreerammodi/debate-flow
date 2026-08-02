@@ -16,19 +16,19 @@ describe("effectiveKeymap", () => {
     it("applies an override and removes the old preset chord for that command", () => {
         const keymap = effectiveKeymap({ "sheet.next": "g" });
         expect(keymap.bindings["g"]).toBe("sheet.next");
-        // Original "]" binding for sheet.next is gone.
-        expect(keymap.bindings["]"]).toBeUndefined();
+        // The preset chord for sheet.next is gone.
+        expect(keymap.bindings[`${mod}+]`]).toBeUndefined();
     });
 
     it("leaves other bindings untouched", () => {
         const keymap = effectiveKeymap({ "sheet.next": "g" });
-        expect(keymap.bindings["["]).toBe("sheet.prev");
+        expect(keymap.bindings[`${mod}+[`]).toBe("sheet.prev");
         expect(keymap.bindings["?"]).toBe("help.open");
     });
 
     it("ignores empty override chords", () => {
         const keymap = effectiveKeymap({ "sheet.next": "" });
-        expect(keymap.bindings["]"]).toBe("sheet.next");
+        expect(keymap.bindings[`${mod}+]`]).toBe("sheet.next");
     });
 
     it("names the keymap to indicate overrides are applied", () => {

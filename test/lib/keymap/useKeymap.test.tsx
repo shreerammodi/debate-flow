@@ -53,15 +53,32 @@ describe("useKeymap", () => {
         });
     });
 
-    it("fires bare-key sheet chords outside text entry", () => {
+    it("steps between sheets on the platform modifier and a bracket", () => {
         freshRound();
         const state = () => useFlowStore.getState();
         const second = state().activeSheetId!;
         render(<Harness />);
-        dispatchKey("[");
+        dispatchKey("[", MOD);
         expect(state().activeSheetId).not.toBe(second);
-        dispatchKey("]");
+        dispatchKey("]", MOD);
         expect(state().activeSheetId).toBe(second);
+    });
+
+    it("steps between sheets from inside the grid's cell editor", () => {
+        freshRound();
+        const state = () => useFlowStore.getState();
+        const second = state().activeSheetId!;
+        render(<Harness />);
+
+        // Handsontable parks a textarea.handsontableInput over the cell being
+        // typed in. The modifier is what carries the chord out of it.
+        const editor = document.createElement("textarea");
+        editor.className = "handsontableInput";
+        document.body.appendChild(editor);
+        dispatchKey("[", MOD, editor);
+
+        expect(state().activeSheetId).not.toBe(second);
+        editor.remove();
     });
 
     it("toggles the cheatsheet on ? and respects user overrides", () => {
@@ -78,17 +95,30 @@ describe("useKeymap", () => {
         expect(useFlowStore.getState().cheatsheetOpen).toBe(false);
     });
 
-    it("does not fire bare-key chords while typing in a text field", () => {
+    it("leaves a bare bracket to the cell it was typed in", () => {
         freshRound();
         const state = () => useFlowStore.getState();
         const second = state().activeSheetId!;
         render(<Harness />);
 
-        const textarea = document.createElement("textarea");
-        document.body.appendChild(textarea);
-        dispatchKey("[", {}, textarea);
+        const editor = document.createElement("textarea");
+        editor.className = "handsontableInput";
+        document.body.appendChild(editor);
+        dispatchKey("[", {}, editor);
 
         expect(state().activeSheetId).toBe(second);
+        editor.remove();
+    });
+
+    it("does not fire bare-key chords while typing in a text field", () => {
+        freshRound();
+        render(<Harness />);
+
+        const textarea = document.createElement("textarea");
+        document.body.appendChild(textarea);
+        dispatchKey("?", { shiftKey: true }, textarea);
+
+        expect(useFlowStore.getState().cheatsheetOpen).toBe(false);
         textarea.remove();
     });
 });

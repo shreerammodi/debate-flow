@@ -446,7 +446,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 ? (round.sheets.find((s) => s.id === prev)?.meta ?? null)
                 : {};
         if (prev && prev !== sheet.id) {
-            hot.getActiveEditor()?.finishEditing(true);
+            // Sheet stepping carries the platform modifier, so it arrives with
+            // the editor open and mid-word. The editor closes onto its own
+            // cell, and afterChange snapshots against currentSheetIdRef before
+            // the line below retargets it, so the word lands on the sheet it
+            // was typed on rather than being dropped with the swap.
+            hot.getActiveEditor()?.finishEditing();
             const sel = hot.getSelectedLast();
             if (sel) viewCache.current.set(prev, { row: sel[0], col: sel[1] });
         }

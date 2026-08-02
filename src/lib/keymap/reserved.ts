@@ -44,6 +44,9 @@ const RESERVED_KEYS = [
     "o", // insert cell (suppresses browser open-file)
     "O", // insert row (Shift encoded in uppercase key)
     "M", // move cells (suppresses the browser profile switcher)
+    // -- Sheet navigation --------------------------------------------------
+    "[", // previous sheet (suppresses the browser's history back)
+    "]", // next sheet (suppresses the browser's history forward)
     // -- Sheet jumps -----------------------------------------------------------
     "1",
     "2",

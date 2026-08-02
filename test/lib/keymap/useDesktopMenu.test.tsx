@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isMacPlatform } from "@/lib/platform";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const listeners = new Map<string, (e: { payload: string }) => void>();
@@ -94,7 +95,11 @@ describe("accelerator sync", () => {
         ];
         expect(command).toBe("rebuild_menu");
         expect(payload.accels["edit.undo"]).toBeTruthy();
-        expect(payload.accels["sheet.next"]).toBe(""); // bare "]" cannot be one
+        // A modifier chord over a bracket is a real accelerator, unlike the
+        // bare printables the menu has to leave click-only.
+        expect(payload.accels["sheet.next"]).toBe(
+            `${isMacPlatform() ? "Cmd" : "Ctrl"}+BracketRight`,
+        );
     });
 
     it("re-syncs when keymap overrides change", async () => {

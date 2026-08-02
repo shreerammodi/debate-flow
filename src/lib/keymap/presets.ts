@@ -54,10 +54,17 @@ const LETTER_BINDINGS: Record<Chord, CommandId> = (() => {
     };
 })();
 
-/** Sheet jumps: Meta+1-9 on Mac, Ctrl+1-9 elsewhere. */
-const SHEET_JUMPS: Record<Chord, CommandId> = (() => {
+/**
+ * Sheet navigation: brackets step, 1-9 jump. Every one carries the platform
+ * modifier because a bare key is text to the cell editor: Handsontable hands
+ * a printable keydown to the editor the debater has open, so a bare bracket
+ * types a bracket and never reaches the app. Meta on Mac, Ctrl elsewhere.
+ */
+const SHEET_NAV: Record<Chord, CommandId> = (() => {
     const mod = isMacPlatform() ? "Meta" : "Ctrl";
     return {
+        [`${mod}+]`]: "sheet.next",
+        [`${mod}+[`]: "sheet.prev",
         [`${mod}+1`]: "sheet.jump1",
         [`${mod}+2`]: "sheet.jump2",
         [`${mod}+3`]: "sheet.jump3",
@@ -85,11 +92,9 @@ const SPLIT_BINDINGS: Record<Chord, CommandId> = {
 export const FLAT_KEYMAP: Keymap = {
     name: "default",
     bindings: {
-        "]": "sheet.next",
-        "[": "sheet.prev",
         "?": "help.open",
         ...LETTER_BINDINGS,
-        ...SHEET_JUMPS,
+        ...SHEET_NAV,
         ...SPLIT_BINDINGS,
     },
 };
@@ -107,6 +112,8 @@ export const FLAT_KEYMAP: Keymap = {
  */
 export const RETIRED_DEFAULTS: Record<string, readonly string[]> = {
     "flow.new": ["Meta+n", "Ctrl+n"],
+    "sheet.next": ["]"],
+    "sheet.prev": ["["],
 };
 
 // --- Registry ------------------------------------------------------------------

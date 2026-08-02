@@ -92,6 +92,14 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Changed
 
+- **Stepping between sheets moved onto the platform modifier: Cmd/Ctrl+[ and
+  Cmd/Ctrl+]**, from the bare brackets. A bare key is text to a cell you are
+  typing in, so the old chords only worked with the editor closed, which is
+  not where a debater is mid-speech. The modifier carries them out of the
+  editor, and the cell you were part-way through is kept on the sheet you left
+  rather than dropped with the switch. A bracket you have rebound by hand
+  stays yours; a config file still carrying the old default is read as the
+  default it was, not as a choice.
 - The round's date is the platform's own date field rather than a calendar that
   opened in a popover, so it takes a typed date, follows the date format the
   machine is set to, and reaches the keyboard the way every other field in the

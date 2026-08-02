@@ -5,9 +5,15 @@ import { isMacPlatform } from "@/lib/platform";
 
 const mod = isMacPlatform() ? "Meta" : "Ctrl";
 
-it("binds sheet switching to brackets and help to question mark", () => {
-    expect(FLAT_KEYMAP.bindings["]"]).toBe("sheet.next");
-    expect(FLAT_KEYMAP.bindings["["]).toBe("sheet.prev");
+it("binds sheet stepping to the platform modifier and brackets", () => {
+    expect(FLAT_KEYMAP.bindings[`${mod}+]`]).toBe("sheet.next");
+    expect(FLAT_KEYMAP.bindings[`${mod}+[`]).toBe("sheet.prev");
+    // Bare, they would be text to the cell editor rather than a command.
+    expect(FLAT_KEYMAP.bindings["]"]).toBeUndefined();
+    expect(FLAT_KEYMAP.bindings["["]).toBeUndefined();
+});
+
+it("binds help to question mark", () => {
     expect(FLAT_KEYMAP.bindings["?"]).toBe("help.open");
 });
 

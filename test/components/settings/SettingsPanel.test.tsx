@@ -102,10 +102,10 @@ describe("SettingsPanel", () => {
         renderSettingsPanel();
         await gotoKeyboard(user);
 
-        // The flat keymap binds sheet.next to "]".
+        // The flat keymap steps sheets on the platform modifier and a bracket.
         const row = screen.getByTestId("cmd-sheet.next");
         expect(within(row).getByText(COMMANDS["sheet.next"].label)).toBeTruthy();
-        expect(screen.getByTestId("chord-sheet.next").textContent).toBe("]");
+        expect(screen.getByTestId("chord-sheet.next").textContent).toBe(`${MOD}+]`);
     });
 
     it("records a chord override: click Record then press a key", async () => {
@@ -215,7 +215,7 @@ describe("SettingsPanel", () => {
         await user.click(screen.getByTestId("reset-sheet.next"));
 
         expect(useFlowStore.getState().keymapOverrides["sheet.next"]).toBeUndefined();
-        expect(screen.getByTestId("chord-sheet.next").textContent).toBe("]");
+        expect(screen.getByTestId("chord-sheet.next").textContent).toBe(`${MOD}+]`);
     });
 
     it("shows shortcuts only in the Keyboard pane", async () => {
