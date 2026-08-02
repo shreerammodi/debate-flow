@@ -100,6 +100,19 @@ const DIAL_DEADLINE: Duration = Duration::from_secs(15);
 /// the round, which the CRDT resyncs; a queue with no ceiling costs the round.
 const OUTBOUND_QUEUE: usize = 256;
 
+/// How long a hang-up gives the writer to put what is already queued on the
+/// wire before the connection goes down under it.
+///
+/// `collab_send` returns once a line is on the queue the writer drains, so a
+/// line handed over immediately before a hang-up is still sitting in that
+/// queue: the round's farewell is exactly such a line, and a peer told
+/// nothing sees a socket vanish instead of a partner leaving. The wait is
+/// bounded because the only thing that can hold it is a peer stalling the
+/// writer on flow control, and that peer must not decide when this window
+/// gets to exit. The shell gives a closing window three seconds to flush
+/// (`shutdown::FLUSH_TIMEOUT`), and this stays well inside it.
+const HANG_UP_GRACE: Duration = Duration::from_millis(250);
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PeerEvent {
@@ -191,18 +204,37 @@ struct Conn {
 }
 
 impl Conn {
-    /// Ends the connection for real. Dropping the sender only stops the
-    /// writer: the QUIC connection and the reader outlive it, so a peer the
-    /// host refused would hold its connection and keep pumping messages into
-    /// the webview until it chose to hang up.
+    /// Ends the connection for real, once what is already queued has gone
+    /// out. Dropping the sender only stops the writer: the QUIC connection and
+    /// the reader outlive it, so a peer the host refused would hold its
+    /// connection and keep pumping messages into the webview until it chose to
+    /// hang up.
+    ///
+    /// The order is what makes a farewell survive. Dropping the sender ends
+    /// the writer's queue rather than the writer, so everything already on it
+    /// is written and the stream is finished; only then does the connection
+    /// go. Closing first, or aborting the writer, discards whatever
+    /// `collab_send` handed over in the moments before the hang-up - which is
+    /// where a round's last message always sits.
     ///
     /// The reader is not held at all. Closing the connection is what wakes it,
     /// and it is the only thing that reports the close upward, so aborting it
     /// would be a race: win it and the webview is never told the peer went
     /// away, and the chip reads connected over a connection that is gone.
-    fn close(self) {
-        self.conn.close(0u32.into(), b"closed");
-        self.writer.abort();
+    async fn hang_up(self) {
+        let Conn {
+            tx,
+            conn,
+            mut writer,
+            ..
+        } = self;
+        drop(tx);
+        // A peer that has stopped reading stalls the writer on flow control
+        // for as long as it likes, and a window's exit is not its to hold.
+        if timeout(HANG_UP_GRACE, &mut writer).await.is_err() {
+            writer.abort();
+        }
+        conn.close(0u32.into(), b"closed");
     }
 }
 
@@ -212,6 +244,13 @@ struct Live {
     endpoint_id: String,
     conns: Arc<Mutex<HashMap<String, Conn>>>,
     accept: tokio::task::JoinHandle<()>,
+    /// The hang-ups still draining, one per peer a window let go of and did
+    /// not outlast. A hang-up flushes on the runtime rather than in the call
+    /// that asked for it, so a `stop` landing in that moment would close the
+    /// endpoint over a farewell halfway to the wire; `shutdown` waits on
+    /// these first. Finished handles are pruned as new ones arrive, so a long
+    /// round does not accumulate one per peer it ever hung up on.
+    closing: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     /// What this endpoint was bound with. A later holder asking for different
     /// network settings is refused rather than quietly run on these: a debater
     /// who turned relaying off for one round would otherwise be relayed by
@@ -489,7 +528,15 @@ fn spawn_conn(
                 break;
             }
         }
+        // A write that has returned is a write the peer's QUIC stack may not
+        // have seen: closing the connection over unacknowledged stream data
+        // discards it. Finishing says there is no more coming, and the wait is
+        // what turns "queued" into "delivered", so a hang-up that waits on
+        // this task waits for the last line and not merely for the last
+        // `write_all`. It ends the moment the connection does, so a peer that
+        // never acknowledges holds nothing but its own hang-up deadline.
         let _ = send.finish();
+        let _ = send.stopped().await;
     });
 
     // Inbound: each line is one wire message for the webview.
@@ -777,6 +824,7 @@ fn start(
         endpoint_id: endpoint_id.clone(),
         conns,
         accept,
+        closing: Mutex::new(Vec::new()),
         relay,
         mdns,
         holders: HashMap::from([(holder.to_string(), 1)]),
@@ -944,33 +992,51 @@ fn claim(state: &CollabState, holder: &str, conn_id: &str) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn collab_close(
+pub async fn collab_close(
+    app: AppHandle,
     window: WebviewWindow,
-    state: State<'_, CollabState>,
     conn_id: String,
 ) -> Result<(), String> {
-    close(state.inner(), window.label(), &conn_id)
+    let holder = window.label().to_string();
+    off_thread(move || close(&app.state::<CollabState>(), &holder, &conn_id)).await
 }
 
 /// Hangs up on one peer, leaving the endpoint and every other peer up.
+///
+/// Returns once the peer has been hung up on rather than once the hang-up has
+/// been started, so a window that says goodbye and then tears its session down
+/// has said it. The wait is the deadline and no longer.
 fn close(state: &CollabState, holder: &str, conn_id: &str) -> Result<(), String> {
-    let held = state.live.lock();
-    let live = held.as_ref().ok_or("No collaboration session is running")?;
-    let gone = {
-        let mut conns = live.conns.lock();
-        // A window may hang up on a connection nothing has claimed: that is
-        // what a refusal is, and a window that refuses never answers the
-        // hello. A connection another window owns is not its to end.
-        match conns.get(conn_id).and_then(|conn| conn.owner.as_deref()) {
-            Some(owner) if owner != holder => {
-                return Err("That peer belongs to another window".to_string())
+    let (runtime, hung_up) = {
+        let held = state.live.lock();
+        let live = held.as_ref().ok_or("No collaboration session is running")?;
+        let gone = {
+            let mut conns = live.conns.lock();
+            // A window may hang up on a connection nothing has claimed: that is
+            // what a refusal is, and a window that refuses never answers the
+            // hello. A connection another window owns is not its to end.
+            match conns.get(conn_id).and_then(|conn| conn.owner.as_deref()) {
+                Some(owner) if owner != holder => {
+                    return Err("That peer belongs to another window".to_string())
+                }
+                _ => conns.remove(conn_id),
             }
-            _ => conns.remove(conn_id),
-        }
+        };
+        let Some(conn) = gone else { return Ok(()) };
+        // The drain ends by closing the connection, so this is what the wait
+        // below watches: the task itself belongs to `closing`, where a `stop`
+        // racing this call can find it.
+        let hung_up = conn.conn.clone();
+        let mut closing = live.closing.lock();
+        closing.retain(|draining| !draining.is_finished());
+        closing.push(live.runtime.spawn(conn.hang_up()));
+        (live.runtime.clone(), hung_up)
     };
-    if let Some(conn) = gone {
-        conn.close();
-    }
+    // Off the lock every other collab command takes: a peer stalling the
+    // writer would otherwise freeze every window for the whole deadline.
+    runtime.block_on(async {
+        let _ = timeout(HANG_UP_GRACE, hung_up.closed()).await;
+    });
     Ok(())
 }
 
@@ -1057,11 +1123,30 @@ fn stop(state: &CollabState, holder: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Closes every peer, then the accept loop, then the endpoint.
+/// Hangs up on every peer and waits out what they were already sent, then
+/// closes the accept loop and the endpoint.
 fn shutdown(live: Live) {
-    for (_, conn) in live.conns.lock().drain() {
-        conn.close();
-    }
+    // Every peer at once, because the deadline is spent once rather than once
+    // per peer: a host leaving a round of eight guests, two of them stalled,
+    // has the shell's three seconds to be gone in.
+    let mut draining: Vec<_> = live
+        .conns
+        .lock()
+        .drain()
+        .map(|(_, conn)| live.runtime.spawn(conn.hang_up()))
+        .collect();
+    // A hang-up a window already started is finished here rather than cut
+    // off. Closing the endpoint under one discards the farewell it is
+    // flushing, which is the whole reason the drain is waited on at all.
+    draining.append(&mut live.closing.lock());
+    live.runtime.block_on(async {
+        let _ = timeout(HANG_UP_GRACE, async {
+            for one in draining {
+                let _ = one.await;
+            }
+        })
+        .await;
+    });
     live.accept.abort();
     let endpoint = live.endpoint.clone();
     live.runtime.block_on(async move { endpoint.close().await });
@@ -1437,16 +1522,18 @@ mod identity {
 mod off_the_main_thread {
     /// Every command here waits on the network for seconds at a time: a bind
     /// reaches a relay, a dial waits out a peer that may never answer, and a
-    /// stop waits for QUIC to say goodbye. Tauri runs a command declared
-    /// without `async` on the main thread, so dropping the keyword on any of
-    /// these turns that wait into a frozen app - which is what a debater sees
-    /// as a spinning cursor after clicking Share, with nothing to click.
+    /// close and a stop both wait for QUIC to carry the round's farewell and
+    /// say goodbye. Tauri runs a command declared without `async` on the main
+    /// thread, so dropping the keyword on any of these turns that wait into a
+    /// frozen app - which is what a debater sees as a spinning cursor after
+    /// clicking Share, with nothing to click.
     ///
     /// The rest of this module's commands are a lock and a channel push, and
     /// belong where they are.
-    const OFF_THREAD: [&str; 4] = [
+    const OFF_THREAD: [&str; 5] = [
         "collab_start",
         "collab_dial",
+        "collab_close",
         "collab_stop",
         "collab_relay_url",
     ];
@@ -1848,6 +1935,27 @@ mod loopback {
             self.runtime
                 .block_on(async { tokio::time::sleep(Duration::from_millis(50)).await });
         }
+
+        /// The lines this peer is sent, read after the host has already let
+        /// go: what the host wrote is only delivered if it survived the
+        /// hang-up. Short of `want` when the stream ended before they arrived,
+        /// which is what a discarded queue looks like from here.
+        fn read_lines(&self, recv: iroh::endpoint::RecvStream, want: usize) -> Vec<String> {
+            self.runtime.block_on(async {
+                let mut lines = BufReader::new(recv).lines();
+                let mut heard = Vec::new();
+                while heard.len() < want {
+                    let line = timeout(Duration::from_secs(10), lines.next_line())
+                        .await
+                        .expect("a peer that is sent a line hears it inside ten seconds");
+                    match line {
+                        Ok(Some(line)) => heard.push(line),
+                        _ => break,
+                    }
+                }
+                heard
+            })
+        }
     }
 
     fn live_addr(state: &CollabState) -> EndpointAddr {
@@ -2165,6 +2273,126 @@ mod loopback {
         wait_closed(&conn);
 
         stop(&state, "session").expect("stop");
+    }
+
+    /// A write is a push onto the writer's queue and nothing more, so the line
+    /// a round ends with is still in that queue when the hang-up arrives.
+    /// Closing the connection over it dropped it on the floor: the partner
+    /// never heard the farewell and saw a socket vanish instead of a debater
+    /// leaving, which is the difference between "left the round" and "lost
+    /// connection" in front of them.
+    #[test]
+    fn a_line_handed_over_just_before_a_hang_up_still_reaches_the_peer() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (conn, mut send_stream, recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send_stream, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        // A round's last exchange, back to back with the hang-up and with
+        // nothing between them that could flush the queue. The state line is
+        // deliberately larger than one flight: a write that has returned is
+        // not a write the peer has acknowledged, and closing over the
+        // difference truncates the stream just as surely as an aborted writer
+        // discards the queue.
+        let state_line = "x".repeat(128 * 1024);
+        send(&state, "session", &conn_id, state_line.clone()).expect("the round's last state");
+        send(
+            &state,
+            "session",
+            &conn_id,
+            "{\"type\":\"bye\"}".to_string(),
+        )
+        .expect("the farewell");
+        close(&state, "session", &conn_id).expect("close");
+
+        // Read after the hang-up on purpose: the bytes have to have outlived
+        // it, not merely have been queued before it.
+        assert_eq!(
+            guest.read_lines(recv, 2),
+            vec![state_line, "{\"type\":\"bye\"}".to_string()],
+            "everything queued went out before the connection went down"
+        );
+        wait_closed(&conn);
+        assert!(!holds(&state, &conn_id));
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// The flush is what a peer could hold the app by: a peer that has stopped
+    /// reading stalls the writer on flow control and never lets the queue
+    /// drain. Waiting for it without a deadline would hand that peer the
+    /// window's exit, which the shell only allows three seconds for in total.
+    #[test]
+    fn a_peer_that_stopped_reading_cannot_hold_a_hang_up_open() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::stingy();
+        let (_conn, mut send_stream, _recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send_stream, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        // Past the peer's one-kilobyte window several times over, so the
+        // writer is stalled with lines still queued behind it. The stream is
+        // never read from, so nothing reopens the window.
+        let line = "x".repeat(4096);
+        for _ in 0..8 {
+            let _ = send(&state, "session", &conn_id, line.clone());
+        }
+
+        let started = std::time::Instant::now();
+        close(&state, "session", &conn_id).expect("close");
+        let waited = started.elapsed();
+
+        assert!(
+            waited >= HANG_UP_GRACE,
+            "the flush was not waited on at all"
+        );
+        assert!(
+            waited < HANG_UP_GRACE * 4,
+            "a stalled peer held the hang-up for {waited:?}"
+        );
+        assert!(!holds(&state, &conn_id));
+
+        stop(&state, "session").expect("stop");
+    }
+
+    /// The other way a round ends: the window says goodbye and takes the
+    /// endpoint down behind it. `shutdown` drains what is queued for the same
+    /// reason a hang-up does, because closing the endpoint first discards it.
+    #[test]
+    fn the_last_line_of_a_round_survives_the_endpoint_coming_down() {
+        let state = CollabState::default();
+        let events = Arc::new(Recorder::default());
+        start(&state, events.clone(), false, false, "session").expect("bind");
+
+        let guest = Guest::new();
+        let (_conn, mut send_stream, recv) = guest.dial(live_addr(&state));
+        guest.write(&mut send_stream, b"{\"type\":\"hello\",\"protocol\":1}\n");
+        events.wait("the hello", |seen| !seen.messages().is_empty());
+        let conn_id = events.peers()[0].clone();
+
+        send(
+            &state,
+            "session",
+            &conn_id,
+            "{\"type\":\"bye\"}".to_string(),
+        )
+        .expect("the farewell");
+        stop(&state, "session").expect("stop");
+
+        assert_eq!(
+            guest.read_lines(recv, 1),
+            vec!["{\"type\":\"bye\"}".to_string()],
+            "the endpoint waited for what it had queued"
+        );
     }
 
     /// Two PeerLinks share one bind, so a stop by one of them is a release and
