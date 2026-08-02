@@ -178,6 +178,55 @@ describe("speech alignment", () => {
         await waitFor(() => expect(hot.countCols()).toBe(7));
         expect(hot.getSelectedLast()).toEqual([1, 2, 1, 2]);
     });
+
+    it("refuses a write into a spacer", async () => {
+        const hot = await mount(negSheet.id, true);
+        expect(hot.getCellMeta(0, 0).readOnly).toBe(true);
+        expect(hot.getCellMeta(0, 1).readOnly).toBeFalsy();
+    });
+
+    it("lands a click on the spacer in the sheet's own first cell", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 1);
+        hot.getCell(0, 0)!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
+
+    it("lands a click on the spacer's header past the pad too", async () => {
+        const hot = await mount(negSheet.id, true);
+        // A header click arrives with a negative row, so it takes the same
+        // redirect as a cell click rather than a row-aware one. The header is
+        // found by its coordinates because the rendered range starts wherever
+        // the viewport does, not always at the first column.
+        const th = [...hot.rootElement.querySelectorAll(".ht_master thead th")].find(
+            (el) => hot.getCoords(el as HTMLTableCellElement)?.col === 0,
+        )!;
+        th.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        expect(hot.getSelectedLast()).toEqual([-1, 1, hot.countRows() - 1, 1]);
+    });
+
+    it("keeps the cursor out of the spacer on arrow-left", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 1);
+        hot.rootElement.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+        );
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
+
+    it("stops a Cmd+Left jump at the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 3);
+        hot.rootElement.dispatchEvent(
+            new KeyboardEvent("keydown", {
+                key: "ArrowLeft",
+                metaKey: true,
+                bubbles: true,
+                cancelable: true,
+            }),
+        );
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
 });
 
 /**

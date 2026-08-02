@@ -110,17 +110,19 @@ const LOCK_HINT_MS = 2_000;
 /**
  * Excel-style Cmd/Ctrl+Arrow: from a filled cell adjacent to a filled cell,
  * stop at the end of that contiguous run; otherwise skip empties and land on
- * the next filled cell, or the sheet edge if none remains.
+ * the next filled cell, or the sheet edge if none remains. minCol is the
+ * sheet's own first column, so a jump stops there rather than in the pad.
  */
 function smartJump(
     hot: Handsontable,
     row: number,
     col: number,
     { dr, dc }: { dr: number; dc: number },
+    minCol: number,
 ): { row: number; col: number } {
     const maxR = hot.countRows() - 1;
     const maxC = hot.countCols() - 1;
-    const inBounds = (r: number, c: number) => r >= 0 && r <= maxR && c >= 0 && c <= maxC;
+    const inBounds = (r: number, c: number) => r >= 0 && r <= maxR && c >= minCol && c <= maxC;
     const filled = (r: number, c: number) => {
         const v = hot.getDataAtCell(r, c);
         return v != null && String(v).trim() !== "";
@@ -938,7 +940,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                         // The leading edge is the row that meets the next filled cell.
                         const lead =
                             dr > 0 ? block.blockStart + block.height - 1 : block.blockStart;
-                        delta = smartJump(hot, lead, block.cols[0], { dr, dc: 0 }).row - lead;
+                        delta =
+                            smartJump(hot, lead, block.cols[0], { dr, dc: 0 }, spacersRef.current)
+                                .row - lead;
                     }
                     nudge(delta);
                     reselectMovingBlock(hot);
@@ -946,11 +950,23 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 return false;
             }
 
-            // At col 0, Shift+Tab has nowhere to move inside the grid, so
-            // Handsontable lets the browser tab focus out to the previous
-            // tabbable element (a sidebar sheet). Swallow it so focus stays put.
+            // The sheet's own first column is the cursor's left edge, so a
+            // leftward move from it stays put rather than stepping onto a
+            // column that holds no cell of this sheet.
+            const atFirst = hot?.getSelectedRangeLast()?.highlight.col === spacersRef.current;
+            if (hot && atFirst && spacersRef.current > 0) {
+                if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+
+            // At the sheet's own first column, Shift+Tab has nowhere to move
+            // inside the grid, so Handsontable lets the browser tab focus out to
+            // the previous tabbable element (a sidebar sheet). Swallow it so
+            // focus stays put.
             if (hot && e.key === "Tab" && e.shiftKey) {
-                if (hot.getSelectedRangeLast()?.highlight.col === 0) {
+                if (hot.getSelectedRangeLast()?.highlight.col === spacersRef.current) {
                     e.preventDefault();
                     e.stopImmediatePropagation();
                     return false;
@@ -1017,7 +1033,13 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 // walk outward; a plain jump starts from the active cell.
                 const origin = e.shiftKey ? cur?.to : cur?.highlight;
                 if (!origin || origin.row == null || origin.col == null) return false;
-                const { row, col } = smartJump(hot, origin.row, origin.col, dir);
+                const { row, col } = smartJump(
+                    hot,
+                    origin.row,
+                    origin.col,
+                    dir,
+                    spacersRef.current,
+                );
                 if (e.shiftKey) hot.selection.setRangeEnd(hot._createCellCoords(row, col));
                 else hot.selectCell(row, col);
                 // Returning false is Handsontable's contract for suppressing its own
@@ -1028,6 +1050,19 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             }
         },
         [showLockHint, snapshot],
+    );
+
+    // A spacer stands for a speech this sheet does not hold, so it is scenery:
+    // a click on one lands on the sheet's own first cell rather than parking
+    // the cursor in a column that refuses every keystroke. A header click
+    // arrives with a negative row and is redirected the same way.
+    const beforeOnCellMouseDown = useCallback(
+        (_event: unknown, coords: { row: number; col: number }) => {
+            if (coords.col >= 0 && coords.col < spacersRef.current) {
+                coords.col = spacersRef.current;
+            }
+        },
+        [],
     );
 
     return (
@@ -1072,6 +1107,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     readOnly={viewOnly}
                     contextMenu={viewOnly ? false : (FLOW_CONTEXT_MENU as unknown as string[])}
                     copyPaste={{ pasteMode: insertPaste ? "shift_down" : "overwrite" }}
+                    cells={(_row: number, col: number) =>
+                        col < spacersRef.current ? { readOnly: true } : {}
+                    }
+                    beforeOnCellMouseDown={beforeOnCellMouseDown}
                     afterGetColHeader={afterGetColHeader}
                     afterRenderer={afterRenderer}
                     afterChange={afterChange}
