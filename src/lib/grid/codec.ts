@@ -93,14 +93,22 @@ export function gridWidth(cols: unknown[], data: (string | null)[][]): number {
     return Math.min(Math.max(cols.length, widestRow(data)), MAX_GRID_WIDTH);
 }
 
-/** Fresh arrays sized rows x cols for loading into the grid. */
+/**
+ * Fresh arrays sized rows x cols for loading into the grid, with `leading`
+ * empty columns in front. The pad is the aligned pane's inert columns: they
+ * hold no cell of the sheet, so nothing is read into them and nothing written
+ * there is ever read back out.
+ */
 export function padGrid(
     data: (string | null)[][],
     cols: number,
     minRows: number,
+    leading = 0,
 ): (string | null)[][] {
     const rows = Math.max(data.length, minRows);
     return Array.from({ length: rows }, (_, r) =>
-        Array.from({ length: cols }, (_, c) => data[r]?.[c] ?? null),
+        Array.from({ length: leading + cols }, (_, c) =>
+            c < leading ? null : (data[r]?.[c - leading] ?? null),
+        ),
     );
 }

@@ -5,6 +5,7 @@ import {
     columnsForFlowSheet,
     crossExColumns,
     headerSettings,
+    spacerColumns,
     speechOffset,
 } from "@/lib/grid/flowColumns";
 import { makeCxFlowSheet, makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
@@ -171,6 +172,45 @@ describe("speechOffset", () => {
                     const garbage = { ...sheet, group: "garbage" as never };
                     const garbageShown = columnsForFlowSheet(round, garbage).length;
                     expect(speechOffset(round, garbage) + garbageShown).toBe(total);
+                }
+            }
+        }
+    });
+});
+
+describe("spacerColumns", () => {
+    it("is the speeches a sheet does not show, in speaking order", () => {
+        const round = makeFlowRound({});
+        expect(spacerColumns(round, flowSheet("aff"))).toEqual([]);
+        expect(spacerColumns(round, flowSheet("neg")).map((c) => c.id)).toEqual(["1ac"]);
+        expect(
+            spacerColumns(round, { ...flowSheet("aff"), startSpeechId: "block" }).map((c) => c.id),
+        ).toEqual(["1ac", "1nc", "2ac"]);
+    });
+
+    it("carries each speech's own side, not the sheet's", () => {
+        const round = makeFlowRound({});
+        const sheet = { ...flowSheet("aff"), startSpeechId: "2ac" };
+        expect(spacerColumns(round, sheet).map((c) => c.side)).toEqual(["aff", "neg"]);
+    });
+
+    it("is empty for a cx sheet and for a start speech the order does not hold", () => {
+        const round = makeFlowRound({});
+        expect(spacerColumns(round, makeCxFlowSheet())).toEqual([]);
+        expect(spacerColumns(round, { ...flowSheet("aff"), startSpeechId: "nope" })).toEqual([]);
+    });
+
+    it("partitions the round's speaking order with the columns a sheet shows", () => {
+        for (const event of Object.keys(EVENTS) as EventId[]) {
+            for (const firstSide of ["aff", "neg"] as const) {
+                const round = makeFlowRound({ event, firstSide });
+                const order = speechOrder(getEvent(event), firstSide).map((c) => c.id);
+                for (const group of ["aff", "neg"] as const) {
+                    const sheet = flowSheet(group);
+                    const spacers = spacerColumns(round, sheet).map((c) => c.id);
+                    const shown = columnsForFlowSheet(round, sheet).map((c) => c.id);
+                    expect([...spacers, ...shown]).toEqual(order);
+                    expect(spacers.length).toBe(speechOffset(round, sheet));
                 }
             }
         }

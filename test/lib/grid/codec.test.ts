@@ -92,6 +92,18 @@ describe("trimGrid / padGrid", () => {
         expect(out[0]).not.toBe(src[0]);
         expect(padGrid([["a", "b", "c"]], 2, 1)).toEqual([["a", "b"]]);
     });
+
+    it("prepends empty columns without disturbing the stored ones", () => {
+        const data = [
+            ["a", "b"],
+            ["c", "d"],
+        ];
+        expect(padGrid(data, 2, 2, 1)).toEqual([
+            [null, "a", "b"],
+            [null, "c", "d"],
+        ]);
+        expect(padGrid(data, 2, 2, 0)).toEqual(data);
+    });
 });
 
 describe("gridWidth", () => {

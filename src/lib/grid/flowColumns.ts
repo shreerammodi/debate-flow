@@ -114,6 +114,17 @@ export function speechOffset(round: FlowRound, sheet: FlowSheet): number {
 }
 
 /**
+ * The speeches left of a sheet's leftmost column, in speaking order.
+ *
+ * Exactly what `columnsForFlowSheet` drops, so the two partition the round's
+ * order. Each carries its own speech's side rather than the sheet's: a 1AC
+ * slot is aff on a neg sheet the same way a 2AC column already is.
+ */
+export function spacerColumns(round: FlowRound, sheet: FlowSheet): SpeechCol[] {
+    return orderOf(round).slice(0, speechOffset(round, sheet));
+}
+
+/**
  * The widest `columnsForFlowSheet` ever returns: the most columns any event
  * derives, over its speeches and over its cross-examination periods.
  *
