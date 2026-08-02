@@ -21,7 +21,6 @@ import { classNameToMeta, gridWidth, metaToClassName, padGrid, trimGrid } from "
 import { FLOW_CONTEXT_MENU } from "@/lib/grid/contextMenu";
 import { columnsForFlowSheet, headerSettings, type SpeechCol } from "@/lib/grid/flowColumns";
 import { getActiveHot, setActiveHot } from "@/lib/grid/hotInstance";
-import { disableTextAssistance } from "@/lib/grid/plainTextInput";
 import {
     attachMetaUndo,
     rebaseUndoStacks,
@@ -40,6 +39,7 @@ import {
     nudge,
     revertMove,
 } from "@/lib/grid/moveSession";
+import { disableTextAssistance } from "@/lib/grid/plainTextInput";
 import { claimCell, claimCursor, getPresences, onPresenceChanged } from "@/lib/grid/presenceBridge";
 import {
     LOCK_CLASS,
