@@ -136,6 +136,8 @@ export default function SettingsPanel() {
     const setCollabListenEnabled = useFlowStore((s) => s.setCollabListenEnabled);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
+    const alignSpeeches = useFlowStore((s) => s.alignSpeeches);
+    const setAlignSpeeches = useFlowStore((s) => s.setAlignSpeeches);
     const tooltips = useFlowStore((s) => s.tooltips);
     const setTooltips = useFlowStore((s) => s.setTooltips);
     const defaultGridZoom = useFlowStore((s) => s.defaultGridZoom);
@@ -372,6 +374,18 @@ export default function SettingsPanel() {
                                             onCheckedChange={setScrollZoom}
                                             data-testid="scroll-zoom-toggle"
                                             aria-label="Scroll to zoom"
+                                        />
+                                    }
+                                />
+                                <SettingRow
+                                    title="Visually align speeches"
+                                    description="Line every sheet up on the round's speaking order, so a speech keeps one place on screen as you move between sheets. A sheet that does not open the round starts further right, with empty space where the speeches it skips would be."
+                                    control={
+                                        <Switch
+                                            checked={alignSpeeches}
+                                            onCheckedChange={setAlignSpeeches}
+                                            data-testid="align-speeches-toggle"
+                                            aria-label="Visually align speeches"
                                         />
                                     }
                                 />

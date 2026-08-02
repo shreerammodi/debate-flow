@@ -321,6 +321,15 @@ describe("SettingsPanel", () => {
         expect(toggle).toBeChecked();
     });
 
+    it("toggles the speech alignment setting", async () => {
+        renderSettingsPanel();
+        const toggle = screen.getByTestId("align-speeches-toggle");
+        expect(toggle).not.toBeChecked();
+        await userEvent.click(toggle);
+        expect(useFlowStore.getState().alignSpeeches).toBe(true);
+        expect(toggle).toBeChecked();
+    });
+
     it("toggles the insert paste setting from the Editor category", async () => {
         const user = userEvent.setup();
         renderSettingsPanel();
