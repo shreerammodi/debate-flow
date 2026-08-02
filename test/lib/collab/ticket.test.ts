@@ -5,7 +5,7 @@ import { encodeTicket, mintTicket, parseTicket, TICKET_PREFIX } from "@/lib/coll
 /** What iroh hands back, which is the only thing a ticket may name. */
 const HOST = "3f".repeat(32);
 
-const input = { endpointId: HOST, roundId: "round_x_1", role: "partner" as const, relay: true };
+const input = { endpointId: HOST, roundId: "round_x_1", role: "editor" as const, relay: true };
 
 /** Encodes a hand-built payload the way encodeTicket does, to test refusals. */
 function wrap(payload: unknown): string {
@@ -76,9 +76,9 @@ describe("encodeTicket and parseTicket", () => {
         expect(parseTicket(wrap(t))!.relay).toBe(false);
     });
 
-    it("keeps a coach ticket read-only", () => {
-        const t = mintTicket({ ...input, role: "coach" });
-        expect(parseTicket(encodeTicket(t))!.role).toBe("coach");
+    it("keeps a viewer ticket read-only", () => {
+        const t = mintTicket({ ...input, role: "viewer" });
+        expect(parseTicket(encodeTicket(t))!.role).toBe("viewer");
     });
 
     it("carries where the host can be found, so a guest elsewhere can reach it", () => {

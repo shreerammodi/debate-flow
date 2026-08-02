@@ -4,8 +4,8 @@ import type { Contacts } from "@/lib/collab/contacts";
 import { authoredPeerNotes } from "@/lib/rfd/peerNotes";
 
 const contacts: Contacts = {
-    "zz-known": { name: "Sam", role: "partner" },
-    "aa-known": { name: "Rae", role: "coach" },
+    "zz-known": { name: "Sam" },
+    "aa-known": { name: "Rae" },
 };
 
 describe("authoredPeerNotes", () => {
@@ -36,8 +36,8 @@ describe("authoredPeerNotes", () => {
 
     it("orders by EndpointId, not by display name", () => {
         const renamed: Contacts = {
-            "aa-known": { name: "Zoe", role: "coach" },
-            "zz-known": { name: "Abe", role: "partner" },
+            "aa-known": { name: "Zoe" },
+            "zz-known": { name: "Abe" },
         };
         const ids = authoredPeerNotes(
             { peerNotes: { "zz-known": "second", "aa-known": "first" } },

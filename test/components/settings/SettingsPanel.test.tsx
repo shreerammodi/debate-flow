@@ -58,6 +58,7 @@ function resetStore() {
         collabEnabled: false,
         collabRelayEnabled: true,
         collabListenEnabled: false,
+        collabShowViewers: true,
         contacts: {},
     });
 }
@@ -442,9 +443,36 @@ describe("SettingsPanel", () => {
             expect(listen).toBeChecked();
         });
 
+        it("hides the viewer cursor row until shared editing is switched on", async () => {
+            const user = userEvent.setup();
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
+            expect(screen.queryByTestId("collab-show-viewers-toggle")).toBeNull();
+
+            await user.click(screen.getByTestId("collab-enabled-toggle"));
+            expect(screen.getByTestId("collab-show-viewers-toggle")).toBeTruthy();
+        });
+
+        // A viewer's cursor is shown until the debater says otherwise: hiding
+        // a partner by default would make the grid look empty while somebody
+        // is reading along.
+        it("shows viewer cursors on until they are turned off", async () => {
+            const user = userEvent.setup();
+            useFlowStore.setState({ collabEnabled: true });
+            renderSettingsPanel();
+            await user.click(screen.getByTestId("settings-nav-collaboration"));
+
+            const viewers = screen.getByTestId("collab-show-viewers-toggle");
+            expect(viewers).toBeChecked();
+
+            await user.click(viewers);
+            expect(useFlowStore.getState().collabShowViewers).toBe(false);
+            expect(viewers).not.toBeChecked();
+        });
+
         it("hides the contact list until shared editing is switched on", async () => {
             const user = userEvent.setup();
-            useFlowStore.setState({ contacts: { alex: { name: "Alex", role: "partner" } } });
+            useFlowStore.setState({ contacts: { alex: { name: "Alex" } } });
             renderSettingsPanel();
             await user.click(screen.getByTestId("settings-nav-collaboration"));
             expect(screen.queryByTestId("contact-row-alex")).toBeNull();

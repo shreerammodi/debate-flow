@@ -28,8 +28,8 @@ beforeEach(() => {
     useCollabStore.getState().reset();
     useFlowStore.setState({
         contacts: {
-            [ALEX]: { name: "Alex", role: "partner" },
-            [RIN]: { name: "Rin", role: "coach" },
+            [ALEX]: { name: "Alex" },
+            [RIN]: { name: "Rin" },
         },
     });
     vi.mocked(acceptInvite).mockClear();

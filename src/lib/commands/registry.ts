@@ -164,11 +164,11 @@ export const COLLAB_COMMANDS: readonly CommandId[] = [
 ];
 
 /**
- * Whether a command changes the round, which is the one thing a coach may not
+ * Whether a command changes the round, which is the one thing a viewer may not
  * do. Exhaustive over `CommandId` on purpose: a new command has to say which
  * it is, so read-only cannot quietly spring a leak the next time one is added.
  *
- * Saving is not editing. A coach's file is a real `.ebb` on their own disk and
+ * Saving is not editing. A viewer's file is a real `.ebb` on their own disk and
  * writing it out is theirs to do; what they may not do is change the round the
  * host is holding.
  */

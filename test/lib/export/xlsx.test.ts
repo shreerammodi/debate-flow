@@ -80,7 +80,7 @@ describe("fillWorkbook", () => {
         const wb = new ExcelJS.Workbook();
         const round = judgedRound();
         round.scouting.decision = { peerNotes: { aaa11111aaa: "aff on T" } };
-        fillWorkbook(wb, round, { aaa11111aaa: { name: "Rae", role: "coach" } });
+        fillWorkbook(wb, round, { aaa11111aaa: { name: "Rae" } });
         expect(wb.worksheets.map((ws) => ws.name)).toEqual(["Info", "RFD", "CX", "1. Topicality"]);
         expect(wb.getWorksheet("RFD")!.getCell("A3").value).toBe("Notes from Rae");
     });

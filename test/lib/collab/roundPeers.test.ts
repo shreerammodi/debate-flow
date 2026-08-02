@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
     forgetRoundPeer,
     forgetRoundPeers,
-    knownRoundCoaches,
     knownRoundPeers,
     knownRoundRelays,
+    knownRoundViewers,
     rememberRoundPeers,
     rememberRoundRelay,
     rememberRoundRole,
@@ -56,7 +56,7 @@ describe("the peers a round remembers", () => {
     it("keeps one round's read-only grades when another round is remembered", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
         rememberRoundPeers("r2", ["sam"]);
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
     });
 });
 
@@ -111,7 +111,7 @@ describe("cutting one peer out of what a round remembers", () => {
     it("drops their read-only mark with them", () => {
         setRoundPeers("r1", ["sam", "kim"], ["sam"]);
         forgetRoundPeer("r1", "sam");
-        expect(knownRoundCoaches("r1")).toEqual([]);
+        expect(knownRoundViewers("r1")).toEqual([]);
     });
 
     it("leaves another round's set alone", () => {
@@ -131,35 +131,35 @@ describe("cutting one peer out of what a round remembers", () => {
 describe("what a round remembers a peer was admitted as", () => {
     it("grades nobody until somebody says so", () => {
         setRoundPeers("r1", ["sam"], []);
-        expect(knownRoundCoaches("r1")).toEqual([]);
+        expect(knownRoundViewers("r1")).toEqual([]);
     });
 
     it("takes the marks a sidecar recovered", () => {
         setRoundPeers("r1", ["sam", "kim"], ["kim"]);
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
     });
 
     // A grant the contact table never saw has to live somewhere durable, or
     // the round remembers the membership and forgets the restriction.
     it("marks a peer admitted read-only, and remembers them as a peer", () => {
         setRoundPeers("r1", [], []);
-        rememberRoundRole("r1", "kim", "coach");
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+        rememberRoundRole("r1", "kim", "viewer");
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
         expect(knownRoundPeers("r1")).toEqual(["kim"]);
     });
 
     it("clears the mark when the same peer is admitted wider", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
-        rememberRoundRole("r1", "kim", "partner");
-        expect(knownRoundCoaches("r1")).toEqual([]);
+        rememberRoundRole("r1", "kim", "editor");
+        expect(knownRoundViewers("r1")).toEqual([]);
         expect(knownRoundPeers("r1")).toEqual(["kim"]);
     });
 
     it("counts one mark once, however many times the peer reconnects", () => {
         setRoundPeers("r1", ["kim"], []);
-        rememberRoundRole("r1", "kim", "coach");
-        rememberRoundRole("r1", "kim", "coach");
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+        rememberRoundRole("r1", "kim", "viewer");
+        rememberRoundRole("r1", "kim", "viewer");
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
     });
 
     // The round a session grades is its own, which after a join is not the
@@ -168,23 +168,23 @@ describe("what a round remembers a peer was admitted as", () => {
     it("grades a round that is not the one last remembered", () => {
         setRoundPeers("r1", ["kim"], []);
         rememberRoundPeers("r2", ["sam"]);
-        rememberRoundRole("r1", "kim", "coach");
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
-        expect(knownRoundCoaches("r2")).toEqual([]);
+        rememberRoundRole("r1", "kim", "viewer");
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
+        expect(knownRoundViewers("r2")).toEqual([]);
     });
 
     it("answers for the round it was told about and no other", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
-        expect(knownRoundCoaches("r2")).toEqual([]);
+        expect(knownRoundViewers("r2")).toEqual([]);
     });
 
-    // Back at the start screen nothing is open, so holding any round's partner
+    // Back at the start screen nothing is open, so holding any round's peer
     // ids costs privacy for nothing.
     it("forgets every round's marks when the last round closes", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
         setRoundPeers("r2", ["sam"], ["sam"]);
         forgetRoundPeers();
-        expect(knownRoundCoaches("r1")).toEqual([]);
+        expect(knownRoundViewers("r1")).toEqual([]);
         expect(knownRoundPeers("r2")).toEqual([]);
     });
 
@@ -193,7 +193,7 @@ describe("what a round remembers a peer was admitted as", () => {
     it("keeps a mark across a plain remember", () => {
         setRoundPeers("r1", ["kim"], ["kim"]);
         rememberRoundPeers("r1", ["kim", "sam"]);
-        expect(knownRoundCoaches("r1")).toEqual(["kim"]);
+        expect(knownRoundViewers("r1")).toEqual(["kim"]);
         expect(knownRoundPeers("r1")).toEqual(["kim", "sam"]);
     });
 });

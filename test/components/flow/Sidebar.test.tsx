@@ -27,7 +27,7 @@ import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 const ALEX: CollabPeerView = {
     endpointId: "alex-endpoint",
     name: "Alex",
-    role: "partner",
+    role: "editor",
     connectionType: "direct",
 };
 
@@ -353,7 +353,7 @@ describe("Sidebar", () => {
         const HARVARD = { endpointId: ALEX, roundId: "round_1", label: "Round 3 - Harvard" };
 
         function invited() {
-            useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+            useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex" } } });
             useCollabStore.getState().pushInvite(HARVARD);
         }
 

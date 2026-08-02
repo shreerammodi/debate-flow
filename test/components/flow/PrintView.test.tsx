@@ -94,8 +94,8 @@ describe("PrintView", () => {
         const RAE = "aaa11111aaa";
         const SAM = "bbb22222bbb";
         const contacts: Contacts = {
-            [RAE]: { name: "Rae", role: "coach" },
-            [SAM]: { name: "Sam", role: "partner" },
+            [RAE]: { name: "Rae" },
+            [SAM]: { name: "Sam" },
         };
 
         function withDecision(decision: object, table: Contacts = contacts) {

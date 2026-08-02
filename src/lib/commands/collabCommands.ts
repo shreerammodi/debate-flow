@@ -13,12 +13,16 @@ import { createPeerLinkFor } from "@/lib/collab/peerLink";
 import { currentSession, endSession, inviteContact, startForRound } from "@/lib/collab/runtime";
 import { encodeTicket } from "@/lib/collab/ticket";
 import type { Role } from "@/lib/collab/types";
+import type { ContactChoice } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
 export interface CollabCommandDeps {
-    /** Picks a saved contact to invite, or null when the user backs out. */
-    chooseContact?(contacts: Contacts): Promise<string | null>;
+    /**
+     * Picks a saved contact and what to grant them on this round, or null when
+     * the user backs out.
+     */
+    chooseContact?(contacts: Contacts): Promise<ContactChoice | null>;
     /** Corner messages. Nothing here blocks the grid or takes focus. */
     notify(message: string): void;
     fail(message: string): void;
@@ -36,7 +40,7 @@ export interface CollabCommandDeps {
  * the round as it unfolds and nothing more: the host drops the writes that
  * come back from it.
  */
-export async function runShare(deps: CollabCommandDeps, role: Role = "partner"): Promise<void> {
+export async function runShare(deps: CollabCommandDeps, role: Role = "editor"): Promise<void> {
     if (!collabLive()) {
         deps.fail("Turn on shared editing in Settings first");
         return;
@@ -124,11 +128,15 @@ export async function runInvite(deps: CollabCommandDeps): Promise<void> {
         deps.fail("No saved partners yet. Share a round once to save one.");
         return;
     }
-    const endpointId = await deps.chooseContact?.(contacts);
-    if (!endpointId) return;
+    const choice = await deps.chooseContact?.(contacts);
+    if (!choice) return;
     try {
-        await inviteContact(round, endpointId);
-        deps.notify(`Invited ${contactName(contacts, endpointId)}`);
+        await inviteContact(round, choice.endpointId, choice.role);
+        deps.notify(
+            choice.role === "viewer"
+                ? `Invited ${contactName(contacts, choice.endpointId)} to view`
+                : `Invited ${contactName(contacts, choice.endpointId)} to edit`,
+        );
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not reach that partner");
     }

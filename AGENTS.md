@@ -122,11 +122,41 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       itself anywhere. Never close this gap by registering a discovery service.
     - **A collab command that waits on the network must be `async`.** Tauri
       runs a `#[tauri::command]` declared without it on the main thread, and a
-      bind, a dial and a stop all wait on the network for seconds - which on
+      bind, a dial, a hang-up and a stop all wait on the network - which on
       the main thread is a frozen window. `collab.rs`'s `off_thread` puts the
       work on a blocking thread, which is also what makes driving the
       collaboration runtime with `block_on` legal: tokio panics doing that from
       a thread running async tasks. Both halves are held by the suite.
+    - **A hang-up flushes what was already handed over.** `collab_send` only
+      pushes a line onto the queue its writer task drains, so closing the QUIC
+      connection and aborting that writer in the same breath discards whatever
+      was queued a moment earlier - and the last thing a leaving peer says is
+      exactly such a line. `Conn::hang_up` drops the sender, waits out the
+      writer within `HANG_UP_GRACE`, and only then closes; the writer finishes
+      its stream and waits for the far side, because a returned `write_all`
+      means the bytes reached a send buffer and not that the peer has them.
+      Hang-ups still in flight are held on `Live::closing` so `shutdown` waits
+      for them rather than dropping the endpoint out from under one. Without
+      all of that a window that closes is indistinguishable from a cable being
+      pulled, and its partners sit on a chip that reads connected until QUIC
+      times the connection out.
+    - **A peer that leaves says so, and a peer that drops does not.** The
+      `bye` a session sends on its way out is what stops the far side redialling
+      it: `track` takes that peer out of the live map before closing the
+      connection, so the close handler finds a connection nobody holds and
+      leaves the backoff alone. A link that merely drops is still redialled by
+      the side that dialled it, which is the ordinary case in a gym full of
+      laptops. `QuitGuard` is what puts the farewell on the wire for a closing
+      window: it writes the flow, then calls `shutdownCollab`, which unlike
+      `endSession` binds nothing back afterwards.
+    - **A contact is a partner and carries no grade.** What a peer may do is a
+      property of one round, chosen at the invitation and kept in that round's
+      own record, which is why `startCollabSession` seeds its grades from
+      `knownRoundViewers` alone. A role in the contact table would be one
+      global row frozen at the first save: two debaters who each saved the
+      other differently would disagree about what the pair is, whichever of
+      them happened to host would win, and a peer promoted mid-round would drop
+      back to read-only the next time the round opened.
 - **All flow I/O goes through the `FlowFs` port** (`src/lib/persistence/flowFs.ts`),
   never directly through `invoke` or a Tauri plugin. That is what lets the
   session, recents, and migration be tested against `flowFsMemory` instead of a

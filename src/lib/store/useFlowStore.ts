@@ -119,6 +119,12 @@ export interface FlowState {
      */
     collabListenEnabled: boolean;
     /**
+     * Whether a read-only peer's cursor is painted on the grid. A viewer
+     * reading along leaves a marker on every cell they scroll past, which is
+     * noise to the debater doing the writing.
+     */
+    collabShowViewers: boolean;
+    /**
      * What a shared round calls this side. Empty means the machine's own name
      * is broadcast instead, which is why the hostname is never written here:
      * the config file syncs between machines.
@@ -191,6 +197,7 @@ export interface FlowActions {
     setCollabEnabled(on: boolean): void;
     setCollabRelayEnabled(on: boolean): void;
     setCollabListenEnabled(on: boolean): void;
+    setCollabShowViewers(on: boolean): void;
     setCollabName(name: string): void;
     setContacts(contacts: Contacts): void;
     setTheme(mode: ThemeMode): void;
@@ -289,6 +296,7 @@ interface DisplaySettings {
     collabEnabled: boolean;
     collabRelayEnabled: boolean;
     collabListenEnabled: boolean;
+    collabShowViewers: boolean;
     collabName: string;
     contacts: Contacts;
     theme: ThemeMode;
@@ -324,6 +332,7 @@ function loadDisplaySettings(): DisplaySettings {
         collabEnabled: false,
         collabRelayEnabled: true,
         collabListenEnabled: false,
+        collabShowViewers: true,
         collabName: "",
         contacts: {},
         affColor: null,
@@ -351,6 +360,7 @@ function loadDisplaySettings(): DisplaySettings {
             collabEnabled: bool(p.collabEnabled, false),
             collabRelayEnabled: bool(p.collabRelayEnabled, true),
             collabListenEnabled: bool(p.collabListenEnabled, false),
+            collabShowViewers: bool(p.collabShowViewers, true),
             collabName: typeof p.collabName === "string" ? p.collabName : "",
             contacts: resolveContacts(p.contacts),
             flowsDir: typeof p.flowsDir === "string" && p.flowsDir ? p.flowsDir : null,
@@ -389,6 +399,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         collabEnabled: s.collabEnabled,
         collabRelayEnabled: s.collabRelayEnabled,
         collabListenEnabled: s.collabListenEnabled,
+        collabShowViewers: s.collabShowViewers,
         collabName: s.collabName,
         contacts: s.contacts,
         flowsDir: s.flowsDir,
@@ -479,6 +490,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     collabEnabled: initialDisplaySettings.collabEnabled,
     collabRelayEnabled: initialDisplaySettings.collabRelayEnabled,
     collabListenEnabled: initialDisplaySettings.collabListenEnabled,
+    collabShowViewers: initialDisplaySettings.collabShowViewers,
     collabName: initialDisplaySettings.collabName,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
@@ -793,6 +805,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setCollabRelayEnabled: (on) => persistDisplay(set, get, { collabRelayEnabled: on }),
 
     setCollabListenEnabled: (on) => persistDisplay(set, get, { collabListenEnabled: on }),
+
+    setCollabShowViewers: (on) => persistDisplay(set, get, { collabShowViewers: on }),
 
     setCollabName: (name) => persistDisplay(set, get, { collabName: name }),
 

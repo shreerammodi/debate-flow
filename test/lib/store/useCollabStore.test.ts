@@ -6,14 +6,14 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 const ALEX: CollabPeerView = {
     endpointId: "alex",
     name: "Alex",
-    role: "partner",
+    role: "editor",
     connectionType: "direct",
 };
 
 const COACH: CollabPeerView = {
     endpointId: "rin",
     name: "Rin",
-    role: "coach",
+    role: "viewer",
     connectionType: "relayed",
 };
 

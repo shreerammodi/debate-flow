@@ -9,25 +9,32 @@
 import { create } from "zustand";
 
 import type { Contacts } from "@/lib/collab/contacts";
+import type { Role } from "@/lib/collab/types";
+
+/** A partner, and what this round is granting them. */
+export interface ContactChoice {
+    endpointId: string;
+    role: Role;
+}
 
 export interface ContactPickerState {
     /** What to pick from, and null whenever the picker is closed. */
     contacts: Contacts | null;
-    resolve: ((endpointId: string | null) => void) | null;
+    resolve: ((choice: ContactChoice | null) => void) | null;
     /** Settles the open request and closes the picker. null is a cancel. */
-    pick(endpointId: string | null): void;
+    pick(choice: ContactChoice | null): void;
     cancel(): void;
 }
 
 export const useContactPicker = create<ContactPickerState>((set, get) => ({
     contacts: null,
     resolve: null,
-    pick(endpointId) {
+    pick(choice) {
         const { resolve } = get();
         // Closed before the caller resumes, so a picker reopened from inside
         // the continuation is not torn down by this one.
         set({ contacts: null, resolve: null });
-        resolve?.(endpointId);
+        resolve?.(choice);
     },
     cancel() {
         get().pick(null);
@@ -38,9 +45,9 @@ export const useContactPicker = create<ContactPickerState>((set, get) => ({
  * Opens the picker and waits for the answer. A request still pending is
  * cancelled first, so no caller is left holding a promise that never settles.
  */
-export function chooseContact(contacts: Contacts): Promise<string | null> {
+export function chooseContact(contacts: Contacts): Promise<ContactChoice | null> {
     useContactPicker.getState().cancel();
-    const { promise, resolve } = Promise.withResolvers<string | null>();
+    const { promise, resolve } = Promise.withResolvers<ContactChoice | null>();
     useContactPicker.setState({ contacts, resolve });
     return promise;
 }

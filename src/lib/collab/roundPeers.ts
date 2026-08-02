@@ -20,10 +20,10 @@
  * loose is the one exception, because a debater who does that means it to
  * outlast the session.
  *
- * The read-only mark rides with the membership rather than in the contact table
- * alone. Membership with no grade beside it reads as the wider role, so a grant
- * kept only where a toast put it is destroyed by the gesture that most looks
- * like withdrawing trust.
+ * The read-only mark rides with the membership, and this is the only place a
+ * grade is kept at all. Membership with no grade beside it reads as the wider
+ * role, so a grant kept only where a toast put it is destroyed by the gesture
+ * that most looks like withdrawing trust.
  */
 
 import type { Role } from "./types";
@@ -55,8 +55,8 @@ function entryFor(roundId: string): Membership {
  * Replaces one round's set, for a round being opened off its sidecar.
  *
  * The grades are named rather than defaulted because this is the only call that
- * can drop one, and a replace that says nothing about them promotes every coach
- * the round remembered.
+ * can drop one, and a replace that says nothing about them promotes every
+ * viewer the round remembered.
  */
 export function setRoundPeers(
     roundId: string,
@@ -92,9 +92,9 @@ export function rememberRoundPeers(roundId: string, peers: readonly string[]): v
 }
 
 /**
- * Records a peer and what it was admitted as, so the grant outlives both the
- * session that made it and the contact table that graded it. A peer admitted
- * wider loses the mark: a later ticket is the debater deciding again.
+ * Records a peer and what it was admitted as, so the grant outlives the session
+ * that made it. A peer admitted wider loses the mark: a later invitation or
+ * ticket is the debater deciding again.
  *
  * A grade is a membership, so this remembers the peer too. The two lists have
  * no way to disagree about who belongs.
@@ -103,7 +103,7 @@ export function rememberRoundRole(roundId: string, peer: string, role: Role): vo
     const held = entryFor(roundId);
     if (!held.peers.includes(peer)) held.peers.push(peer);
     const marked = held.readOnly.includes(peer);
-    if (role === "coach") {
+    if (role === "viewer") {
         if (!marked) held.readOnly.push(peer);
     } else if (marked) {
         held.readOnly = held.readOnly.filter((p) => p !== peer);
@@ -116,7 +116,7 @@ export function knownRoundPeers(roundId: string): string[] {
 }
 
 /** Of those peers, the ones a session has to keep read-only. */
-export function knownRoundCoaches(roundId: string): string[] {
+export function knownRoundViewers(roundId: string): string[] {
     return [...(rounds.get(roundId)?.readOnly ?? [])];
 }
 

@@ -69,8 +69,8 @@ describe("maybeAddRfdWorksheet", () => {
     const RAE = "aaa11111aaa";
     const SAM = "bbb22222bbb";
     const contacts: Contacts = {
-        [RAE]: { name: "Rae", role: "coach" },
-        [SAM]: { name: "Sam", role: "partner" },
+        [RAE]: { name: "Rae" },
+        [SAM]: { name: "Sam" },
     };
 
     it("adds the worksheet for peer notes alone, with no vote and no local rfd", () => {

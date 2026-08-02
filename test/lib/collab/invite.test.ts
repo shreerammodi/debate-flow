@@ -7,7 +7,7 @@ import { PROTOCOL_MAJOR, type WireMessage } from "@/lib/collab/peerLink";
 const ALEX = "k51qzi5uqu5dlalex";
 const STRANGER = "k51qzi5uqu5dlwho";
 
-const contacts: Contacts = { [ALEX]: { name: "Alex", role: "partner" } };
+const contacts: Contacts = { [ALEX]: { name: "Alex" } };
 
 describe("shouldAnnounceInvite", () => {
     it("announces an invite from a saved contact", () => {
@@ -44,7 +44,7 @@ function hello(from: string, roundId: string, label?: string): WireMessage {
         app: "0.11.0",
         endpointId: from,
         roundId,
-        role: "partner",
+        role: "editor",
         capabilities: [],
         ...(label === undefined ? {} : { label }),
     };

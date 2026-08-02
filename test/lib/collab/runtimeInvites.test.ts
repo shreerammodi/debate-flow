@@ -42,7 +42,13 @@ import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import { peerNotePath } from "@/lib/collab/rfdSync";
-import { knownRoundPeers, rememberRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
+import {
+    knownRoundPeers,
+    knownRoundViewers,
+    rememberRoundPeers,
+    rememberRoundRole,
+    setRoundPeers,
+} from "@/lib/collab/roundPeers";
 import {
     currentSession,
     disconnectPeer,
@@ -50,6 +56,7 @@ import {
     inviteContact,
     notifyLocalChange,
     resumeSession,
+    shutdownCollab,
     startForRound,
     syncInviteWatch,
 } from "@/lib/collab/runtime";
@@ -264,7 +271,7 @@ describe("a session opened for a round", () => {
 describe("a peer nobody has saved", () => {
     /** Brings a guest onto the host's session, the way a ticket does. */
     async function guestJoins(host: CollabSession, displayName?: string): Promise<void> {
-        const ticket = encodeTicket(await host.share("partner"));
+        const ticket = encodeTicket(await host.share("editor"));
         await startCollabSession({
             createLink: net.create("sam"),
             roundId: round.id,
@@ -294,13 +301,12 @@ describe("a peer nobody has saved", () => {
         // across the room and nowhere else.
         expect(useFlowStore.getState().contacts.sam).toEqual({
             name: "sam",
-            role: "partner",
             relay: memoryRelay("sam"),
         });
     });
 
     it("is not offered again once they are saved", async () => {
-        useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
+        useFlowStore.setState({ contacts: { sam: { name: "Sam" } } });
         const host = await startForRound(round);
         await guestJoins(host!);
         expect(corners.filter((c) => c.message.startsWith("Save "))).toEqual([]);
@@ -320,7 +326,6 @@ describe("a peer nobody has saved", () => {
         offers.at(-1)!.action!.onClick();
         expect(useFlowStore.getState().contacts.sam).toEqual({
             name: "Rin",
-            role: "partner",
             relay: memoryRelay("sam"),
         });
     });
@@ -333,7 +338,7 @@ describe("a peer nobody has saved", () => {
     });
 
     it("is named in the chip by the contact table, not by their id", async () => {
-        useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
+        useFlowStore.setState({ contacts: { sam: { name: "Sam" } } });
         const host = await startForRound(round);
         await guestJoins(host!);
         expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Sam"]);
@@ -348,7 +353,6 @@ describe("a peer nobody has saved", () => {
         corners.find((c) => c.action)!.action!.onClick();
         expect(useFlowStore.getState().contacts.sam).toEqual({
             name: "Rin",
-            role: "partner",
             relay: memoryRelay("sam"),
         });
     });
@@ -360,7 +364,7 @@ describe("a peer nobody has saved", () => {
     });
 
     it("keeps a saved name over the one they broadcast", async () => {
-        useFlowStore.setState({ contacts: { sam: { name: "Sam", role: "partner" } } });
+        useFlowStore.setState({ contacts: { sam: { name: "Sam" } } });
         const host = await startForRound(round);
         await guestJoins(host!, "Rin");
         expect(useCollabStore.getState().peers.map((p) => p.name)).toEqual(["Sam"]);
@@ -376,7 +380,7 @@ describe("sharing a round with a saved contact", () => {
             appVersion: "0.11.0",
             doc: () => seedDoc(round),
             apply: () => [],
-            contacts: () => ({ [ME]: { name: "Rin", role: "partner" } }),
+            contacts: () => ({ [ME]: { name: "Rin" } }),
             onInvite: (notice) => heard.push(notice),
         });
     }
@@ -388,7 +392,7 @@ describe("sharing a round with a saved contact", () => {
         const heard: InviteNotice[] = [];
         await samMidRound(heard);
 
-        await inviteContact(round, "sam");
+        await inviteContact(round, "sam", "editor");
         for (let i = 0; i < 20; i++) await Promise.resolve();
 
         expect(heard).toHaveLength(1);
@@ -400,10 +404,111 @@ describe("sharing a round with a saved contact", () => {
         await startForRound(round);
         await samMidRound(heard);
 
-        await inviteContact(round, "sam");
+        await inviteContact(round, "sam", "editor");
         for (let i = 0; i < 20; i++) await Promise.resolve();
 
         expect(heard).toHaveLength(1);
+    });
+});
+
+describe("the grade an invitation carries", () => {
+    /** Real-shaped, and not this machine: an id is all the round records. */
+    const SAM = "5".repeat(64);
+
+    /**
+     * Sam, holding the same round and reachable. A session admits by
+     * EndpointId off its dial list, so naming this machine there is what lets
+     * an invitation from it land at all.
+     *
+     * The scheduler is a no-op canceller: this side dials a machine that is
+     * not up, and the retry ladder that arms would outlive the test.
+     */
+    async function samHolds(): Promise<void> {
+        await startCollabSession({
+            createLink: net.create(SAM),
+            roundId: round.id,
+            appVersion: "0.11.0",
+            doc: () => seedDoc(round),
+            apply: () => [],
+            dial: [ME],
+            schedule: () => () => {},
+        });
+    }
+
+    /** What this side is holding that peer to, as the chip reads it. */
+    function grantedTo(peer: string): string | undefined {
+        return currentSession()
+            ?.peers()
+            .find((p) => p.endpointId === peer)?.role;
+    }
+
+    // Opening a session for a round dials the peers it remembers, so an
+    // invitation with no session behind it is dialled by the bring-up itself.
+    // A grade recorded after that call is a grade the dial never saw, and the
+    // contact is admitted wide - which every warm-path invitation hides,
+    // because there the grade is in hand before anything is dialled.
+    it("holds a viewer read-only when the invitation is what opens the session", async () => {
+        await samHolds();
+        expect(currentSession()).toBeNull();
+
+        await inviteContact(round, SAM, "viewer");
+
+        expect(grantedTo(SAM)).toBe("viewer");
+    });
+
+    // An invitation is the debater deciding again, so it replaces the grade
+    // the round is carrying rather than losing to it.
+    it("promotes a peer the round marked read-only, on a session already up", async () => {
+        rememberRoundRole(round.id, SAM, "viewer");
+        await samHolds();
+        await startForRound(round);
+
+        await inviteContact(round, SAM, "editor");
+
+        expect(grantedTo(SAM)).toBe("editor");
+        // The round is where a grant outlives the session that made it, so a
+        // promotion left in the session alone is one the next open undoes.
+        expect(knownRoundViewers(round.id)).toEqual([]);
+    });
+});
+
+/**
+ * A window on its way out lets go of the endpoint and takes nothing back.
+ * `endSession` finishes by re-syncing the invite watch, which with Listen for
+ * invites on binds an endpoint again - on a window that is closing, that is a
+ * bind nobody can ever use and a local network permission prompt at the worst
+ * possible moment. That re-bind is proved by "takes the endpoint back when the
+ * session ends" above, which is what gives the counts here their meaning.
+ */
+describe("shutting collaboration down for a window that is closing", () => {
+    beforeEach(async () => {
+        // The outer beforeEach ends any session, which binds the idle listener
+        // again. Starting from nothing bound is what lets the recorder speak
+        // for the shutdown alone.
+        useFlowStore.setState({ collabListenEnabled: false });
+        await syncInviteWatch();
+        useFlowStore.setState({ collabListenEnabled: true });
+        net.reset();
+    });
+
+    it("lets go of the idle listener and binds nothing back", async () => {
+        await syncInviteWatch();
+        expect(listens()).toBe(1);
+
+        await shutdownCollab();
+
+        expect(net.calls.filter((c) => c.op === "stop")).toHaveLength(1);
+        expect(listens()).toBe(1);
+    });
+
+    it("lets go of a session's endpoint and binds nothing back", async () => {
+        await startForRound(round);
+        expect(listens()).toBe(1);
+
+        await shutdownCollab();
+
+        expect(currentSession()).toBeNull();
+        expect(listens()).toBe(1);
     });
 });
 
@@ -531,7 +636,7 @@ describe("hanging up on a peer", () => {
             appVersion: "0.11.0",
             doc: () => seedDoc(round),
             apply: () => [],
-            ticket: encodeTicket(await host.share("partner")),
+            ticket: encodeTicket(await host.share("editor")),
             dial: [ME],
         });
         for (let i = 0; i < 10; i++) await Promise.resolve();

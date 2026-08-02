@@ -12,14 +12,14 @@
 
 import { INVITED } from "./invite";
 import { PROTOCOL_MAJOR, type WireMessage } from "./peerLink";
-import type { Role } from "./types";
+import { isRole, type Role } from "./types";
 
 export interface HostPolicy {
     /** The only round this host will talk about. */
     roundId: string;
     /**
      * The unspent ticket, and what it grants. The role is the host's to give:
-     * a coach's ticket admits a coach however the guest introduces itself.
+     * a viewer's ticket admits a viewer however the guest introduces itself.
      */
     pending: { secret: string; role: Role } | null;
     /** Peers already admitted once, which need no secret again. */
@@ -124,7 +124,7 @@ export function grantedRole(policy: HostPolicy, peer: string): Role | undefined 
  */
 export function admit(msg: WireMessage, policy: HostPolicy, remoteId: string): Admission {
     if (msg.type !== "hello") return SILENT;
-    if (msg.role !== "partner" && msg.role !== "coach") return SILENT;
+    if (!isRole(msg.role)) return SILENT;
     if (msg.roundId !== policy.roundId) return SILENT;
     if (msg.endpointId !== remoteId) return SILENT;
 
@@ -134,7 +134,7 @@ export function admit(msg: WireMessage, policy: HostPolicy, remoteId: string): A
         // grant. Every path that admits one records what it granted, so this
         // is the backstop for a key that reached the list some other way,
         // where the safe answer is the role that writes nothing.
-        granted = { ok: true, role: grantedRole(policy, remoteId) ?? "coach", spendSecret: false };
+        granted = { ok: true, role: grantedRole(policy, remoteId) ?? "viewer", spendSecret: false };
     } else if (policy.pending && msg.ticket && secretMatches(msg.ticket, policy.pending.secret)) {
         // The role the host granted, never the one the guest asked for.
         granted = { ok: true, role: policy.pending.role, spendSecret: true };

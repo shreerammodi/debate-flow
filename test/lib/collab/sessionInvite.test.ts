@@ -14,7 +14,7 @@ let alexRound: FlowRound;
 let samRound: FlowRound;
 let heard: InviteNotice[];
 
-const knowsAlex: Contacts = { alex: { name: "Alex", role: "partner" } };
+const knowsAlex: Contacts = { alex: { name: "Alex" } };
 
 /** Alex, holding the round they are about to offer. */
 async function alexSession(): Promise<CollabSession> {
@@ -57,7 +57,7 @@ describe("a contact invited into a round they do not hold", () => {
     it("hears the offer, named by the round the host calls it", async () => {
         const sam = await samSession();
         const alex = await alexSession();
-        await alex.invite("sam");
+        await alex.invite("sam", "editor");
         await settle();
         expect(heard).toEqual([
             { endpointId: "alex", roundId: alexRound.id, label: "Round 3 - Harvard" },
@@ -68,7 +68,7 @@ describe("a contact invited into a round they do not hold", () => {
     it("joins nothing until the debater acts", async () => {
         const sam = await samSession();
         const alex = await alexSession();
-        await alex.invite("sam");
+        await alex.invite("sam", "editor");
         await settle();
         // Their own round is untouched, and no peer was added on either side.
         expect(sam.peers()).toEqual([]);
@@ -78,7 +78,7 @@ describe("a contact invited into a round they do not hold", () => {
     it("counts as delivered on the host's side, not as a failure", async () => {
         await samSession();
         const alex = await alexSession();
-        await expect(alex.invite("sam")).resolves.toBeUndefined();
+        await expect(alex.invite("sam", "editor")).resolves.toBeUndefined();
     });
 
     it("says nothing to a session that has not saved the dialler", async () => {
@@ -86,7 +86,7 @@ describe("a contact invited into a round they do not hold", () => {
         const alex = await alexSession();
         // The ordinary silent refusal, which reaches the dialler as an error
         // and the receiver not at all.
-        await expect(alex.invite("sam")).rejects.toThrow("refused");
+        await expect(alex.invite("sam", "editor")).rejects.toThrow("refused");
         await settle();
         expect(heard).toEqual([]);
     });
@@ -97,7 +97,7 @@ describe("a contact invited into a round they do not hold", () => {
         samRound = alexRound;
         await samSession();
         const alex = await alexSession();
-        await expect(alex.invite("sam")).rejects.toThrow("refused");
+        await expect(alex.invite("sam", "editor")).rejects.toThrow("refused");
         await settle();
         expect(heard).toEqual([]);
     });

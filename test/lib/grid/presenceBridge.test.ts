@@ -19,13 +19,14 @@ afterEach(() => {
     setCursorHandler(null);
 });
 
-const on = (endpointId: string, editing = true): Presence => ({
+const on = (endpointId: string, editing = true, readOnly = false): Presence => ({
     endpointId,
     sheetId: "sheet_1",
     col: modelCol(0),
     row: 3,
     heldAt: 1_000,
     editing,
+    readOnly,
 });
 
 describe("presence arriving from a session", () => {

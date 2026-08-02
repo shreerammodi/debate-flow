@@ -4,8 +4,8 @@ import type { Contacts } from "@/lib/collab/contacts";
 import { chooseContact, useContactPicker } from "@/lib/store/useContactPicker";
 
 const CONTACTS: Contacts = {
-    alex: { name: "Alex", role: "partner" },
-    rin: { name: "Rin", role: "coach" },
+    alex: { name: "Alex" },
+    rin: { name: "Rin" },
 };
 
 beforeEach(() => {
@@ -21,13 +21,21 @@ describe("useContactPicker", () => {
         const picked = chooseContact(CONTACTS);
         expect(useContactPicker.getState().contacts).toBe(CONTACTS);
 
-        useContactPicker.getState().pick("rin");
-        await expect(picked).resolves.toBe("rin");
+        useContactPicker.getState().pick({ endpointId: "rin", role: "viewer" });
+        await expect(picked).resolves.toEqual({ endpointId: "rin", role: "viewer" });
+    });
+
+    // The grade is half the answer, so it travels with the peer rather than
+    // being decided again by whoever reads the picked id.
+    it("carries the grade the picker was answered with", async () => {
+        const picked = chooseContact(CONTACTS);
+        useContactPicker.getState().pick({ endpointId: "alex", role: "editor" });
+        await expect(picked).resolves.toEqual({ endpointId: "alex", role: "editor" });
     });
 
     it("closes as it resolves, so nothing is left open behind the answer", async () => {
         const picked = chooseContact(CONTACTS);
-        useContactPicker.getState().pick("alex");
+        useContactPicker.getState().pick({ endpointId: "alex", role: "editor" });
         await picked;
 
         expect(useContactPicker.getState().contacts).toBeNull();
@@ -45,8 +53,8 @@ describe("useContactPicker", () => {
         const second = chooseContact(CONTACTS);
 
         await expect(first).resolves.toBeNull();
-        useContactPicker.getState().pick("alex");
-        await expect(second).resolves.toBe("alex");
+        useContactPicker.getState().pick({ endpointId: "alex", role: "editor" });
+        await expect(second).resolves.toEqual({ endpointId: "alex", role: "editor" });
     });
 
     it("has nothing to settle when cancelled while closed", () => {

@@ -31,6 +31,13 @@ export interface Presence {
     heldAt: number;
     /** Their editor is open on this cell, so typing into it is refused. */
     editing: boolean;
+    /**
+     * This side granted them read access only, so they never claim and their
+     * marker is one the debater can turn off. Carried on the entry rather than
+     * looked up where it is painted: the grade lives in the session, and the
+     * grid has only the presence table.
+     */
+    readOnly: boolean;
 }
 
 /**

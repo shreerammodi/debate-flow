@@ -1,11 +1,19 @@
 import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+/** What the flush did, in the order it did it. */
+const order: string[] = [];
+
 const invoke = vi.fn();
 let flushHandler: ((e: { payload: unknown }) => void) | null = null;
 const unlisten = vi.fn();
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+vi.mock("@tauri-apps/api/core", () => ({
+    invoke: (...a: unknown[]) => {
+        order.push("report");
+        return invoke(...a);
+    },
+}));
 vi.mock("@tauri-apps/api/event", () => ({
     listen: (name: string, cb: (e: { payload: unknown }) => void) => {
         if (name === "app:flush") flushHandler = cb;
@@ -17,7 +25,20 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 }));
 
 const saveOpenFlow = vi.fn();
-vi.mock("@/lib/commands/fileCommands", () => ({ saveOpenFlow: () => saveOpenFlow() }));
+vi.mock("@/lib/commands/fileCommands", () => ({
+    saveOpenFlow: () => {
+        order.push("save");
+        return saveOpenFlow();
+    },
+}));
+
+const shutdownCollab = vi.fn();
+vi.mock("@/lib/collab/runtime", () => ({
+    shutdownCollab: () => {
+        order.push("hang up");
+        return shutdownCollab();
+    },
+}));
 
 const toastError = vi.fn();
 vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a) } }));
@@ -29,7 +50,10 @@ import QuitGuard from "@/components/QuitGuard";
 beforeEach(() => {
     invoke.mockReset();
     saveOpenFlow.mockReset();
+    shutdownCollab.mockReset();
+    shutdownCollab.mockResolvedValue(undefined);
     toastError.mockReset();
+    order.length = 0;
     flushHandler = null;
 });
 
@@ -50,6 +74,32 @@ describe("QuitGuard", () => {
         expect(saveOpenFlow).toHaveBeenCalled();
     });
 
+    // The round is what the exit is holding for, so it reaches disk first. The
+    // session comes down before the report because a window that exits without
+    // saying so leaves its partners looking at a peer that is gone until QUIC
+    // times the connection out, which is tens of seconds of a chip that reads
+    // connected.
+    it("saves the flow, then hangs up on the partners, then reports back", async () => {
+        saveOpenFlow.mockResolvedValue(true);
+
+        await requestQuit();
+
+        await waitFor(() => expect(invoke).toHaveBeenCalled());
+        expect(order).toEqual(["save", "hang up", "report"]);
+    });
+
+    // A flow that reached disk is not put back at risk by a link that would
+    // not close, and the endpoint dies with the process either way.
+    it("still reports the flow saved when the hang-up fails", async () => {
+        saveOpenFlow.mockResolvedValue(true);
+        shutdownCollab.mockRejectedValue(new Error("the endpoint refused to stop"));
+
+        await requestQuit();
+
+        await waitFor(() => expect(invoke).toHaveBeenCalledWith("finish_quit", { saved: true }));
+        expect(toastError).not.toHaveBeenCalled();
+    });
+
     it("cancels the exit when the flow could not be written", async () => {
         // Quitting with a full disk must keep the window, not take the round
         // down with the process.
@@ -67,5 +117,6 @@ describe("QuitGuard", () => {
         await requestQuit();
 
         await waitFor(() => expect(invoke).toHaveBeenCalledWith("finish_quit", { saved: false }));
+        expect(toastError).toHaveBeenCalled();
     });
 });

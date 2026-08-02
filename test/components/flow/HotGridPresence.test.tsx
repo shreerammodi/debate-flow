@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import type Handsontable from "handsontable";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import HotGrid from "@/components/flow/HotGrid";
@@ -24,6 +25,7 @@ const at = (
     row: number,
     heldAt: number,
     editing: boolean,
+    readOnly = false,
 ): Presence => ({
     endpointId,
     sheetId,
@@ -31,6 +33,7 @@ const at = (
     row,
     heldAt,
     editing,
+    readOnly,
 });
 
 /** The pane, mounted and past its first imperative data load. */
@@ -59,9 +62,10 @@ beforeEach(() => {
         round,
         activeSheetId: sheetId,
         splitSheetId: null,
+        collabShowViewers: true,
         contacts: {
-            [SAM]: { name: "Sam", role: "partner" },
-            [KIM]: { name: "Kim", role: "coach" },
+            [SAM]: { name: "Sam" },
+            [KIM]: { name: "Kim" },
         },
     });
 });
@@ -84,6 +88,8 @@ describe("HotGrid presence surface", () => {
 
         setPresences([at(SAM, 1, 2, Date.now(), true)]);
         await waitFor(() => expect(hot.getCell(2, 1)).toHaveClass(LOCK_CLASS));
+        // An open editor wears both: the peer outline plus the harder mark.
+        expect(hot.getCell(2, 1)).toHaveClass(PEER_CLASS);
         expect(hot.getCell(2, 0)).not.toHaveClass(LOCK_CLASS);
 
         setPresences([]);
@@ -169,8 +175,8 @@ describe("HotGrid presence surface", () => {
         expect(hot.getCell(2, 1)?.dataset.peer).toBeUndefined();
     });
 
-    it("refuses a coach's keystroke instead of losing it", async () => {
-        useCollabStore.setState({ selfRole: "coach" });
+    it("refuses a viewer's keystroke instead of losing it", async () => {
+        useCollabStore.setState({ selfRole: "viewer" });
         const hot = await mount();
         hot.selectCell(2, 0);
 
@@ -187,5 +193,38 @@ describe("HotGrid presence surface", () => {
         // read-only grid and not a key the recorder swallowed.
         press(hot, "F2");
         expect(hot.getActiveEditor()?.isOpened()).toBeFalsy();
+    });
+
+    // A viewer reading along marks every cell they scroll past, which is noise
+    // to the side doing the writing, so the debater can turn those cursors off.
+    it("leaves a read-only peer unmarked while viewer cursors are off", async () => {
+        useFlowStore.setState({ collabShowViewers: false });
+        const hot = await mount();
+
+        setPresences([at(KIM, 0, 4, Date.now(), false, true), at(SAM, 1, 2, Date.now(), false)]);
+
+        // Sam's mark landing is what proves the repaint ran, so Kim's bare
+        // cell below is a decision rather than an unrendered pass.
+        await waitFor(() => expect(hot.getCell(2, 1)).toHaveClass(PEER_CLASS));
+        expect(hot.getCell(4, 0)).not.toHaveClass(PEER_CLASS);
+    });
+
+    it("marks a read-only peer while viewer cursors are on", async () => {
+        const hot = await mount();
+
+        setPresences([at(KIM, 0, 4, Date.now(), false, true)]);
+
+        await waitFor(() => expect(hot.getCell(4, 0)).toHaveClass(PEER_CLASS));
+        expect(hot.getCell(4, 0)).not.toHaveClass(LOCK_CLASS);
+    });
+
+    it("repaints when the debater turns viewer cursors off mid-round", async () => {
+        const hot = await mount();
+        setPresences([at(KIM, 0, 4, Date.now(), false, true)]);
+        await waitFor(() => expect(hot.getCell(4, 0)).toHaveClass(PEER_CLASS));
+
+        act(() => useFlowStore.setState({ collabShowViewers: false }));
+
+        await waitFor(() => expect(hot.getCell(4, 0)).not.toHaveClass(PEER_CLASS));
     });
 });

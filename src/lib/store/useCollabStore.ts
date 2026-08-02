@@ -66,7 +66,7 @@ const MAX_INVITES = 20;
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
-    selfRole: "partner",
+    selfRole: "editor",
     endpointId: null,
     invites: NO_INVITES,
     setStatus: (status) => set({ status }),
@@ -93,5 +93,5 @@ export const useCollabStore = create<CollabUiState>((set) => ({
     // An offer is only actionable while shared editing is running: with no
     // session, joining answers "turn on shared editing" and the sender has
     // long since moved on. Nothing survives a teardown that cannot be acted on.
-    reset: () => set({ status: "off", peers: NO_PEERS, selfRole: "partner", invites: NO_INVITES }),
+    reset: () => set({ status: "off", peers: NO_PEERS, selfRole: "editor", invites: NO_INVITES }),
 }));

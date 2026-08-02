@@ -113,7 +113,7 @@ async function hostAndGuest(): Promise<{
         apply: hostSide.apply,
         schedule: clock.schedule,
     }))!;
-    const ticket = encodeTicket(await host.share("partner"));
+    const ticket = encodeTicket(await host.share("editor"));
 
     const guestSide = replicaFor(shared, "sam");
     const guest = (await startCollabSession({
@@ -135,7 +135,7 @@ describe("a hosted session", () => {
         const { host, guest } = await hostAndGuest();
         expect(host.peers().map((p) => p.endpointId)).toEqual(["sam"]);
         expect(guest.peers().map((p) => p.endpointId)).toEqual([ALEX]);
-        expect(host.peers()[0].role).toBe("partner");
+        expect(host.peers()[0].role).toBe("editor");
     });
 
     it("reports the connection type each peer got", async () => {
@@ -166,7 +166,7 @@ describe("a hosted session", () => {
             apply: hostSide.apply,
             schedule: clock.schedule,
         }))!;
-        expect((await host.share("partner")).relayUrl).toBeUndefined();
+        expect((await host.share("editor")).relayUrl).toBeUndefined();
     });
 
     /**
@@ -260,7 +260,7 @@ describe("the name each side broadcasts", () => {
             displayName: hostName,
             schedule: clock.schedule,
         }))!;
-        const ticket = encodeTicket(await host.share("partner"));
+        const ticket = encodeTicket(await host.share("editor"));
 
         const guestSide = replicaFor(shared, "sam");
         const guest = (await startCollabSession({
@@ -327,7 +327,7 @@ describe("editing across a session", () => {
         expect(hostSide.doc()).toEqual(guestSide.doc());
     });
 
-    it("drops a coach's writes, because the host enforces the role", async () => {
+    it("drops a viewer's writes, because the host enforces the role", async () => {
         const hostSide = replicaFor(shared, ALEX);
         const host = (await startCollabSession({
             createLink: net.create(ALEX),
@@ -337,29 +337,29 @@ describe("editing across a session", () => {
             apply: hostSide.apply,
             schedule: clock.schedule,
         }))!;
-        const ticket = encodeTicket(await host.share("coach"));
+        const ticket = encodeTicket(await host.share("viewer"));
 
-        const coachSide = replicaFor(shared, "coach");
-        const coach = (await startCollabSession({
-            createLink: net.create("coach"),
+        const kimSide = replicaFor(shared, "kim");
+        const kim = (await startCollabSession({
+            createLink: net.create("kim"),
             roundId: shared.id,
             appVersion: "0.11.0",
-            doc: coachSide.doc,
-            apply: coachSide.apply,
+            doc: kimSide.doc,
+            apply: kimSide.apply,
             ticket,
-            role: "coach",
+            role: "viewer",
             dial: [ALEX],
             schedule: clock.schedule,
         }))!;
         await settle();
-        expect(host.peers()[0].role).toBe("coach");
+        expect(host.peers()[0].role).toBe("viewer");
 
-        coachSide.edit(sheetId, 0, 0, "coach typed");
-        coach.notifyLocalChange();
+        kimSide.edit(sheetId, 0, 0, "kim typed");
+        kim.notifyLocalChange();
         await settle();
 
         const texts = Object.values(hostSide.doc().sheets[sheetId].cells).map((c) => c.text);
-        expect(texts).not.toContain("coach typed");
+        expect(texts).not.toContain("kim typed");
     });
 });
 

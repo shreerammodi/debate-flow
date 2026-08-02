@@ -135,7 +135,7 @@ async function link() {
         appVersion: "0.11.0",
         doc: plainSide.doc,
         apply: plainSide.apply,
-        ticket: encodeTicket(await host.share("partner")),
+        ticket: encodeTicket(await host.share("editor")),
         dial: [ALIGNED],
         schedule: clock.schedule,
     }))!;

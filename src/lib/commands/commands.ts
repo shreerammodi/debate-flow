@@ -194,11 +194,11 @@ function collabDeps(): CollabCommandDeps {
 }
 
 export function executeCommand(id: CommandId): void {
-    // A coach reads the round. The host drops their writes, so a command that
+    // A viewer reads the round. The host drops their writes, so a command that
     // changed the flow here would look like it worked and be gone on the next
     // merge. Saying so beats losing it quietly, and it leaves every command
     // that only navigates, looks, or configures free to run.
-    if (EDITS_ROUND[id] && useCollabStore.getState().selfRole === "coach") {
+    if (EDITS_ROUND[id] && useCollabStore.getState().selfRole === "viewer") {
         toast("You are viewing this round, not editing it");
         return;
     }
@@ -386,7 +386,7 @@ export function executeCommand(id: CommandId): void {
             void runShare(collabDeps());
             return;
         case "collab.shareView":
-            void runShare(collabDeps(), "coach");
+            void runShare(collabDeps(), "viewer");
             return;
         case "collab.join":
             void runJoin(collabDeps());

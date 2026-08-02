@@ -134,6 +134,8 @@ export default function SettingsPanel() {
     const setCollabRelayEnabled = useFlowStore((s) => s.setCollabRelayEnabled);
     const collabListenEnabled = useFlowStore((s) => s.collabListenEnabled);
     const setCollabListenEnabled = useFlowStore((s) => s.setCollabListenEnabled);
+    const collabShowViewers = useFlowStore((s) => s.collabShowViewers);
+    const setCollabShowViewers = useFlowStore((s) => s.setCollabShowViewers);
     const scrollZoom = useFlowStore((s) => s.scrollZoom);
     const setScrollZoom = useFlowStore((s) => s.setScrollZoom);
     const alignSpeeches = useFlowStore((s) => s.alignSpeeches);
@@ -644,6 +646,18 @@ export default function SettingsPanel() {
                                                     onCheckedChange={setCollabListenEnabled}
                                                     data-testid="collab-listen-toggle"
                                                     aria-label="Listen for invites"
+                                                />
+                                            }
+                                        />
+                                        <SettingRow
+                                            title="Show viewer cursors"
+                                            description="Marks the cell a view-only peer is looking at. Off hides them, leaving only the cells a partner is editing."
+                                            control={
+                                                <Switch
+                                                    checked={collabShowViewers}
+                                                    onCheckedChange={setCollabShowViewers}
+                                                    data-testid="collab-show-viewers-toggle"
+                                                    aria-label="Show viewer cursors"
                                                 />
                                             }
                                         />

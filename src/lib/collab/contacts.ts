@@ -6,16 +6,20 @@
  * EndpointId a partner sent, and an EndpointId is stable per install, so the
  * same partner is reachable the next time with no ticket at all.
  *
+ * A contact is a partner and nothing narrower. What that partner may do is a
+ * property of the round they are invited to, chosen at the invitation and
+ * recorded beside the round, so the same person can be writing one flow and
+ * reading another. A grade here would be one global row frozen at the first
+ * save, and two debaters who each saved the other differently would disagree
+ * about what the pair is.
+ *
  * The table is keyed by EndpointId and lives in the config file, which is
  * hand-editable and synced between machines. So parsing is total: anything
  * unrecognizable degrades to absent rather than to a half-valid contact.
  */
 
-import { isRole, type Role } from "./types";
-
 export interface Contact {
     name: string;
-    role: Role;
     /**
      * Where this peer was last found. An EndpointId names them and does not
      * route to them, and the only lookup this build runs is mDNS, so without
@@ -57,12 +61,7 @@ export function isRelayUrl(value: unknown): value is string {
     );
 }
 
-/**
- * A contact table from whatever the config file held.
- *
- * An unknown role is dropped rather than defaulted: defaulting would decide,
- * from a typo, whether that peer may write into the round.
- */
+/** A contact table from whatever the config file held. */
 export function resolveContacts(raw: unknown): Contacts {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
     // Null-prototyped, because the keys come from a file the user can hand-edit
@@ -77,14 +76,11 @@ export function resolveContacts(raw: unknown): Contacts {
         if (value === null || typeof value !== "object") continue;
         const entry = value as Partial<Contact>;
         if (typeof entry.name !== "string" || entry.name.trim() === "") continue;
-        if (!isRole(entry.role)) continue;
         // A dial target, so a scheme somebody chose by hand is not one: an
         // iroh relay is https. Dropped rather than refused, because it is
         // where this contact is and not whether they may be reached at all.
         const relay = isRelayUrl(entry.relay) ? entry.relay : undefined;
-        out[endpointId] = relay
-            ? { name: entry.name, role: entry.role, relay }
-            : { name: entry.name, role: entry.role };
+        out[endpointId] = relay ? { name: entry.name, relay } : { name: entry.name };
     }
     return out;
 }

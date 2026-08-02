@@ -12,7 +12,7 @@ const text = serializeSidecar({
     roundId: round.id,
     flowHash: "deadbeef",
     peers: [SAM, KIM],
-    coaches: [KIM],
+    viewers: [KIM],
     relays: {},
     doc,
 });
@@ -24,7 +24,7 @@ describe("serializeSidecar", () => {
         expect(parsed.roundId).toBe(round.id);
         expect(parsed.flowHash).toBe("deadbeef");
         expect(parsed.peers).toEqual([SAM, KIM]);
-        expect(parsed.coaches).toEqual([KIM]);
+        expect(parsed.viewers).toEqual([KIM]);
     });
 });
 
@@ -33,7 +33,7 @@ describe("parseSidecar", () => {
         const got = parseSidecar(text, round.id, "deadbeef");
         expect(got!.doc).toEqual(doc);
         expect(got!.peers).toEqual([SAM, KIM]);
-        expect(got!.coaches).toEqual([KIM]);
+        expect(got!.viewers).toEqual([KIM]);
     });
 
     // Every entry here is dialled on the next open, so a hand edit or a peer's
@@ -41,10 +41,10 @@ describe("parseSidecar", () => {
     it("keeps only ids iroh could parse back into a key", () => {
         const edited = JSON.parse(text);
         edited.peers = [SAM, "sam", 7, null, "../../etc/passwd"];
-        edited.coaches = ["nope"];
+        edited.viewers = ["nope"];
         const got = parseSidecar(JSON.stringify(edited), round.id, "deadbeef")!;
         expect(got.peers).toEqual([SAM]);
-        expect(got.coaches).toEqual([]);
+        expect(got.viewers).toEqual([]);
     });
 
     /**
@@ -88,10 +88,11 @@ describe("parseSidecar", () => {
         expect(parseSidecar(future, round.id, "deadbeef")).toBeNull();
     });
 
-    // A file written before `coaches` existed holds membership and no grades,
-    // so every peer it remembers reads back a partner: one silent promotion
-    // per already-shared round, on the first open after an upgrade. Discarding
-    // it costs a re-seed of the replica, which is what a stale one costs too.
+    // A file written before read-only grants were recorded holds membership and
+    // no grades, so every peer it remembers reads back an editor: one silent
+    // promotion per already-shared round, on the first open after an upgrade.
+    // Discarding it costs a re-seed of the replica, which is what a stale one
+    // costs too.
     it("discards a sidecar written before read-only grants were recorded", () => {
         const before = JSON.stringify({
             version: 1,
@@ -101,6 +102,23 @@ describe("parseSidecar", () => {
             doc,
         });
         expect(parseSidecar(before, round.id, "deadbeef")).toBeNull();
+    });
+
+    // Version 2 is the file an upgrading debater already has on disk, and it
+    // named its read-only members under a key this build does not read. So
+    // `viewers` reads as absent and every peer the round remembers comes back
+    // an editor. Discarding the file is the fix, which is why the bump carries
+    // no migration.
+    it("discards a version 2 sidecar, whose read-only members are under a key this build ignores", () => {
+        const two = JSON.stringify({
+            version: 2,
+            roundId: round.id,
+            flowHash: "deadbeef",
+            peers: [SAM, KIM],
+            relays: { [SAM]: "https://r.example/" },
+            doc,
+        });
+        expect(parseSidecar(two, round.id, "deadbeef")).toBeNull();
     });
 
     it("discards an absent, empty, or malformed file rather than throwing", () => {

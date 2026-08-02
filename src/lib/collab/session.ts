@@ -15,7 +15,7 @@
 
 import { setPresences } from "@/lib/grid/presenceBridge";
 
-import { contactOf, type Contacts } from "./contacts";
+import type { Contacts } from "./contacts";
 import { collabSettings, type CollabSettings } from "./enabled";
 import {
     admit,
@@ -40,8 +40,8 @@ import { claim, HEARTBEAT_MS, releaseCell, releasePeer, type Presence } from "./
 import { retryForever } from "./reconnect";
 import {
     forgetRoundPeer,
-    knownRoundCoaches,
     knownRoundRelays,
+    knownRoundViewers,
     rememberRoundRelay,
     rememberRoundRole,
 } from "./roundPeers";
@@ -66,14 +66,23 @@ export interface CollabPeer {
     relayUrl?: string;
 }
 
+/** A peer that has just said it saved this side. */
+export interface SavedByPeer {
+    endpointId: string;
+    /** What they go by, when they said. A suggestion, never a rename. */
+    name?: string;
+    /** Where they were reached, so the contact saved from this is dialable. */
+    relayUrl?: string;
+}
+
 export interface CollabSession {
     endpointId: string;
     roundId: string;
     peers(): CollabPeer[];
     /**
-     * What this side was admitted as. A host is always a partner: it holds the
-     * file. A guest asks to be a partner and is granted whatever the ticket
-     * that let it in said, which is the only place a coach learns it is one.
+     * What this side was admitted as. A host is always an editor: it holds the
+     * file. A guest asks to edit and is granted whatever the host decided,
+     * which is the only place a viewer learns it is one.
      */
     role(): Role;
     /**
@@ -85,8 +94,18 @@ export interface CollabSession {
      * its partners while the answer is still coming.
      */
     share(role: Role): Promise<Ticket>;
-    /** Dials a peer this round already trusts, with no ticket. */
-    invite(endpointId: string): Promise<void>;
+    /**
+     * Dials a peer this round already trusts, with no ticket, and grades them
+     * for this round. The grade is the caller's: an invitation is the gesture
+     * that decides it, and nothing else this side holds has a say.
+     */
+    invite(endpointId: string, role: Role): Promise<void>;
+    /**
+     * Tells a connected peer this side has saved them, so they save this side
+     * back and the pair is reachable in both directions. A no-op for a peer
+     * this session is not holding: there is nowhere to say it.
+     */
+    announceContact(endpointId: string): void;
     /**
      * Drops one peer and keeps the rest. Deliberate, so it outlasts the link
      * and the app: that peer is not redialled, it is not let back in if it
@@ -141,11 +160,14 @@ export interface CollabSessionDeps {
     displayName?: string;
     /**
      * The contact table. It decides whether a dial this session cannot admit
-     * is an invite worth showing, and it grades a peer the round remembers
-     * with no read-only mark of its own. Absent means every refusal is silent.
+     * is an invite worth showing, and it says where a saved partner was last
+     * reached. It has no say in what any peer may do. Absent means every
+     * refusal is silent.
      */
     contacts?: () => Contacts;
     onInvite?: (notice: InviteNotice) => void;
+    /** Fires when a peer says it has saved this side. */
+    onContact?: (peer: SavedByPeer) => void;
 }
 
 interface Live {
@@ -184,22 +206,16 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     const homeRelay = link.relayUrl().catch(() => "");
 
     const dial = [...(deps.dial ?? [])];
-    const readOnlyPeers = knownRoundCoaches(deps.roundId);
+    const readOnlyPeers = knownRoundViewers(deps.roundId);
     /**
      * Every peer the round remembers is graded, rather than left to a default:
-     * membership with no grade beside it is the one thing that hands a coach
-     * the wider role, and a peer nobody restricted is still a partner. The
-     * round's own read-only mark has the last word, because it is the grant
-     * this round made, while a contact's role is one global row frozen at the
-     * first save: when the two disagree the narrower one holds. Promotion is
-     * invite()'s job, where it is a gesture rather than a leftover. The
-     * contact table is read once, so a contact edited mid-round grades the
-     * next session rather than this one.
+     * membership with no grade beside it is the one thing that hands a viewer
+     * the wider role. The round's own record is the whole source, because the
+     * grant was made to this round and a peer promoted here stays promoted the
+     * next time it opens.
      */
     const roles: Record<string, Role> = {};
-    for (const [id, contact] of Object.entries(deps.contacts?.() ?? {})) roles[id] = contact.role;
-    for (const id of dial)
-        roles[id] = readOnlyPeers.includes(id) ? "coach" : (roles[id] ?? "partner");
+    for (const id of dial) roles[id] = readOnlyPeers.includes(id) ? "viewer" : "editor";
 
     const policy: HostPolicy = {
         roundId: deps.roundId,
@@ -237,9 +253,9 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     let stopped = false;
     /**
      * What this side is. A host never dials and so is never graded: it holds
-     * the file, and the value stands at partner for its whole life.
+     * the file, and the value stands at editor for its whole life.
      */
-    let myRole: Role = deps.role ?? "partner";
+    let myRole: Role = deps.role ?? "editor";
 
     function setRole(next: Role): void {
         if (next === myRole) return;
@@ -289,11 +305,42 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         deps.onPeersChanged?.([...live.values()].map((l) => l.peer));
     }
 
-    function onPosition(peerId: string, cell: CellRef | null, editing: boolean): void {
+    function onPosition(
+        peerId: string,
+        cell: CellRef | null,
+        editing: boolean,
+        readOnly: boolean,
+    ): void {
         presences = cell
-            ? claim(presences, { endpointId: peerId, ...cell, heldAt: Date.now(), editing })
+            ? claim(presences, {
+                  endpointId: peerId,
+                  ...cell,
+                  heldAt: Date.now(),
+                  editing,
+                  readOnly,
+              })
             : releaseCell(presences, peerId);
         setPresences(presences);
+    }
+
+    /**
+     * Lets go of a peer that said it is leaving.
+     *
+     * Out of the live map before the connection is closed, which is what
+     * separates this from a link that dropped: the close handler finds a
+     * connection nobody holds and leaves the redial ladder alone. A QUIC close
+     * says nothing about why, so without the message a window that shut down
+     * deliberately would be dialled again for the rest of the session.
+     */
+    function farewell(peerId: string, conn: PeerConn): void {
+        const held = live.get(peerId);
+        if (held?.conn !== conn) return;
+        live.delete(peerId);
+        held.sync.stop();
+        presences = releasePeer(presences, peerId);
+        setPresences(presences);
+        announce();
+        conn.close();
     }
 
     function track(
@@ -339,6 +386,22 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         // is warned off a cell they have an editor on before typing into it.
         // Both go the moment the link does.
         conn.onMessage((msg) => {
+            if (msg.type === "bye") {
+                farewell(peer.endpointId, conn);
+                return;
+            }
+            // They saved this side as a partner, so this side saves them back.
+            // Only reachable for a peer already admitted to the round, which is
+            // what keeps a dial from being a way to write into a stranger's
+            // contact table.
+            if (msg.type === "contact") {
+                deps.onContact?.({
+                    endpointId: peer.endpointId,
+                    name: typeof msg.name === "string" ? msg.name : undefined,
+                    relayUrl: peer.relayUrl,
+                });
+                return;
+            }
             if (msg.type !== "presence" && msg.type !== "cursor") return;
             // The cell goes straight into the table, so a position that is not
             // one is not a position: a row below zero or a sheet named by
@@ -347,7 +410,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // A read-only peer has no editor, so it points and never claims. A
             // claim refuses the debater's keystroke, which is a write under
             // another name and outside what this side granted.
-            onPosition(peer.endpointId, msg.cell, msg.type === "presence" && !readOnly);
+            onPosition(peer.endpointId, msg.cell, msg.type === "presence" && !readOnly, readOnly);
         });
         const sync = attachSync({
             conn,
@@ -355,7 +418,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             apply: (incoming) => {
                 const dropped = deps.apply(incoming);
                 // The star has the host for a hub, and a hub that does not
-                // pass a change on is not one: two partners and a coach would
+                // pass a change on is not one: two editors and a viewer would
                 // each see the host's typing at once and each other's only
                 // when the repair tick came round, seconds later. A guest
                 // holds one peer, the host, so this is the host's job alone
@@ -472,7 +535,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     relayUrl: conn.relayUrl() ?? undefined,
                     name: typeof msg.name === "string" ? msg.name : undefined,
                 },
-                verdict.role === "coach",
+                verdict.role === "viewer",
                 false,
             );
             // A guest may hold no file at all, so the host opens with the
@@ -504,9 +567,8 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     return;
                 }
                 // The ack names what this side was admitted as, which is the
-                // only place a coach finds out. An older host says nothing,
-                // and every one of those granted partner.
-                setRole(msg.role ?? "partner");
+                // only place a viewer finds out.
+                setRole(msg.role ?? "editor");
                 track(
                     conn,
                     {
@@ -514,7 +576,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                         // The role in the ack is this side's, not theirs. A
                         // guest's one peer is the host, which holds the file
                         // and is graded by nobody.
-                        role: grantedRole(policy, target) ?? "partner",
+                        role: grantedRole(policy, target) ?? "editor",
                         connectionType: conn.connectionType(),
                         relayUrl: conn.relayUrl() ?? undefined,
                         name: typeof msg.name === "string" ? msg.name : undefined,
@@ -524,7 +586,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                     // that dialled is not always the guest. What this side
                     // granted is what it drops writes against, on a link it
                     // opened as much as on one it answered.
-                    grantedRole(policy, target) === "coach",
+                    grantedRole(policy, target) === "viewer",
                     true,
                 );
                 resolve();
@@ -542,7 +604,7 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 helloFrom({
                     endpointId,
                     roundId: deps.roundId,
-                    role: deps.role ?? "partner",
+                    role: deps.role ?? "editor",
                     appVersion: deps.appVersion,
                     ticket: secret,
                     label: deps.roundLabel,
@@ -609,24 +671,23 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 relayUrl: (await homeRelay) || undefined,
             });
             // The role rides with the secret. What the ticket grants is the
-            // host's to decide, so a coach's ticket cannot be spent as a
-            // partner by a guest that simply says it is one.
+            // host's to decide, so a viewer's ticket cannot be spent as an
+            // editor by a guest that simply says it is one.
             policy.pending = { secret: ticket.secret, role };
             return ticket;
         },
 
-        async invite(target) {
+        async invite(target, role) {
             // A contact is admitted by EndpointId, so it joins the known list
             // before the dial rather than presenting a secret.
             if (!policy.knownPeers.includes(target)) policy.knownPeers.push(target);
             // Graded as it joins the list: a member with no grade beside it is
-            // refused the wider role. An invitation goes by the contact table,
-            // and a contact nobody restricted is a partner.
-            const invited = contactOf(deps.contacts?.() ?? {}, target)?.role ?? "partner";
-            policy.roles[target] = invited;
+            // refused the wider role. The grade is the one the invitation
+            // named, which is the only thing that decides it.
+            policy.roles[target] = role;
             // Inviting is deliberate, so it undoes a deliberate disconnect on
             // the round's record as well as on this session's.
-            rememberRoundRole(deps.roundId, target, invited);
+            rememberRoundRole(deps.roundId, target, role);
             gone.delete(target);
             try {
                 await dialPeer(target);
@@ -635,6 +696,13 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 // instead of a peer. That is the invite working.
                 if (!isInvited(err)) throw err;
             }
+        },
+
+        announceContact(target) {
+            live.get(target)?.conn.send({
+                type: "contact",
+                ...(deps.displayName ? { name: deps.displayName } : {}),
+            });
         },
 
         disconnect(target) {

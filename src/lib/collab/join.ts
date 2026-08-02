@@ -99,9 +99,9 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
     if (deps.ticket && !ticket) throw new Error("That does not look like an ebb ticket");
     const host = ticket ?? deps.invite;
     if (!host) throw new Error("That does not look like an ebb ticket");
-    // A contact's invite carries no role, and a coach is only ever made one by
-    // the ticket that admitted them, so an invite joins as a partner.
-    const role: Role = ticket?.role ?? "partner";
+    // A contact's invite carries no role, so this side asks to edit and the
+    // host's ack is what says otherwise. Only a ticket names a grant up front.
+    const role: Role = ticket?.role ?? "editor";
 
     const link = await deps.createLink({
         discovery: "mdns",

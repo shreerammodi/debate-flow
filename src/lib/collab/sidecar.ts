@@ -18,12 +18,12 @@ import type { CollabDoc } from "./types";
 /**
  * Bumped whenever a field the admission rules read starts carrying meaning,
  * because an older file parses with that field absent and so reads as the
- * widest case. Version 2 is what `coaches` costs: a version 1 file holds
- * membership with no grades, and every peer it remembers would come back a
- * partner. An unknown version is discarded, so a bump costs a re-seed of the
- * replica and never a promotion.
+ * widest case. Version 3 is what `viewers` costs: an older file names its
+ * read-only members under another key or not at all, and every peer it
+ * remembers would come back an editor. An unknown version is discarded, so a
+ * bump costs a re-seed of the replica and never a promotion.
  */
-export const SIDECAR_VERSION = 2;
+export const SIDECAR_VERSION = 3;
 
 export interface Sidecar {
     version: number;
@@ -31,8 +31,8 @@ export interface Sidecar {
     /** Digest of the `.ebb` text this document was last in step with. */
     flowHash: string;
     peers: string[];
-    /** Of those peers, the ones admitted read-only. A grant the contact table never saw. */
-    coaches: string[];
+    /** Of those peers, the ones admitted read-only. The grant this round made. */
+    viewers: string[];
     /**
      * Where each of those peers was last found. Addressing and not admission,
      * so a file written by a build that did not record it reads as a round
@@ -47,7 +47,7 @@ export function serializeSidecar(input: {
     roundId: string;
     flowHash: string;
     peers: string[];
-    coaches: string[];
+    viewers: string[];
     relays: Record<string, string>;
     doc: CollabDoc;
 }): string {
@@ -117,7 +117,7 @@ export function parseSidecar(
         roundId,
         flowHash,
         peers: endpointIds(s.peers),
-        coaches: endpointIds(s.coaches),
+        viewers: endpointIds(s.viewers),
         relays: relayUrls(s.relays),
         doc: s.doc,
     };

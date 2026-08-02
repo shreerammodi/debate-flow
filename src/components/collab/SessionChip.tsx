@@ -23,8 +23,8 @@ const STATUS_DOT: Record<LiveStatus, string> = {
 
 /** What each role may do, in the words the chip shows a debater. */
 const ROLE_LABEL: Record<CollabPeerView["role"], string> = {
-    partner: "edit",
-    coach: "view",
+    editor: "edit",
+    viewer: "view",
 };
 
 function peerCountLabel(count: number): string {
@@ -39,7 +39,7 @@ export interface SessionChipProps {
 /**
  * The bottom-left session chip: connection state and peer count, expanding on
  * click into one row per peer with role and connection type. A side the host
- * admitted as a coach is told so, because a grid that refuses every keystroke
+ * admitted as a viewer is told so, because a grid that refuses every keystroke
  * needs to say why.
  *
  * A session is the only thing it reports, so `status: "off"` renders nothing at
@@ -95,7 +95,7 @@ export default function SessionChip({ className }: SessionChipProps) {
                         data-testid="collab-chip-peers"
                         className="border-border bg-card absolute bottom-full left-0 z-30 mb-1 flex w-48 flex-col gap-1 rounded-md border p-1.5 shadow-md"
                     >
-                        {selfRole === "coach" && (
+                        {selfRole === "viewer" && (
                             <p
                                 data-testid="collab-self-role"
                                 className="text-muted-foreground border-border border-b px-1 py-0.5 text-[12px]"

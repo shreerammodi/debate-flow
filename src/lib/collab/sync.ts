@@ -37,7 +37,7 @@ export interface SyncDeps {
     doc(): CollabDoc;
     apply(incoming: CollabDoc): DroppedCell[];
     /**
-     * A coach reads only. In a star topology all traffic passes through the
+     * A viewer reads only. In a star topology all traffic passes through the
      * host, so refusing inbound writes here is sufficient enforcement.
      */
     readOnly?: boolean;

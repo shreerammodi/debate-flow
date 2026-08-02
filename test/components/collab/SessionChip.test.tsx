@@ -22,14 +22,14 @@ vi.mock("@/lib/collab/runtime", () => ({ disconnectPeer, endSession }));
 const ALEX: CollabPeerView = {
     endpointId: "alex-endpoint",
     name: "Alex",
-    role: "partner",
+    role: "editor",
     connectionType: "direct",
 };
 
 const RIN: CollabPeerView = {
     endpointId: "rin-endpoint",
     name: "Rin",
-    role: "coach",
+    role: "viewer",
     connectionType: "relayed",
 };
 
@@ -106,23 +106,23 @@ describe("SessionChip", () => {
         expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 
-    it("gives a partner the 'edit' badge and a coach 'view'", async () => {
+    it("badges an editor 'edit' and a viewer 'view'", async () => {
         const user = userEvent.setup();
         live();
         render(<SessionChip />);
         await user.click(screen.getByTestId("collab-chip"));
 
-        const [partner, coach] = screen.getAllByTestId("collab-peer-row");
-        expect(within(partner).getByText("Alex")).toBeInTheDocument();
-        expect(within(partner).getByTestId("collab-peer-role")).toHaveTextContent("edit");
-        expect(within(coach).getByText("Rin")).toBeInTheDocument();
-        expect(within(coach).getByTestId("collab-peer-role")).toHaveTextContent("view");
+        const [editor, viewer] = screen.getAllByTestId("collab-peer-row");
+        expect(within(editor).getByText("Alex")).toBeInTheDocument();
+        expect(within(editor).getByTestId("collab-peer-role")).toHaveTextContent("edit");
+        expect(within(viewer).getByText("Rin")).toBeInTheDocument();
+        expect(within(viewer).getByTestId("collab-peer-role")).toHaveTextContent("view");
     });
 
-    it("tells a coach their own side is view only", async () => {
+    it("tells a viewer their own side is view only", async () => {
         const user = userEvent.setup();
         live();
-        useCollabStore.getState().setSelfRole("coach");
+        useCollabStore.getState().setSelfRole("viewer");
         render(<SessionChip />);
         await user.click(screen.getByTestId("collab-chip"));
 

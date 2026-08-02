@@ -42,8 +42,13 @@ import {
     setLocalChangeListener,
 } from "./replica";
 import { dropSelfNote } from "./rfdSync";
-import { knownRoundPeers, rememberRoundPeers } from "./roundPeers";
-import { startCollabSession, type CollabPeer, type CollabSession } from "./session";
+import { knownRoundPeers, rememberRoundPeers, rememberRoundRole } from "./roundPeers";
+import {
+    startCollabSession,
+    type CollabPeer,
+    type CollabSession,
+    type SavedByPeer,
+} from "./session";
 import type { CollabDoc, Role } from "./types";
 
 let session: CollabSession | null = null;
@@ -79,7 +84,7 @@ function offerToSave(peers: CollabPeer[]): void {
         const name = contactName(contacts, peer.endpointId, peer.name);
         if (offered.get(peer.endpointId) === name) continue;
         offered.set(peer.endpointId, name);
-        toast(`Save ${name} as a ${peer.role}?`, {
+        toast(`Save ${name} as a partner?`, {
             id: `collab-save-${peer.endpointId}`,
             duration: 20_000,
             action: {
@@ -91,12 +96,40 @@ function offerToSave(peers: CollabPeer[]): void {
                 onClick: () =>
                     saveContact(peer.endpointId, {
                         name,
-                        role: peer.role,
                         ...(peer.relayUrl ? { relay: peer.relayUrl } : {}),
                     }),
             },
         });
     }
+}
+
+/**
+ * A peer said it saved this side, so this side saves them back.
+ *
+ * Only reachable over a connection this window already admitted to a round, so
+ * it is not a way for a stranger to write into the contact table. The corner
+ * says so, because a table that grew on its own is one a debater should be able
+ * to find and prune.
+ *
+ * A name already saved is left alone: it is this side's own word for that peer,
+ * and a partner must not be able to rename themselves out from under it.
+ */
+function saveBack(peer: SavedByPeer): void {
+    const contacts = useFlowStore.getState().contacts;
+    const saved = contactOf(contacts, peer.endpointId);
+    const name = contactName(contacts, peer.endpointId, peer.name);
+    if (saved) {
+        if (!peer.relayUrl || saved.relay === peer.relayUrl) return;
+        saveContact(peer.endpointId, { ...saved, relay: peer.relayUrl });
+        return;
+    }
+    saveContact(peer.endpointId, {
+        name,
+        ...(peer.relayUrl ? { relay: peer.relayUrl } : {}),
+    });
+    // Nothing left to ask, so the offer this side would have made is spent.
+    offered.set(peer.endpointId, name);
+    toast(`${name} saved you as a partner`, { id: `collab-saved-by-${peer.endpointId}` });
 }
 
 /**
@@ -120,7 +153,7 @@ function refreshContactRelays(peers: CollabPeer[]): void {
 
 /**
  * What this side may do, for the surfaces that have to stop offering an edit.
- * A coach learns it from the host's ack, which lands after the session is
+ * A viewer learns it from the host's ack, which lands after the session is
  * already up, so this is pushed rather than read once.
  */
 function publishRole(role: Role): void {
@@ -226,6 +259,7 @@ export async function startForRound(
             onRoleChanged: publishRole,
             contacts: () => useFlowStore.getState().contacts,
             onInvite: announceInvite,
+            onContact: saveBack,
         });
     } catch (err) {
         // A chip left saying "connecting" would outlast the corner message and
@@ -340,6 +374,32 @@ export async function endSession(): Promise<void> {
 }
 
 /**
+ * Lets go of everything holding the endpoint, for a window on its way out.
+ *
+ * Not `endSession`, which finishes by re-syncing the invite watch: with Listen
+ * for invites on that would bind an endpoint for a window that is closing.
+ * Nothing is re-bound here, and the idle listener is released too, because a
+ * window with no session still holds a share of the same endpoint.
+ *
+ * The stop is what puts the farewell on the wire, so the peers of a closed
+ * window see it leave at once rather than waiting out a QUIC timeout.
+ */
+export async function shutdownCollab(): Promise<void> {
+    const held = session;
+    session = null;
+    setLocalChangeListener(null);
+    setClaimHandler(null);
+    setCursorHandler(null);
+    offered.clear();
+    try {
+        await held?.stop();
+    } catch {
+        // The process is going away with the session either way.
+    }
+    await releaseInviteWatch();
+}
+
+/**
  * Hangs up on one peer. The rest of the session stays up: one partner leaving
  * is not the round ending.
  *
@@ -362,26 +422,41 @@ export async function disconnectPeer(endpointId: string): Promise<void> {
 
 /**
  * Dials a contact directly, with no ticket: their EndpointId already
- * authorizes, which is what a contact is for.
+ * authorizes, which is what a contact is for. The grade is this invitation's
+ * and is recorded on the round before anything is dialled, because opening a
+ * session for a round dials its remembered peers on the way up and a grade
+ * that arrived after that dial would be too late to apply to it.
  */
-export async function inviteContact(round: FlowRound, endpointId: string): Promise<void> {
+export async function inviteContact(
+    round: FlowRound,
+    endpointId: string,
+    role: Role,
+): Promise<void> {
     const live = session;
+    rememberRoundRole(round.id, endpointId, role);
     const held = live ?? (await startForRound(round, [endpointId]));
     if (!held) throw new Error("Turn on shared editing in Settings first");
-    rememberRoundPeers(round.id, [endpointId]);
     // Opening a session for this round dials the contact on the way up, and
     // that dial is the invitation. Dialling again would put a second notice on
     // their screen for one share.
     if (!live) return;
     if (held.peers().some((p) => p.endpointId === endpointId)) return;
     // A session was already up, so the contact is dialled onto it.
-    await held.invite(endpointId);
+    await held.invite(endpointId, role);
 }
 
-/** Saves a peer so the next round needs no ticket. Only ever from one click. */
+/**
+ * Saves a peer so the next round needs no ticket. Only ever from one click.
+ *
+ * A peer this side is connected to is told, so they save this side back and
+ * the pair is reachable in both directions. Admission is one-sided - a dial is
+ * only announced to a receiver who has the dialler saved - so without this a
+ * debater who saved their partner still could not invite them.
+ */
 export function saveContact(endpointId: string, contact: Contact): void {
     const store = useFlowStore.getState();
     store.setContacts(addContact(store.contacts, endpointId, contact));
+    session?.announceContact(endpointId);
 }
 
 /**

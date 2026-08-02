@@ -5,22 +5,8 @@ import { useState } from "react";
 import SettingRow from "@/components/settings/SettingRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { addContact, type Contacts, isEndpointId, removeContact } from "@/lib/collab/contacts";
-import type { Role } from "@/lib/collab/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-
-/** What each role may do, in the words the chip shows a debater. */
-const ROLE_OPTIONS: { value: Role; label: string }[] = [
-    { value: "partner", label: "edit" },
-    { value: "coach", label: "view" },
-];
 
 /** An EndpointId is a long key; a row shows the first eight characters. */
 const SHORT_ID = 8;
@@ -32,6 +18,10 @@ const SHORT_ID = 8;
  * contact is not only something a finished session leaves behind: each of them
  * sends the other the ID above and types it in here. The pair is then dialable
  * with no ticket for every round after.
+ *
+ * A row is a name and a key and nothing else. What a partner may do belongs to
+ * the round they are invited to and is chosen at the invitation, so there is
+ * nothing to grade here.
  */
 export default function ContactList() {
     const contacts = useFlowStore((s) => s.contacts);
@@ -87,40 +77,6 @@ export default function ContactList() {
                                     data-testid={`contact-name-${endpointId}`}
                                     className="h-8 min-w-0 flex-1"
                                 />
-                                <Select
-                                    value={contact.role}
-                                    // Base UI Select renders the raw value unless given a
-                                    // value->label map to resolve the trigger display.
-                                    items={ROLE_OPTIONS}
-                                    onValueChange={(value) =>
-                                        setContacts(
-                                            addContact(contacts, endpointId, {
-                                                ...contact,
-                                                role: value as Role,
-                                            }),
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger
-                                        size="sm"
-                                        aria-label={`Role for ${shown}`}
-                                        data-testid={`contact-role-${endpointId}`}
-                                        className="w-28 shrink-0"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {ROLE_OPTIONS.map((r) => (
-                                            <SelectItem
-                                                key={r.value}
-                                                value={r.value}
-                                                data-testid={`contact-role-${endpointId}-${r.value}`}
-                                            >
-                                                {r.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
                                 <span
                                     title={endpointId}
                                     className="text-muted-foreground shrink-0 font-mono text-[11px]"
@@ -161,8 +117,6 @@ function AddContact({
 }) {
     const [endpointId, setEndpointId] = useState("");
     const [name, setName] = useState("");
-    const [role, setRole] = useState<Role>("partner");
-
     const id = endpointId.trim();
     const known = id in contacts;
     const shaped = isEndpointId(id);
@@ -170,10 +124,9 @@ function AddContact({
 
     function add() {
         if (!ready) return;
-        onAdd(addContact(contacts, id, { name: name.trim(), role }));
+        onAdd(addContact(contacts, id, { name: name.trim() }));
         setEndpointId("");
         setName("");
-        setRole("partner");
     }
 
     return (
@@ -201,31 +154,6 @@ function AddContact({
                     data-testid="add-contact-id"
                     className="h-8 min-w-0 flex-1 font-mono text-[12px]"
                 />
-                <Select
-                    value={role}
-                    items={ROLE_OPTIONS}
-                    onValueChange={(value) => setRole(value as Role)}
-                >
-                    <SelectTrigger
-                        size="sm"
-                        aria-label="Role for the partner being added"
-                        data-testid="add-contact-role"
-                        className="w-28 shrink-0"
-                    >
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {ROLE_OPTIONS.map((r) => (
-                            <SelectItem
-                                key={r.value}
-                                value={r.value}
-                                data-testid={`add-contact-role-${r.value}`}
-                            >
-                                {r.label}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
                 <Button
                     type="button"
                     size="xs"

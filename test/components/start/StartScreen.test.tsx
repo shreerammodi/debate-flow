@@ -174,7 +174,7 @@ describe("an invitation on the start screen", () => {
     beforeEach(() => {
         joined.length = 0;
         useCollabStore.setState({ invites: [] });
-        useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+        useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex" } } });
     });
 
     it("shows nothing at all when nobody has invited this machine", () => {

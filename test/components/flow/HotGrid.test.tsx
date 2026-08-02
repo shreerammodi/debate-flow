@@ -606,7 +606,7 @@ describe("a partner's patch landing between the render and the load", () => {
  */
 describe("a spacer's read-only across a change of pad", () => {
     afterEach(() => {
-        useCollabStore.setState({ selfRole: "partner" });
+        useCollabStore.setState({ selfRole: "editor" });
         useFlowStore.setState({
             round: null,
             activeSheetId: null,
@@ -658,10 +658,10 @@ describe("a spacer's read-only across a change of pad", () => {
         expect(hot.getCellMeta(0, 0).readOnly).toBeFalsy();
     });
 
-    it("keeps a coach's own columns read-only on a padded pane", async () => {
+    it("keeps a viewer's own columns read-only on a padded pane", async () => {
         const { neg } = alignedPair();
         useFlowStore.setState({ activeSheetId: neg.id });
-        useCollabStore.setState({ selfRole: "coach" });
+        useCollabStore.setState({ selfRole: "viewer" });
 
         render(<HotGrid sheetId={neg.id} pane={1} />);
         const hot = await mounted();

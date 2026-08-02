@@ -11,6 +11,7 @@ const held = (
     heldAt = 1_000,
     sheetId = "s1",
     editing = true,
+    readOnly = false,
 ): Presence => ({
     endpointId,
     sheetId,
@@ -18,6 +19,7 @@ const held = (
     row,
     heldAt,
     editing,
+    readOnly,
 });
 
 const NAMES: Record<string, string> = { sam: "Sam", kim: "Kim" };
@@ -69,6 +71,33 @@ describe("presenceOn", () => {
     });
 });
 
+// A viewer reading along leaves a marker on every cell they scroll past, which
+// is noise to the side doing the writing, so the debater can turn it off.
+describe("presenceOn with viewer cursors turned off", () => {
+    const reader = held("kim", 5, 9, 1_000, "s1", false, true);
+    const writer = held("sam", 2, 4);
+
+    it("hides a read-only peer and keeps the one who can write", () => {
+        const list = [writer, reader];
+        expect(presenceOn(list, "s1", modelCol(5), 9, 1_000, false)).toBeNull();
+        expect(presenceOn(list, "s1", modelCol(2), 4, 1_000, false)!.endpointId).toBe("sam");
+    });
+
+    it("shows both when viewers are on, which is what an unasked call gets", () => {
+        const list = [writer, reader];
+        expect(presenceOn(list, "s1", modelCol(5), 9, 1_000, true)!.endpointId).toBe("kim");
+        expect(presenceOn(list, "s1", modelCol(5), 9, 1_000)!.endpointId).toBe("kim");
+        expect(presenceOn(list, "s1", modelCol(2), 4, 1_000)!.endpointId).toBe("sam");
+    });
+
+    // A viewer never claims a cell, so the setting can never hide a mark that
+    // would have refused a keystroke.
+    it("leaves the refusal hint alone, which takes no such setting", () => {
+        const claiming = held("kim", 5, 9, 1_000, "s1", true, true);
+        expect(lockLabel([claiming], "s1", modelCol(5), 9, 1_000, nameOf)).toBe("Kim");
+    });
+});
+
 describe("peerInitial", () => {
     it("is the first letter of the name, in upper case", () => {
         expect(peerInitial("Sam")).toBe("S");
@@ -77,7 +106,7 @@ describe("peerInitial", () => {
 
     it("skips leading punctuation and space", () => {
         expect(peerInitial("  rae")).toBe("R");
-        expect(peerInitial('"Coach"')).toBe("C");
+        expect(peerInitial('"Partner"')).toBe("P");
     });
 
     it("takes a digit, because a short EndpointId is what a nameless peer wears", () => {

@@ -12,7 +12,7 @@
  */
 
 import { resolveCardMirrorTextType } from "@/lib/bridge/cardmirror";
-import { resolveContacts } from "@/lib/collab/contacts";
+import { resolveContacts, type Contacts } from "@/lib/collab/contacts";
 import { COMMANDS } from "@/lib/commands/registry";
 import { fontLabel, resolveFontName } from "@/lib/fonts/registry";
 import { effectiveKeymap } from "@/lib/keymap/effective";
@@ -52,6 +52,8 @@ export interface ConfigFileShape {
     collab_relay: boolean;
     /** Whether an endpoint stays bound between rounds to hear invites. */
     collab_listen: boolean;
+    /** Whether a read-only peer's cursor is painted on the grid. */
+    collab_show_viewers: boolean;
     /**
      * What a shared round calls this side. Empty broadcasts the machine's own
      * name, which is why the hostname is never written into this file: it
@@ -63,7 +65,7 @@ export interface ConfigFileShape {
      * become TOML tables and stale keys under them are pruned, so removing a
      * contact in the app removes it from the file.
      */
-    contacts: Record<string, { name: string; role: string }>;
+    contacts: Contacts;
     /** null means "reset to theme default"; Rust removes the key from the file. */
     aff_color: string | null;
     neg_color: string | null;
@@ -138,6 +140,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         collab_enabled: s.collabEnabled,
         collab_relay: s.collabRelayEnabled,
         collab_listen: s.collabListenEnabled,
+        collab_show_viewers: s.collabShowViewers,
         collab_name: s.collabName,
         contacts: s.contacts,
         flows_dir: s.flowsDir,
@@ -195,6 +198,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         collabEnabled: bool(o.collab_enabled, false),
         collabRelayEnabled: bool(o.collab_relay, true),
         collabListenEnabled: bool(o.collab_listen, false),
+        collabShowViewers: bool(o.collab_show_viewers, true),
         collabName: typeof o.collab_name === "string" ? o.collab_name : "",
         contacts: resolveContacts(o.contacts),
         theme: resolveThemeMode(o.theme),

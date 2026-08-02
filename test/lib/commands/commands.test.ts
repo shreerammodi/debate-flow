@@ -440,7 +440,7 @@ describe("grid commands on a padded pane", () => {
 });
 
 describe("collab commands", () => {
-    const ALEX = { name: "Alex", role: "partner" } as const;
+    const ALEX = { name: "Alex" } as const;
 
     afterEach(() => {
         delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -461,7 +461,7 @@ describe("collab commands", () => {
     });
 });
 
-describe("a coach at the keyboard", () => {
+describe("a viewer at the keyboard", () => {
     afterEach(() => {
         useCollabStore.getState().reset();
     });
@@ -469,7 +469,7 @@ describe("a coach at the keyboard", () => {
     it("changes nothing about the round, and is told why", () => {
         loadRound();
         const before = useFlowStore.getState().round!.sheets.length;
-        useCollabStore.setState({ selfRole: "coach" });
+        useCollabStore.setState({ selfRole: "viewer" });
 
         executeCommand("sheet.newAff");
         executeCommand("sheet.newNeg");
@@ -484,7 +484,7 @@ describe("a coach at the keyboard", () => {
         // refused is the edit, and this proves the refusal is not everything.
         executeCommand("sheet.newAff");
         const second = useFlowStore.getState().activeSheetId;
-        useCollabStore.setState({ selfRole: "coach" });
+        useCollabStore.setState({ selfRole: "viewer" });
 
         executeCommand("sheet.prev");
         expect(useFlowStore.getState().activeSheetId).not.toBe(second);
@@ -494,7 +494,7 @@ describe("a coach at the keyboard", () => {
         expect(useFlowStore.getState().sidebarCollapsed).toBe(true);
     });
 
-    it("lets a partner do all of it, which is what makes the refusal the role", () => {
+    it("lets an editor do all of it, which is what makes the refusal the role", () => {
         loadRound();
         const before = useFlowStore.getState().round!.sheets.length;
 

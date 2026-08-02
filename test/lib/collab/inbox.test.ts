@@ -67,7 +67,7 @@ beforeEach(() => {
     joins.fail = null;
     joins.result = { roundId: "r1", hostEndpointId: ALEX, path: "/flows/r3.ebb", created: true };
     useCollabStore.getState().reset();
-    useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+    useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex" } } });
 });
 
 describe("announceInvite", () => {

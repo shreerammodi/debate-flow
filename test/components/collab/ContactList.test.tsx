@@ -18,8 +18,8 @@ const ALEX = "alexendpointid0000000000";
 const RIN = "rinendpointid00000000000";
 
 const TWO: Contacts = {
-    [ALEX]: { name: "Alex", role: "partner" },
-    [RIN]: { name: "Rin", role: "coach" },
+    [ALEX]: { name: "Alex" },
+    [RIN]: { name: "Rin" },
 };
 
 beforeEach(() => {
@@ -44,23 +44,20 @@ describe("ContactList", () => {
         await userEvent.type(field, "Alexis");
 
         expect(useFlowStore.getState().contacts).toEqual({
-            [ALEX]: { name: "Alexis", role: "partner" },
-            [RIN]: { name: "Rin", role: "coach" },
+            [ALEX]: { name: "Alexis" },
+            [RIN]: { name: "Rin" },
         });
     });
 
-    it("re-roles a contact from edit to view", async () => {
+    // What a partner may do is decided at the invitation, for that round only,
+    // so a saved contact carries no grade to set here.
+    it("offers no grade on a row at all", () => {
         useFlowStore.setState({ contacts: TWO });
         render(<ContactList />);
 
-        const role = screen.getByTestId(`contact-role-${ALEX}`);
-        expect(role).toHaveTextContent("edit");
-
-        await userEvent.click(role);
-        await userEvent.click(await screen.findByTestId(`contact-role-${ALEX}-coach`));
-
-        expect(useFlowStore.getState().contacts[ALEX]).toEqual({ name: "Alex", role: "coach" });
-        expect(useFlowStore.getState().contacts[RIN]).toEqual({ name: "Rin", role: "coach" });
+        const row = screen.getByTestId(`contact-row-${ALEX}`);
+        expect(screen.queryByTestId(`contact-role-${ALEX}`)).toBeNull();
+        expect(within(row).queryByRole("combobox")).toBeNull();
     });
 
     it("removes exactly the contact asked for", async () => {
@@ -69,7 +66,7 @@ describe("ContactList", () => {
 
         await userEvent.click(screen.getByTestId(`contact-remove-${ALEX}`));
 
-        expect(useFlowStore.getState().contacts).toEqual({ [RIN]: { name: "Rin", role: "coach" } });
+        expect(useFlowStore.getState().contacts).toEqual({ [RIN]: { name: "Rin" } });
         expect(screen.queryByTestId(`contact-row-${ALEX}`)).toBeNull();
         expect(screen.getByTestId(`contact-row-${RIN}`)).toBeInTheDocument();
     });
@@ -106,7 +103,7 @@ describe("adding a partner by hand", () => {
         await userEvent.type(screen.getByTestId("add-contact-id"), ID);
         await userEvent.click(screen.getByTestId("add-contact-save"));
 
-        expect(useFlowStore.getState().contacts[ID]).toEqual({ name: "Rin", role: "partner" });
+        expect(useFlowStore.getState().contacts[ID]).toEqual({ name: "Rin" });
     });
 
     it("empties the form so a second partner does not inherit the first", async () => {
@@ -142,25 +139,12 @@ describe("adding a partner by hand", () => {
     });
 
     it("refuses to add a second entry over a partner already saved", async () => {
-        useFlowStore.setState({ contacts: { [ID]: { name: "Rin", role: "partner" } } });
+        useFlowStore.setState({ contacts: { [ID]: { name: "Rin" } } });
         render(<ContactList />);
 
         await userEvent.type(screen.getByTestId("add-contact-name"), "Rin again");
         await userEvent.type(screen.getByTestId("add-contact-id"), ID);
         expect(screen.getByTestId("add-contact-known")).toHaveTextContent("Rin");
         expect(screen.getByTestId("add-contact-save")).toBeDisabled();
-    });
-
-    it("saves a coach as view", async () => {
-        render(<ContactList />);
-
-        await userEvent.type(screen.getByTestId("add-contact-name"), "Coach");
-        await userEvent.type(screen.getByTestId("add-contact-id"), ID);
-        screen.getByTestId("add-contact-role").focus();
-        await userEvent.keyboard("{Enter}");
-        await userEvent.click(await screen.findByTestId("add-contact-role-coach"));
-        await userEvent.click(screen.getByTestId("add-contact-save"));
-
-        expect(useFlowStore.getState().contacts[ID].role).toBe("coach");
     });
 });

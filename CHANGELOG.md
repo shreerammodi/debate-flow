@@ -44,12 +44,12 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   the command palette. The two of you flow one round together: every cell each
   of you writes reaches the other, the cell someone has an editor open on is
   marked so nobody types over it, and each of you keeps a real `.ebb` of your
-  own, so a dead laptop or a dead network costs nothing. A coach can be given
-  a view-only link instead. Switching it on does not connect you to anything.
-  ebb goes to the network when you share a round or join one, and at no other
-  time. Off, the app binds no endpoint, dials no peer, publishes no discovery
-  record, and contacts no relay, which is a tested invariant rather than a
-  promise.
+  own, so a dead laptop or a dead network costs nothing. A partner can be
+  invited to read the round rather than write to it. Switching it on does not
+  connect you to anything. ebb goes to the network when you share a round or
+  join one, and at no other time. Off, the app binds no endpoint, dials no
+  peer, publishes no discovery record, and contacts no relay, which is a
+  tested invariant rather than a promise.
 - **Listen for invites**, a second switch under Settings > Collaboration, off
   by default. On, ebb holds an endpoint open until you close the app. A saved
   partner can then offer you a round while you have no round open. Off, they
@@ -59,9 +59,20 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 - **Contacts.** After a session, one click saves that partner, and inviting
   them again needs no link at all: pick them from Invite a saved partner and
   they get a corner message offering the round, with a Join that is theirs to
-  press. Nobody you have not saved can put anything on your screen. Saved
-  partners are listed under Settings > Collaboration, where you can rename
-  them, change what they may do, or drop them.
+  press. Saving someone you are connected to saves you to them, so a pair only
+  has to do it once between them and either of you can invite the other after
+  that. Nobody you have not saved, and who has not saved you, can put anything
+  on your screen. Saved partners are listed under Settings > Collaboration,
+  where you can rename them or drop them.
+- **What a partner may do is decided per flow, when you invite them.** Invite a
+  saved partner offers Edit and View beside each name, with neither chosen for
+  you, and the round remembers the answer: the same person can be writing one
+  flow with you and reading another. A grant survives closing and reopening the
+  file, and promoting someone mid-round sticks.
+- **Show viewer cursors**, a switch under Settings > Collaboration, on by
+  default. It marks the cell a view-only partner is looking at. Off hides
+  those marks, leaving only the cells somebody is actually editing, which is
+  the quieter grid when a coach is reading along.
 - **Partners can be saved before the first round.** Settings > Collaboration
   shows Your ID, the one identity this install answers to, with a Copy beside
   it. Send it to a partner and they add you under Contacts by pasting it with
@@ -82,6 +93,8 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   mid-round.
 - A round remembers the partners it was shared with, so opening the file again
   reconnects to them silently, with no new invite.
+- Closing a window says so to the partners in the round, so they see you leave
+  at once instead of watching a connection that is already gone time out.
 - The session chip in the bottom-left corner reports the connection and lists
   who is in the round, with a way to drop one peer or end the session.
 - Right-clicking a cell that came in from CardMirror now offers "Jump to

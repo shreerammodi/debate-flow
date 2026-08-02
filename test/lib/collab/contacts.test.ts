@@ -14,7 +14,7 @@ import {
 const ALEX = "a1e0".repeat(16);
 const RIN = "b2f0".repeat(16);
 
-const saved: Contacts = { [ALEX]: { name: "Alex", role: "partner" } };
+const saved: Contacts = { [ALEX]: { name: "Alex" } };
 
 describe("resolveContacts", () => {
     it("keeps a well-formed table", () => {
@@ -28,19 +28,25 @@ describe("resolveContacts", () => {
     });
 
     it("drops an entry with no usable name rather than inventing one", () => {
-        expect(resolveContacts({ [ALEX]: { role: "partner" } })).toEqual({});
-        expect(resolveContacts({ [ALEX]: { name: "   ", role: "partner" } })).toEqual({});
+        expect(resolveContacts({ [ALEX]: {} })).toEqual({});
+        expect(resolveContacts({ [ALEX]: { name: "   " } })).toEqual({});
     });
 
-    it("drops an unknown role instead of defaulting it", () => {
-        // Defaulting here would hand edit rights to whatever the file said.
-        expect(resolveContacts({ [ALEX]: { name: "Alex", role: "admin" } })).toEqual({});
-        expect(resolveContacts({ [ALEX]: { name: "Alex" } })).toEqual({});
+    // Every entry a build before this one wrote carries a role, and the field
+    // is gone. Reading one costs that entry its role and never the partner it
+    // saves, or an upgrade empties the contact table on its first read.
+    it("keeps an entry still carrying a legacy role, minus the role", () => {
+        for (const role of ["partner", "admin"]) {
+            expect(resolveContacts({ [ALEX]: { name: "Alex", role } })).toEqual({
+                [ALEX]: { name: "Alex" },
+            });
+        }
     });
 
-    it("keeps a coach as a coach", () => {
-        const coach = { [ALEX]: { name: "Coach", role: "coach" } };
-        expect(resolveContacts(coach)).toEqual(coach);
+    it("keeps an entry with no role, which is every contact this build writes", () => {
+        expect(resolveContacts({ [ALEX]: { name: "Alex" } })).toEqual({
+            [ALEX]: { name: "Alex" },
+        });
     });
 
     /**
@@ -51,26 +57,26 @@ describe("resolveContacts", () => {
      * the contact reachable in the room.
      */
     it("keeps an https relay and drops anything else, keeping the contact", () => {
-        const homed = { [ALEX]: { name: "Alex", role: "partner", relay: "https://r.example/" } };
+        const homed = { [ALEX]: { name: "Alex", relay: "https://r.example/" } };
         expect(resolveContacts(homed)).toEqual(homed);
 
         const overlong = `https://r.example/${"a".repeat(256)}`;
         for (const relay of ["http://r.example/", "ws://r.example/", "", 7, overlong]) {
-            expect(resolveContacts({ [ALEX]: { name: "Alex", role: "partner", relay } })).toEqual({
-                [ALEX]: { name: "Alex", role: "partner" },
+            expect(resolveContacts({ [ALEX]: { name: "Alex", relay } })).toEqual({
+                [ALEX]: { name: "Alex" },
             });
         }
     });
 
     it("keeps the good entries beside a bad one", () => {
-        const mixed = { [ALEX]: { name: "Alex", role: "partner" }, [RIN]: { name: "" } };
+        const mixed = { [ALEX]: { name: "Alex" }, [RIN]: { name: "" } };
         expect(Object.keys(resolveContacts(mixed))).toEqual([ALEX]);
     });
 
     it("drops an entry whose key is not a plausible endpoint id", () => {
-        expect(resolveContacts({ "": { name: "Alex", role: "partner" } })).toEqual({});
-        expect(resolveContacts({ alex: { name: "Alex", role: "partner" } })).toEqual({});
-        expect(resolveContacts({ [`${ALEX}!`]: { name: "Alex", role: "partner" } })).toEqual({});
+        expect(resolveContacts({ "": { name: "Alex" } })).toEqual({});
+        expect(resolveContacts({ alex: { name: "Alex" } })).toEqual({});
+        expect(resolveContacts({ [`${ALEX}!`]: { name: "Alex" } })).toEqual({});
     });
 
     // A config.toml is hand-editable, and a key in it decides who counts as a
@@ -78,9 +84,9 @@ describe("resolveContacts", () => {
     // a plain object assigns through the setter rather than storing.
     it("assigns nothing through a prototype key", () => {
         const raw: unknown = JSON.parse(
-            `{"__proto__":{"name":"Mallory","role":"partner"},` +
-                `"constructor":{"name":"Mallory","role":"partner"},` +
-                `"${ALEX}":{"name":"Alex","role":"partner"}}`,
+            `{"__proto__":{"name":"Mallory"},` +
+                `"constructor":{"name":"Mallory"},` +
+                `"${ALEX}":{"name":"Alex"}}`,
         );
         const table = resolveContacts(raw);
         expect(Object.keys(table)).toEqual([ALEX]);
@@ -94,17 +100,17 @@ describe("resolveContacts", () => {
 
 describe("addContact", () => {
     it("adds one, keyed by endpoint id", () => {
-        expect(addContact({}, ALEX, { name: "Alex", role: "partner" })).toEqual(saved);
+        expect(addContact({}, ALEX, { name: "Alex" })).toEqual(saved);
     });
 
     it("replaces the entry for a peer already saved, rather than duplicating", () => {
-        const renamed = addContact(saved, ALEX, { name: "Alexis", role: "coach" });
+        const renamed = addContact(saved, ALEX, { name: "Alexis" });
         expect(Object.keys(renamed)).toHaveLength(1);
-        expect(renamed[ALEX]).toEqual({ name: "Alexis", role: "coach" });
+        expect(renamed[ALEX]).toEqual({ name: "Alexis" });
     });
 
     it("does not mutate the table it was given", () => {
-        addContact(saved, "other", { name: "Sam", role: "partner" });
+        addContact(saved, "other", { name: "Sam" });
         expect(Object.keys(saved)).toEqual([ALEX]);
     });
 });

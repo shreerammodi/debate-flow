@@ -19,6 +19,7 @@ const at = (
     heldAt = 0,
     sheetId = "s1",
     editing = true,
+    readOnly = false,
 ): Presence => ({
     endpointId,
     sheetId,
@@ -26,6 +27,7 @@ const at = (
     row,
     heldAt,
     editing,
+    readOnly,
 });
 
 describe("claim", () => {

@@ -290,11 +290,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // The selector returns a number, so a render only follows a change in it,
     // and that render is what reloads the pane when the setting is flipped.
     const spacers = useFlowStore((s) => spacerCount(s.round, sheetId, s.alignSpeeches));
-    // A coach reads the flow; the host drops their writes, so text typed here
+    // A viewer reads the flow; the host drops their writes, so text typed here
     // would vanish on the next merge. Refusing the keystroke is honest where
     // silently losing it is not, and the same rule takes away the context menu,
     // whose entries all edit the sheet.
-    const viewOnly = useCollabStore((s) => s.selfRole === "coach");
+    const viewOnly = useCollabStore((s) => s.selfRole === "viewer");
+    const showViewers = useFlowStore((s) => s.collabShowViewers);
     const isFocused = splitSheetId == null || focusedPane === pane;
     const hotRef = useRef<HotTableRef>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
@@ -415,6 +416,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     useEffect(() => {
         return onPresenceChanged(() => hotRef.current?.hotInstance?.render());
     }, []);
+
+    // Turning viewers off has to take the marks already on screen with it, and
+    // presence itself has not changed, so nothing else repaints.
+    useEffect(() => {
+        hotRef.current?.hotInstance?.render();
+    }, [showViewers]);
 
     useEffect(() => {
         return () => clearTimeout(lockHintTimer.current ?? undefined);
@@ -722,7 +729,18 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // Handsontable reuses TD elements and resets className alone, so a
             // stale letter would outlive the peer moving away.
             const sid = currentSheetIdRef.current;
-            const peer = sid ? presenceOn(getPresences(), sid, at, row, Date.now()) : null;
+            const here = getPresences();
+            const peer =
+                sid && here.length > 0
+                    ? presenceOn(
+                          here,
+                          sid,
+                          at,
+                          row,
+                          Date.now(),
+                          useFlowStore.getState().collabShowViewers,
+                      )
+                    : null;
             if (peer) {
                 TD.classList.add(PEER_CLASS);
                 if (peer.editing) TD.classList.add(LOCK_CLASS);
@@ -1152,7 +1170,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // into meta it keeps between renders, so the answer has to be total: a
     // cell outside the pad that answered `{}` would keep a refusal laid down
     // while the pad was wider, and the load that narrows the pad clears no
-    // cell state. The coach's clause is what keeps a `false` here from
+    // cell state. The viewer's clause is what keeps a `false` here from
     // overriding the pane-wide readOnly the same role sets.
     const cellRule = useCallback(
         (_row: number, col: number) => ({

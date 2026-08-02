@@ -75,6 +75,13 @@ export type WireMessage =
      * keystrokes.
      */
     | { type: "cursor"; cell: CellRef | null }
+    /**
+     * The sender has saved this side as a partner, so this side saves them
+     * back and the pair is reachable in both directions. Carries the name the
+     * sender goes by, which is a suggestion: a name the receiver already saved
+     * is the receiver's own word and wins.
+     */
+    | { type: "contact"; name?: string }
     | { type: "bye" };
 
 /**
@@ -97,7 +104,7 @@ function isField(value: unknown): value is string {
     return typeof value === "string" && value.length <= MAX_FIELD;
 }
 
-function isOptionalField(value: unknown): boolean {
+function isOptionalField(value: unknown): value is string | undefined {
     return value === undefined || isField(value);
 }
 
@@ -297,6 +304,12 @@ export function parseWireMessage(raw: unknown): WireMessage | null {
         case "presence":
         case "cursor":
             return isPosition(raw) ? raw : null;
+        case "contact":
+            // Rebuilt rather than passed through, so nothing else a sender put
+            // on the object survives into a message the app treats as one.
+            return isOptionalField(raw.name)
+                ? { type: "contact", ...(raw.name === undefined ? {} : { name: raw.name }) }
+                : null;
         case "bye":
             return { type: "bye" };
         default:

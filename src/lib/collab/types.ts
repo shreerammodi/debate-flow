@@ -20,12 +20,19 @@ export interface Register {
     stamp: Stamp;
 }
 
-/** A peer's authority over the document. `coach` reads only. */
-export type Role = "partner" | "coach";
+/**
+ * What a peer may do to one round. A viewer reads it and writes nothing.
+ *
+ * Per round and never per peer: the same partner is an editor on the case a
+ * pair is building together and a viewer on the one they are only being shown,
+ * so the grant belongs to the round that made it and not to a row in the
+ * contact table.
+ */
+export type Role = "editor" | "viewer";
 
-/** A role off the wire, a ticket, or a saved contact, none of them trusted. */
+/** A role off the wire, a ticket, or a sidecar, none of them trusted. */
 export function isRole(value: unknown): value is Role {
-    return value === "partner" || value === "coach";
+    return value === "editor" || value === "viewer";
 }
 
 export interface CollabCell {

@@ -10,7 +10,7 @@ import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
 import {
     forgetRoundPeers,
-    knownRoundCoaches,
+    knownRoundViewers,
     knownRoundPeers,
     knownRoundRelays,
     rememberRoundPeers,
@@ -69,7 +69,7 @@ async function hostWithTicket(): Promise<string> {
         appVersion: "0.11.0",
         ...side(shared),
     }))!;
-    return encodeTicket(await host.share("partner"));
+    return encodeTicket(await host.share("editor"));
 }
 
 beforeEach(async () => {
@@ -123,7 +123,7 @@ describe("joinRound", () => {
             ...side(shared),
             contacts: () => ({}),
         }))!;
-        const ticket = encodeTicket(await host.share("partner"));
+        const ticket = encodeTicket(await host.share("editor"));
 
         const watched: PeerLinkFactory = async (config) => {
             const link = await net.create("sam")(config);
@@ -216,7 +216,7 @@ describe("joinRound", () => {
                 ticket: encodeTicket({
                     endpointId: ALEX,
                     roundId: shared.id,
-                    role: "partner",
+                    role: "editor",
                     secret: "s".repeat(24),
                     relay: true,
                 }),
@@ -237,7 +237,7 @@ describe("joinRound", () => {
             ticket: encodeTicket({
                 endpointId: ALEX,
                 roundId: "r",
-                role: "partner",
+                role: "editor",
                 secret: "s".repeat(24),
                 relay: false,
             }),
@@ -265,7 +265,7 @@ describe("joining a contact's invitation", () => {
             appVersion: "0.11.0",
             ...side(shared),
         }))!;
-        await host.invite("sam").catch(() => {
+        await host.invite("sam", "editor").catch(() => {
             // Sam has nothing bound to answer with, which is the state a
             // debater is in between the corner message and the Join.
         });
@@ -392,7 +392,7 @@ describe("what a joined round remembers", () => {
         hostSide.edit(sheetId, 0, 1, "then the CP");
 
         const joined = await joinRound({
-            ticket: encodeTicket(await host.share("partner")),
+            ticket: encodeTicket(await host.share("editor")),
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,
@@ -452,7 +452,7 @@ describe("what a joined round remembers", () => {
         }))!;
 
         const joined = await joinRound({
-            ticket: encodeTicket(await host.share("partner")),
+            ticket: encodeTicket(await host.share("editor")),
             createLink: net.create("sam"),
             appVersion: "0.11.0",
             fs,
@@ -466,31 +466,31 @@ describe("what a joined round remembers", () => {
 // A join dials a round other than the one on screen, and it has nowhere but
 // this module to record the host of a round that already exists on disk. What
 // it must not do is spend the open round's record doing it: the open round's
-// grades are the whole of what admits a coach as a coach on the next open.
+// grades are the whole of what admits a viewer as a viewer on the next open.
 describe("a join of one round beside another that is open", () => {
     /** The round on screen, seeded and knowing one peer it graded read-only. */
-    async function openRoundWithCoach(): Promise<{ round: FlowRound; text: string }> {
+    async function openRoundWithViewer(): Promise<{ round: FlowRound; text: string }> {
         const round = makeFlowRound({});
         const text = serializeFlow(round);
         await recoverReplica(round, text);
-        rememberRoundRole(round.id, KIM, "coach");
+        rememberRoundRole(round.id, KIM, "viewer");
         return { round, text };
     }
 
     it("leaves the open round's peers and read-only grades where they were", async () => {
         const ticket = await hostWithTicket();
-        const { round } = await openRoundWithCoach();
+        const { round } = await openRoundWithViewer();
 
         await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
 
         expect(knownRoundPeers(round.id)).toEqual([KIM]);
-        expect(knownRoundCoaches(round.id)).toEqual([KIM]);
+        expect(knownRoundViewers(round.id)).toEqual([KIM]);
         expect(knownRoundPeers(shared.id)).toContain(ALEX);
     });
 
-    it("leaves a grade intact on disk, so the coach is still a coach after a restart", async () => {
+    it("leaves a grade intact on disk, so the viewer is still a viewer after a restart", async () => {
         const ticket = await hostWithTicket();
-        const { round, text } = await openRoundWithCoach();
+        const { round, text } = await openRoundWithViewer();
 
         await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
         // The autosave the open round takes before anyone navigates away.
@@ -500,16 +500,16 @@ describe("a join of one round beside another that is open", () => {
         forgetRoundPeers();
         clearReplica();
         expect(await recoverReplica(round, text)).toEqual([KIM]);
-        expect(knownRoundCoaches(round.id)).toEqual([KIM]);
+        expect(knownRoundViewers(round.id)).toEqual([KIM]);
     });
 
     // The runtime re-adds the live peers under the round's own id on every
     // peer-view change. A wiped slot refilled that way is not the fail-closed
     // loss it looks like: membership with no grade beside it reads as the
-    // wider role, so what comes back off the sidecar is a promoted coach.
-    it("does not let the next peer-view tick promote the open round's coach", async () => {
+    // wider role, so what comes back off the sidecar is a promoted viewer.
+    it("does not let the next peer-view tick promote the open round's viewer", async () => {
         const ticket = await hostWithTicket();
-        const { round, text } = await openRoundWithCoach();
+        const { round, text } = await openRoundWithViewer();
 
         await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
         rememberRoundPeers(round.id, [KIM]);
@@ -518,7 +518,7 @@ describe("a join of one round beside another that is open", () => {
         forgetRoundPeers();
         clearReplica();
         expect(await recoverReplica(round, text)).toEqual([KIM]);
-        expect(knownRoundCoaches(round.id)).toEqual([KIM]);
+        expect(knownRoundViewers(round.id)).toEqual([KIM]);
     });
 
     // The session grades a peer under its own round id, which after a join is
@@ -530,13 +530,13 @@ describe("a join of one round beside another that is open", () => {
         await recoverReplica(round, text);
 
         await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
-        rememberRoundRole(round.id, KIM, "coach");
+        rememberRoundRole(round.id, KIM, "viewer");
         await persistReplica(round, text);
 
         forgetRoundPeers();
         clearReplica();
         await recoverReplica(round, text);
-        expect(knownRoundCoaches(round.id)).toEqual([KIM]);
+        expect(knownRoundViewers(round.id)).toEqual([KIM]);
     });
 });
 
@@ -555,19 +555,19 @@ describe("a ticket for a round this install already holds", () => {
         return encodeTicket({
             endpointId: ALEX,
             roundId: round.id,
-            role: "partner",
+            role: "editor",
             secret: "s".repeat(24),
             relay: true,
         });
     }
 
-    /** The debater's own copy of the round on this disk, knowing one coach. */
+    /** The debater's own copy of the round on this disk, knowing one viewer. */
     async function ownCopy(): Promise<string> {
         const dir = (await fs.locations()).flowsDir;
         const path = await fs.createFlow(dir, "round.ebb", serializeFlow(shared));
         await saveRecents(fs, [{ path, openedAt: 1 }]);
         await recoverReplica(shared, serializeFlow(shared));
-        rememberRoundRole(shared.id, KIM, "coach");
+        rememberRoundRole(shared.id, KIM, "viewer");
         return path;
     }
 
@@ -585,7 +585,7 @@ describe("a ticket for a round this install already holds", () => {
 
         expect(result).toBeNull();
         expect(knownRoundPeers(shared.id)).toEqual([KIM]);
-        expect(knownRoundCoaches(shared.id)).toEqual([KIM]);
+        expect(knownRoundViewers(shared.id)).toEqual([KIM]);
         expect(await sidecar.read(shared.id)).toBeNull();
     });
 
@@ -610,7 +610,7 @@ describe("a ticket for a round this install already holds", () => {
         forgetRoundPeers();
         clearReplica();
         expect(await recoverReplica(shared, text)).toEqual([KIM]);
-        expect(knownRoundCoaches(shared.id)).toEqual([KIM]);
+        expect(knownRoundViewers(shared.id)).toEqual([KIM]);
     });
 
     it("names the round the way the debater knows it, and who is asking", async () => {
@@ -653,6 +653,6 @@ describe("a ticket for a round this install already holds", () => {
         expect(result!.created).toBe(false);
         expect(result!.path).toBe(path);
         expect(knownRoundPeers(shared.id)).toEqual([KIM, ALEX]);
-        expect(knownRoundCoaches(shared.id)).toEqual([KIM]);
+        expect(knownRoundViewers(shared.id)).toEqual([KIM]);
     });
 });

@@ -58,7 +58,7 @@ describe("recoverReplica", () => {
                 roundId: round.id,
                 flowHash: hashText(text),
                 peers: [],
-                coaches: [],
+                viewers: [],
                 relays: {},
                 doc,
             }),
@@ -76,7 +76,7 @@ describe("recoverReplica", () => {
                 roundId: round.id,
                 flowHash: "stale000",
                 peers: [],
-                coaches: [],
+                viewers: [],
                 relays: {},
                 doc,
             }),
@@ -111,7 +111,7 @@ describe("recoverReplica", () => {
                 roundId: round.id,
                 flowHash: hashText(text),
                 peers: [SAM, KIM],
-                coaches: [],
+                viewers: [],
                 relays: {},
                 doc: seedDoc(round),
             }),
@@ -131,7 +131,7 @@ describe("recoverReplica", () => {
                 roundId: round.id,
                 flowHash: hashText(text),
                 peers: [SAM],
-                coaches: [],
+                viewers: [],
                 relays: {},
                 doc: seedDoc(round),
             }),
@@ -161,7 +161,7 @@ describe("persistReplica", () => {
                 roundId: round.id,
                 flowHash: hashText(text),
                 peers: [SAM],
-                coaches: [],
+                viewers: [],
                 relays: {},
                 doc: seedDoc(round),
             }),
@@ -172,9 +172,9 @@ describe("persistReplica", () => {
         expect(written!.peers).toEqual([SAM]);
     });
 
-    // The grant lived only in the contact table, so removing a coach there
-    // promoted them to partner the next time the round opened.
-    it("carries a read-only grant forward, so a coach is not promoted on the next open", async () => {
+    // The grant lived only in the contact table, so removing a viewer there
+    // promoted them to editor the next time the round opened.
+    it("carries a read-only grant forward, so a viewer is not promoted on the next open", async () => {
         const text = serializeFlow(round);
         fs.files.set(
             round.id,
@@ -182,7 +182,7 @@ describe("persistReplica", () => {
                 roundId: round.id,
                 flowHash: hashText(text),
                 peers: [SAM, KIM],
-                coaches: [KIM],
+                viewers: [KIM],
                 relays: {},
                 doc: seedDoc(round),
             }),
@@ -191,7 +191,7 @@ describe("persistReplica", () => {
         await persistReplica(round, text);
         const written = parseSidecar(fs.files.get(round.id)!, round.id, hashText(text));
         expect(written!.peers).toEqual([SAM, KIM]);
-        expect(written!.coaches).toEqual([KIM]);
+        expect(written!.viewers).toEqual([KIM]);
     });
 
     it("heals a drifted sheet before it writes", async () => {

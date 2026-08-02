@@ -18,15 +18,25 @@ export const PEER_CLASS = "ebb-peer";
 /** Marks a cell a peer has an editor open on, which also wears PEER_CLASS. */
 export const LOCK_CLASS = "ebb-locked";
 
-/** The peer on this cell, or null when nobody is. */
+/**
+ * The peer on this cell, or null when nobody is.
+ *
+ * `showViewers` is the debater's own answer to a read-only peer's cursor: a
+ * viewer reading along leaves a marker on every cell they scroll past, which is
+ * noise to the side doing the writing. A viewer never claims a cell, so turning
+ * them off can never hide a mark that would have refused a keystroke.
+ */
 export function presenceOn(
     list: readonly Presence[],
     sheetId: string,
     col: ModelCol,
     row: number,
     now: number,
+    showViewers = true,
 ): Presence | null {
-    return presenceAt(expire(list, now), sheetId, col, row);
+    const at = presenceAt(expire(list, now), sheetId, col, row);
+    if (at?.readOnly && !showViewers) return null;
+    return at;
 }
 
 /**

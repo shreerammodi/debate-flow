@@ -15,7 +15,7 @@ const SECRET = "s".repeat(24);
 function policy(over: Partial<HostPolicy> = {}): HostPolicy {
     return {
         roundId: "round_x_1",
-        pending: { secret: SECRET, role: "partner" },
+        pending: { secret: SECRET, role: "editor" },
         knownPeers: [],
         roles: {},
         ...over,
@@ -29,7 +29,7 @@ function hello(over: Partial<Extract<WireMessage, { type: "hello" }>> = {}): Wir
         app: "0.11.0",
         endpointId: "guest-1",
         roundId: "round_x_1",
-        role: "partner",
+        role: "editor",
         capabilities: [],
         ...over,
     };
@@ -40,20 +40,20 @@ describe("helloFrom", () => {
         const msg = helloFrom({
             endpointId: "me",
             roundId: "round_x_1",
-            role: "partner",
+            role: "editor",
             appVersion: "0.11.0",
         });
         expect(msg).toMatchObject({ type: "hello", protocol: PROTOCOL_MAJOR, app: "0.11.0" });
     });
 
     it("carries a ticket secret only when there is one", () => {
-        const base = { endpointId: "me", roundId: "r", role: "partner" as const, appVersion: "1" };
+        const base = { endpointId: "me", roundId: "r", role: "editor" as const, appVersion: "1" };
         expect(helloFrom(base)).not.toHaveProperty("ticket");
         expect(helloFrom({ ...base, ticket: SECRET })).toHaveProperty("ticket", SECRET);
     });
 
     it("carries a name only when this side has one to broadcast", () => {
-        const base = { endpointId: "me", roundId: "r", role: "partner" as const, appVersion: "1" };
+        const base = { endpointId: "me", roundId: "r", role: "editor" as const, appVersion: "1" };
         expect(helloFrom(base)).not.toHaveProperty("name");
         expect(helloFrom({ ...base, name: "" })).not.toHaveProperty("name");
         expect(helloFrom({ ...base, name: "Rin" })).toHaveProperty("name", "Rin");
@@ -63,7 +63,7 @@ describe("helloFrom", () => {
 describe("admit", () => {
     it("accepts a first join that presents the secret, and spends it", () => {
         const got = admit(hello({ ticket: SECRET }), policy(), "guest-1");
-        expect(got).toEqual({ ok: true, role: "partner", spendSecret: true });
+        expect(got).toEqual({ ok: true, role: "editor", spendSecret: true });
     });
 
     it("refuses the same secret a second time", () => {
@@ -73,9 +73,9 @@ describe("admit", () => {
     });
 
     it("accepts a known peer with no secret at all, which is what makes reconnect silent", () => {
-        const known = policy({ knownPeers: ["sam"], roles: { sam: "partner" } });
+        const known = policy({ knownPeers: ["sam"], roles: { sam: "editor" } });
         const got = admit(hello({ endpointId: "sam" }), known, "sam");
-        expect(got).toEqual({ ok: true, role: "partner", spendSecret: false });
+        expect(got).toEqual({ ok: true, role: "editor", spendSecret: false });
     });
 
     it("refuses an unknown peer with no secret, and shows nothing", () => {
@@ -123,7 +123,7 @@ describe("admit", () => {
         expect(admit(skewed, held, "guest-1")).toMatchObject({ ok: false });
         expect(admit(hello({ ticket: SECRET }), held, "guest-1")).toEqual({
             ok: true,
-            role: "partner",
+            role: "editor",
             spendSecret: true,
         });
     });
@@ -145,25 +145,25 @@ describe("admit", () => {
 
     // The host decides what a ticket grants. A guest that says otherwise is
     // saying it about somebody else's decision.
-    it("admits a coach ticket as a coach, whatever the guest calls itself", () => {
-        const coachTicket = policy({ pending: { secret: SECRET, role: "coach" } });
-        expect(admit(hello({ role: "coach", ticket: SECRET }), coachTicket, "guest-1")).toEqual({
+    it("admits a viewer ticket as a viewer, whatever the guest calls itself", () => {
+        const viewerTicket = policy({ pending: { secret: SECRET, role: "viewer" } });
+        expect(admit(hello({ role: "viewer", ticket: SECRET }), viewerTicket, "guest-1")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: true,
         });
-        expect(admit(hello({ role: "partner", ticket: SECRET }), coachTicket, "guest-1")).toEqual({
+        expect(admit(hello({ role: "editor", ticket: SECRET }), viewerTicket, "guest-1")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: true,
         });
     });
 
     it("remembers what a peer was admitted as, so a reconnect cannot upgrade it", () => {
-        const known = policy({ knownPeers: ["sam"], roles: { sam: "coach" } });
-        expect(admit(hello({ endpointId: "sam", role: "partner" }), known, "sam")).toEqual({
+        const known = policy({ knownPeers: ["sam"], roles: { sam: "viewer" } });
+        expect(admit(hello({ endpointId: "sam", role: "editor" }), known, "sam")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: false,
         });
     });
@@ -176,24 +176,24 @@ describe("admit", () => {
         const ungraded = policy({ pending: null, knownPeers: ["sam"], roles: {} });
         expect(admit(hello({ endpointId: "sam" }), ungraded, "sam")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: false,
         });
     });
 
     // `roles` is indexed by a string the far side's key produced, and a plain
     // index walks the prototype chain: a function is neither a role nor absent,
-    // so `?? "coach"` would not fire and the grant would read as partner.
+    // so `?? "viewer"` would not fire and the grant would read as editor.
     it("reads a grant nobody made as no grant, not as whatever the prototype says", () => {
         const proto = policy({ pending: null, knownPeers: ["toString", "constructor"] });
         expect(admit(hello({ endpointId: "toString" }), proto, "toString")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: false,
         });
         expect(admit(hello({ endpointId: "constructor" }), proto, "constructor")).toEqual({
             ok: true,
-            role: "coach",
+            role: "viewer",
             spendSecret: false,
         });
     });

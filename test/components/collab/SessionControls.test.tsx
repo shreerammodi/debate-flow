@@ -57,7 +57,7 @@ describe("SessionControls", () => {
         expect(screen.getByTestId("session-invite")).toBeDisabled();
 
         act(() => {
-            useFlowStore.setState({ contacts: { alex: { name: "Alex", role: "partner" } } });
+            useFlowStore.setState({ contacts: { alex: { name: "Alex" } } });
         });
         rerender(<SessionControls />);
         expect(screen.getByTestId("session-invite")).not.toBeDisabled();

@@ -54,7 +54,7 @@ beforeEach(async () => {
     useFlowStore.setState({
         collabEnabled: true,
         collabRelayEnabled: true,
-        contacts: { sam: { name: "Sam", role: "partner" } },
+        contacts: { sam: { name: "Sam" } },
     });
 });
 

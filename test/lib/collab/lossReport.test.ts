@@ -12,7 +12,7 @@ const buried = (text: string, writtenBy: string, deletedBy: string): DroppedCell
     deletedBy,
 });
 
-const contacts = { sam: { name: "Sam", role: "partner" as const } };
+const contacts = { sam: { name: "Sam" } };
 
 describe("lossMessage", () => {
     it("says nothing when a merge buried nothing", () => {
@@ -102,7 +102,7 @@ describe("the live apply path", () => {
         const result = merge(getReplica()!, theirs);
 
         expect(result.dropped.length).toBeGreaterThan(0);
-        const msg = live({ sam: { name: "Sam", role: "partner" } }, result.dropped, replicaActor());
+        const msg = live({ sam: { name: "Sam" } }, result.dropped, replicaActor());
         expect(msg).toContain("Sam deleted a row over your");
         expect(msg).toContain("perm do both");
     });

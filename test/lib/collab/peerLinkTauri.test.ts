@@ -365,7 +365,7 @@ describe("a message that is not the shape it claims", () => {
         app: "0.11.0",
         endpointId: "sam",
         roundId: "round_x_1",
-        role: "partner",
+        role: "editor",
         capabilities: [],
     };
 
@@ -440,6 +440,29 @@ describe("a message that is not the shape it claims", () => {
         }
         expect(await heardFrom({ type: "presence", cell })).toHaveLength(1);
         expect(await heardFrom({ type: "presence", cell: null })).toHaveLength(1);
+    });
+
+    // The sender saved this side as a partner, and this side saves them back.
+    // The name is optional, because a peer that never set one still says so.
+    it("takes a contact announcement, with or without a name", async () => {
+        expect(await heardFrom({ type: "contact", name: "Sam" })).toEqual([
+            { type: "contact", name: "Sam" },
+        ]);
+        expect(await heardFrom({ type: "contact" })).toEqual([{ type: "contact" }]);
+    });
+
+    // Rebuilt rather than passed through: the handler saves a peer off this
+    // message, so anything else the sender hung on the object must not reach it.
+    it("carries nothing but the name off a contact announcement", async () => {
+        expect(
+            await heardFrom({ type: "contact", name: "Sam", relayUrl: "https://r.example/" }),
+        ).toEqual([{ type: "contact", name: "Sam" }]);
+    });
+
+    it("drops a contact whose name is not a field a display could hold", async () => {
+        expect(await heardFrom({ type: "contact", name: 7 })).toEqual([]);
+        expect(await heardFrom({ type: "contact", name: null })).toEqual([]);
+        expect(await heardFrom({ type: "contact", name: "x".repeat(257) })).toEqual([]);
     });
 
     it("drops a message of no variant at all", async () => {

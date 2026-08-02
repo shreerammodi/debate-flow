@@ -93,8 +93,8 @@ describe("RfdDrawer", () => {
             loadPeers(
                 { [SAM]: "neg on case", [RAE]: "aff on T" },
                 {
-                    [RAE]: { name: "Rae", role: "coach" },
-                    [SAM]: { name: "Sam", role: "partner" },
+                    [RAE]: { name: "Rae" },
+                    [SAM]: { name: "Sam" },
                 },
             );
             await openPreview();
@@ -175,7 +175,7 @@ describe("RfdDrawer", () => {
         });
 
         it("keeps peer text out of the edit pane", async () => {
-            loadPeers({ [RAE]: "a peer wrote this" }, { [RAE]: { name: "Rae", role: "coach" } });
+            loadPeers({ [RAE]: "a peer wrote this" }, { [RAE]: { name: "Rae" } });
             const { container } = renderDrawer();
 
             const editor = container.querySelector(".cm-content")!;

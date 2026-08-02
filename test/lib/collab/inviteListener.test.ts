@@ -12,7 +12,7 @@ const ALEX = "alex";
 const STRANGER = "who";
 
 const net = createMemoryNet();
-const contacts: Contacts = { [ALEX]: { name: "Alex", role: "partner" } };
+const contacts: Contacts = { [ALEX]: { name: "Alex" } };
 
 let heard: InviteNotice[];
 let openRound: string | null;
@@ -60,7 +60,7 @@ async function offer(from: string, label: string, roundId = "their-round"): Prom
         helloFrom({
             endpointId: from,
             roundId,
-            role: "partner",
+            role: "editor",
             appVersion: "0.11.0",
             label,
         }),
@@ -236,7 +236,7 @@ describe("the contact table it consults", () => {
     it("is read at the moment of the dial, not at bind", async () => {
         const table: Contacts = {};
         await listener(table);
-        table[ALEX] = { name: "Alex", role: "partner" };
+        table[ALEX] = { name: "Alex" };
         await offer(ALEX, "Round 3");
         expect(heard.map((n) => n.endpointId)).toEqual([ALEX]);
     });

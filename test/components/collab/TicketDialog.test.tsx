@@ -40,7 +40,7 @@ beforeEach(() => {
         rejoin: null,
         resolve: null,
     });
-    useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } });
+    useFlowStore.setState({ contacts: { [ALEX]: { name: "Alex" } } });
 });
 
 describe("TicketDialog", () => {

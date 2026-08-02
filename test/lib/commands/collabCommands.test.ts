@@ -3,9 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as CollabPeerLink from "@/lib/collab/peerLink";
 import type { PeerLink, PeerLinkConfig } from "@/lib/collab/peerLink";
 import type * as CollabRuntime from "@/lib/collab/runtime";
+import type { Role } from "@/lib/collab/types";
 
-/** Lets one test stand a session up and make its teardown fail. */
-const runtime: { live: boolean; endFails: Error | null } = { live: false, endFails: null };
+/** Lets one test stand a session up, fail its teardown, and read what it dialled. */
+const runtime: {
+    live: boolean;
+    endFails: Error | null;
+    invited: { endpointId: string; role: Role }[];
+} = { live: false, endFails: null, invited: [] };
 
 vi.mock("@/lib/collab/runtime", async (importOriginal) => {
     const real = await importOriginal<typeof CollabRuntime>();
@@ -15,6 +20,12 @@ vi.mock("@/lib/collab/runtime", async (importOriginal) => {
         endSession: async () => {
             if (runtime.endFails) throw runtime.endFails;
             await real.endSession();
+        },
+        // Recorded rather than run: what the command owes the runtime is the
+        // contact and the grade the picker answered with, and a real dial
+        // would decide neither.
+        inviteContact: async (_round: unknown, endpointId: string, role: Role) => {
+            runtime.invited.push({ endpointId, role });
         },
     };
 });
@@ -87,6 +98,7 @@ function deps(over: Partial<CollabCommandDeps> = {}): CollabCommandDeps & {
 beforeEach(async () => {
     runtime.live = false;
     runtime.endFails = null;
+    runtime.invited.length = 0;
     await endSession();
     useFlowStore.setState({ collabEnabled: false, round: null });
     // isDesktop() is false under jsdom unless the harness says otherwise.
@@ -130,15 +142,15 @@ describe("share", () => {
         const d = deps();
         await runShare(d);
         expect(d.failures).toEqual([]);
-        expect(parseTicket(d.shown[0])?.role).toBe("partner");
+        expect(parseTicket(d.shown[0])?.role).toBe("editor");
     });
 
-    it("hands over a view-only ticket when the share names a coach", async () => {
+    it("hands over a view-only ticket when the share asks for one", async () => {
         ready();
         const d = deps();
-        await runShare(d, "coach");
+        await runShare(d, "viewer");
         expect(d.failures).toEqual([]);
-        expect(parseTicket(d.shown[0])?.role).toBe("coach");
+        expect(parseTicket(d.shown[0])?.role).toBe("viewer");
     });
 });
 
@@ -206,22 +218,37 @@ describe("the ticket a share would hand over", () => {
         ready();
         executeCommand("collab.share");
         await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
-        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("partner");
+        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("editor");
     });
 
     it("carries the view-only role the palette asked for", async () => {
         ready();
         executeCommand("collab.shareView");
         await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
-        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("coach");
+        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("viewer");
     });
 });
 
 describe("invite", () => {
     const ALEX = "k51qzi5uqu5dlalex";
 
+    /** A round open, the switch on, and Alex saved: the picker can run. */
+    function alexIsSaved(): void {
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        useFlowStore.setState({
+            collabEnabled: true,
+            round: makeFlowRound({}),
+            contacts: { [ALEX]: { name: "Alex" } },
+        });
+    }
+
+    /** Answers the picker the way a click on one of its two buttons does. */
+    function picks(role: Role) {
+        return async () => ({ endpointId: ALEX, role });
+    }
+
     it("refuses while the master switch is off, and never picks a contact", async () => {
-        const chooseContact = vi.fn(async () => ALEX);
+        const chooseContact = vi.fn(picks("editor"));
         await runInvite(deps({ chooseContact }));
         expect(chooseContact).not.toHaveBeenCalled();
     });
@@ -229,23 +256,47 @@ describe("invite", () => {
     it("says so when nothing has been saved yet", async () => {
         (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
         useFlowStore.setState({ collabEnabled: true, round: makeFlowRound({}), contacts: {} });
-        const chooseContact = vi.fn(async () => ALEX);
+        const chooseContact = vi.fn(picks("editor"));
         const d = deps({ chooseContact });
         await runInvite(d);
         expect(d.failures[0]).toMatch(/No saved partners/);
         expect(chooseContact).not.toHaveBeenCalled();
     });
 
-    it("does nothing when the user backs out of the picker", async () => {
-        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-        useFlowStore.setState({
-            collabEnabled: true,
-            round: makeFlowRound({}),
-            contacts: { [ALEX]: { name: "Alex", role: "partner" } },
-        });
+    // Backing out is an answer, and the answer is nobody: a picker that
+    // dialled on the way out would put this round on a partner's screen for a
+    // gesture that means the opposite.
+    it("dials nobody when the user backs out of the picker", async () => {
+        alexIsSaved();
         const d = deps({ chooseContact: async () => null });
         await runInvite(d);
+        expect(runtime.invited).toEqual([]);
         expect(d.failures).toEqual([]);
         expect(d.notices).toEqual([]);
+    });
+
+    // The grade belongs to this invitation, not to the contact row: the same
+    // partner is an editor on one round and a viewer on the next.
+    it("hands the runtime the grade the picker answered with", async () => {
+        alexIsSaved();
+        await runInvite(deps({ chooseContact: picks("viewer") }));
+        expect(runtime.invited).toEqual([{ endpointId: ALEX, role: "viewer" }]);
+
+        runtime.invited.length = 0;
+        await runInvite(deps({ chooseContact: picks("editor") }));
+        expect(runtime.invited).toEqual([{ endpointId: ALEX, role: "editor" }]);
+    });
+
+    // The corner is the only confirmation of what was granted, so it has to
+    // say which of the two things happened.
+    it("names the grade it granted, and the partner it granted it to", async () => {
+        alexIsSaved();
+        const viewing = deps({ chooseContact: picks("viewer") });
+        await runInvite(viewing);
+        expect(viewing.notices).toEqual(["Invited Alex to view"]);
+
+        const editing = deps({ chooseContact: picks("editor") });
+        await runInvite(editing);
+        expect(editing.notices).toEqual(["Invited Alex to edit"]);
     });
 });

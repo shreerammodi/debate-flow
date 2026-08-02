@@ -24,6 +24,7 @@ const sample: AppConfig = {
     collabEnabled: false,
     collabRelayEnabled: true,
     collabListenEnabled: false,
+    collabShowViewers: false,
     collabName: "Rin",
     contacts: {},
     theme: "dark",
@@ -169,54 +170,66 @@ describe("collaboration settings", () => {
                 collabEnabled: true,
                 collabRelayEnabled: false,
                 collabListenEnabled: true,
+                collabShowViewers: false,
             }),
-        ).toMatchObject({ collab_enabled: true, collab_relay: false, collab_listen: true });
+        ).toMatchObject({
+            collab_enabled: true,
+            collab_relay: false,
+            collab_listen: true,
+            collab_show_viewers: false,
+        });
     });
 
-    it("defaults shared editing off, the relay on, and idle listening off", () => {
+    // Viewer cursors default on: a read-only peer claims nothing, so painting
+    // them can never hide a mark that would refuse a keystroke.
+    it("defaults shared editing off, the relay on, idle listening off, and viewer cursors on", () => {
         const parsed = toAppConfig({});
         expect(parsed.collabEnabled).toBe(false);
         expect(parsed.collabRelayEnabled).toBe(true);
         expect(parsed.collabListenEnabled).toBe(false);
+        expect(parsed.collabShowViewers).toBe(true);
     });
 
     it("reads a hand-edited switch back", () => {
         expect(
-            toAppConfig({ collab_enabled: true, collab_relay: false, collab_listen: true }),
+            toAppConfig({
+                collab_enabled: true,
+                collab_relay: false,
+                collab_listen: true,
+                collab_show_viewers: false,
+            }),
         ).toMatchObject({
             collabEnabled: true,
             collabRelayEnabled: false,
             collabListenEnabled: true,
+            collabShowViewers: false,
         });
     });
 });
 
 describe("contacts", () => {
     const ALEX = "a1e0".repeat(16);
-    const withAlex = {
-        ...sample,
-        contacts: { [ALEX]: { name: "Alex", role: "partner" as const } },
-    };
+    const withAlex = { ...sample, contacts: { [ALEX]: { name: "Alex" } } };
 
     it("round-trips a saved contact through the file shape", () => {
         expect(toAppConfig(configFromState(withAlex)).contacts).toEqual(withAlex.contacts);
     });
 
     it("writes one table per peer, so the file stays hand-editable", () => {
-        expect(configFromState(withAlex).contacts).toEqual({
-            [ALEX]: { name: "Alex", role: "partner" },
-        });
+        expect(configFromState(withAlex).contacts).toEqual({ [ALEX]: { name: "Alex" } });
     });
 
-    it("drops a hand-written entry whose role is not one this build knows", () => {
-        // Defaulting would decide from a typo whether that peer may write.
+    // Every file an older build wrote grades each contact, and a round grades
+    // its own peers instead. Dropping those entries would cost a debater every
+    // partner they have saved, on the first read after an upgrade.
+    it("keeps a hand-written entry carrying a stale role, as a named contact", () => {
         expect(
-            toAppConfig({ contacts: { [ALEX]: { name: "Alex", role: "admin" } } }).contacts,
-        ).toEqual({});
+            toAppConfig({ contacts: { [ALEX]: { name: "Alex", role: "partner" } } }).contacts,
+        ).toEqual({ [ALEX]: { name: "Alex" } });
     });
 
     it("drops a hand-written entry with no name", () => {
-        expect(toAppConfig({ contacts: { [ALEX]: { role: "partner" } } }).contacts).toEqual({});
+        expect(toAppConfig({ contacts: { [ALEX]: {} } }).contacts).toEqual({});
     });
 
     it("reads a file with no contacts at all as none", () => {
