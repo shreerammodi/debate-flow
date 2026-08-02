@@ -62,23 +62,55 @@ export function crossExColumns(event: EventDef, firstSide: Side): SpeechCol[] {
 }
 
 /**
+ * The round's speaking order.
+ *
+ * A round's `firstSide` is a replicated register, so it holds whatever a peer
+ * put on the wire, and it indexes a static table. Anything that is not the one
+ * named side is the other, which is the fallback a file that predates the
+ * field gets.
+ */
+function orderOf(round: FlowRound): SpeechDef[] {
+    return speechOrder(getEvent(round.event), round.firstSide === "neg" ? "neg" : "aff");
+}
+
+/**
+ * Where a sheet's leftmost column falls in the round's speaking order, or -1
+ * when the order does not hold it. A sheet's `group` is a replicated register
+ * too, and gets the same treatment as `firstSide`.
+ */
+function startIndex(round: FlowRound, sheet: FlowSheet): number {
+    const group: Side = sheet.group === "neg" ? "neg" : "aff";
+    const startId = sheet.startSpeechId ?? getEvent(round.event)[group][0].id;
+    return orderOf(round).findIndex((c) => c.id === startId);
+}
+
+/**
  * The columns a sheet shows: cross-ex sheets pair Question/Response per
  * event period; flow sheets show from their leftmost speech (startSpeechId,
  * else the side's first speech in the round's event) onward.
  */
 export function columnsForFlowSheet(round: FlowRound, sheet: FlowSheet): SpeechCol[] {
     const event = getEvent(round.event);
-    // A round's `firstSide` and a sheet's `group` are both replicated
-    // registers, so both hold whatever a peer put on the wire, and both index
-    // a static table below. Anything that is not the one named side is the
-    // other, which is the fallback a file that predates the field gets.
-    const firstSide: Side = round.firstSide === "neg" ? "neg" : "aff";
-    if (sheet.kind === "cx") return crossExColumns(event, firstSide);
-    const order = speechOrder(event, firstSide);
-    const group: Side = sheet.group === "neg" ? "neg" : "aff";
-    const startId = sheet.startSpeechId ?? event[group][0].id;
-    const idx = order.findIndex((c) => c.id === startId);
+    if (sheet.kind === "cx") {
+        return crossExColumns(event, round.firstSide === "neg" ? "neg" : "aff");
+    }
+    const order = orderOf(round);
+    const idx = startIndex(round, sheet);
     return idx === -1 ? order : order.slice(idx);
+}
+
+/**
+ * How many of the round's speeches sit left of a sheet's leftmost column.
+ *
+ * Exactly the columns `columnsForFlowSheet` drops, so the two always sum to
+ * the round's full order. A cross-ex sheet drops none, because its columns are
+ * periods and have no place in that order, and neither does a startSpeechId
+ * the order does not hold, which falls back to the whole order there.
+ */
+export function speechOffset(round: FlowRound, sheet: FlowSheet): number {
+    if (sheet.kind === "cx") return 0;
+    const idx = startIndex(round, sheet);
+    return idx === -1 ? 0 : idx;
 }
 
 /**

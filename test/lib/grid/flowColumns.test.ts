@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { EVENTS } from "@/lib/format/events";
-import { columnsForFlowSheet, crossExColumns, headerSettings } from "@/lib/grid/flowColumns";
+import { EVENTS, getEvent, speechOrder, type EventId } from "@/lib/format/events";
+import {
+    columnsForFlowSheet,
+    crossExColumns,
+    headerSettings,
+    speechOffset,
+} from "@/lib/grid/flowColumns";
 import { makeCxFlowSheet, makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
 
 const flowSheet = (group: "aff" | "neg") => makeFlowSheet({ title: "1.", group, order: 0 });
@@ -118,6 +123,46 @@ describe("columnsForFlowSheet", () => {
         const policy = makeFlowRound({});
         const policyCols = columnsForFlowSheet(policy, makeCxFlowSheet());
         expect(policyCols[0]).toMatchObject({ name: "Question", side: "neg" });
+    });
+});
+
+describe("speechOffset", () => {
+    it("is zero for the sheet that opens the round and one for the other side", () => {
+        const round = makeFlowRound({});
+        expect(speechOffset(round, flowSheet("aff"))).toBe(0);
+        expect(speechOffset(round, flowSheet("neg"))).toBe(1);
+    });
+
+    it("follows a speaking-order swap", () => {
+        const negFirst = makeFlowRound({ event: "pf", firstSide: "neg" });
+        expect(speechOffset(negFirst, flowSheet("neg"))).toBe(0);
+        expect(speechOffset(negFirst, flowSheet("aff"))).toBe(1);
+    });
+
+    it("counts every speech left of an explicit startSpeechId", () => {
+        const round = makeFlowRound({});
+        expect(speechOffset(round, { ...flowSheet("aff"), startSpeechId: "2ac" })).toBe(2);
+        expect(speechOffset(round, { ...flowSheet("neg"), startSpeechId: "2nr" })).toBe(5);
+    });
+
+    it("is zero for a cx sheet and for a start speech the order does not hold", () => {
+        const round = makeFlowRound({});
+        expect(speechOffset(round, makeCxFlowSheet())).toBe(0);
+        expect(speechOffset(round, { ...flowSheet("aff"), startSpeechId: "nope" })).toBe(0);
+    });
+
+    it("accounts for exactly the columns a sheet does not show", () => {
+        for (const event of Object.keys(EVENTS) as EventId[]) {
+            for (const firstSide of ["aff", "neg"] as const) {
+                const round = makeFlowRound({ event, firstSide });
+                const total = speechOrder(getEvent(event), firstSide).length;
+                for (const group of ["aff", "neg"] as const) {
+                    const sheet = flowSheet(group);
+                    const shown = columnsForFlowSheet(round, sheet).length;
+                    expect(speechOffset(round, sheet) + shown).toBe(total);
+                }
+            }
+        }
     });
 });
 
