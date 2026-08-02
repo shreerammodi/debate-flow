@@ -73,6 +73,15 @@ describe("loadRound", () => {
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"scrollZoom":false');
     });
 
+    it("persists alignSpeeches through setAlignSpeeches, defaulting off", () => {
+        expect(useFlowStore.getState().alignSpeeches).toBe(false);
+        useFlowStore.getState().setAlignSpeeches(true);
+        expect(useFlowStore.getState().alignSpeeches).toBe(true);
+        expect(window.localStorage.getItem("ebb-display-settings")).toContain(
+            '"alignSpeeches":true',
+        );
+    });
+
     it("persists tooltips through setTooltips, defaulting on", () => {
         expect(useFlowStore.getState().tooltips).toBe(true);
         useFlowStore.getState().setTooltips(false);

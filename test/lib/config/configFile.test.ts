@@ -17,6 +17,7 @@ const sample: AppConfig = {
     rfdVim: true,
     insertPaste: true,
     scrollZoom: false,
+    alignSpeeches: true,
     tooltips: false,
     cardmirrorEnabled: false,
     cardmirrorTextType: "tag",
@@ -45,6 +46,11 @@ describe("configFromState -> toAppConfig round-trip", () => {
         expect(file.rfd_vim).toBe(true);
         expect(file.neg_color).toBeNull();
         expect(file.update.auto_check_enabled).toBe(true);
+    });
+
+    it("defaults speech alignment off when the file does not name it", () => {
+        expect(configFromState(sample).align_speeches).toBe(true);
+        expect(toAppConfig({}).alignSpeeches).toBe(false);
     });
 
     it("falls back to the analytic text type when the file names an unknown one", () => {

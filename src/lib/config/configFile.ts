@@ -39,6 +39,7 @@ export interface ConfigFileShape {
     rfd_vim: boolean;
     insert_paste: boolean;
     scroll_zoom: boolean;
+    align_speeches: boolean;
     tooltips: boolean;
     /** Master switch for the CardMirror integration. */
     cardmirror_enabled: boolean;
@@ -130,6 +131,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         rfd_vim: s.rfdVim,
         insert_paste: s.insertPaste,
         scroll_zoom: s.scrollZoom,
+        align_speeches: s.alignSpeeches,
         tooltips: s.tooltips,
         cardmirror_enabled: s.cardmirrorEnabled,
         cardmirror_text_type: s.cardmirrorTextType,
@@ -186,6 +188,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         rfdVim: bool(o.rfd_vim, false),
         insertPaste: bool(o.insert_paste, false),
         scrollZoom: bool(o.scroll_zoom, true),
+        alignSpeeches: bool(o.align_speeches, false),
         tooltips: bool(o.tooltips, true),
         cardmirrorEnabled: bool(o.cardmirror_enabled, true),
         cardmirrorTextType: resolveCardMirrorTextType(o.cardmirror_text_type),

@@ -93,6 +93,12 @@ export interface FlowState {
     insertPaste: boolean;
     /** Mod+scroll (and trackpad pinch) zooms the grid; off leaves the wheel alone. */
     scrollZoom: boolean;
+    /**
+     * Every flow sheet's grid sits at the round's speaking order, padded by
+     * the speeches it does not show, so a speech holds one screen position
+     * across sheets. Off, a sheet starts flush at its own first speech.
+     */
+    alignSpeeches: boolean;
     /** Hover tips on buttons and controls; off renders the trigger bare. */
     tooltips: boolean;
     /** Master switch for the CardMirror bridge; off leaves every route dead. */
@@ -177,6 +183,7 @@ export interface FlowActions {
     setRfdVim(on: boolean): void;
     setInsertPaste(on: boolean): void;
     setScrollZoom(on: boolean): void;
+    setAlignSpeeches(on: boolean): void;
     setTooltips(on: boolean): void;
     setCardmirrorEnabled(on: boolean): void;
     setCardmirrorTextType(type: CardMirrorTextType): void;
@@ -274,6 +281,7 @@ interface DisplaySettings {
     rfdVim: boolean;
     insertPaste: boolean;
     scrollZoom: boolean;
+    alignSpeeches: boolean;
     tooltips: boolean;
     cardmirrorEnabled: boolean;
     cardmirrorTextType: CardMirrorTextType;
@@ -307,6 +315,7 @@ function loadDisplaySettings(): DisplaySettings {
         rfdVim: false,
         insertPaste: false,
         scrollZoom: true,
+        alignSpeeches: false,
         tooltips: true,
         cardmirrorEnabled: true,
         cardmirrorTextType: "analytic",
@@ -333,6 +342,7 @@ function loadDisplaySettings(): DisplaySettings {
             rfdVim: bool(p.rfdVim, false),
             insertPaste: bool(p.insertPaste, false),
             scrollZoom: bool(p.scrollZoom, true),
+            alignSpeeches: bool(p.alignSpeeches, false),
             tooltips: bool(p.tooltips, true),
             cardmirrorEnabled: bool(p.cardmirrorEnabled, true),
             cardmirrorTextType: resolveCardMirrorTextType(p.cardmirrorTextType),
@@ -370,6 +380,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         rfdVim: s.rfdVim,
         insertPaste: s.insertPaste,
         scrollZoom: s.scrollZoom,
+        alignSpeeches: s.alignSpeeches,
         tooltips: s.tooltips,
         cardmirrorEnabled: s.cardmirrorEnabled,
         cardmirrorTextType: s.cardmirrorTextType,
@@ -460,6 +471,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     rfdVim: initialDisplaySettings.rfdVim,
     insertPaste: initialDisplaySettings.insertPaste,
     scrollZoom: initialDisplaySettings.scrollZoom,
+    alignSpeeches: initialDisplaySettings.alignSpeeches,
     tooltips: initialDisplaySettings.tooltips,
     cardmirrorEnabled: initialDisplaySettings.cardmirrorEnabled,
     cardmirrorTextType: initialDisplaySettings.cardmirrorTextType,
@@ -764,6 +776,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setInsertPaste: (on) => persistDisplay(set, get, { insertPaste: on }),
 
     setScrollZoom: (on) => persistDisplay(set, get, { scrollZoom: on }),
+
+    setAlignSpeeches: (on) => persistDisplay(set, get, { alignSpeeches: on }),
 
     setTooltips: (on) => persistDisplay(set, get, { tooltips: on }),
 
