@@ -85,7 +85,7 @@ registerAllModules();
 const MIN_ROWS = 250;
 
 // Every speech column is this wide.
-export const COL_WIDTH = 280;
+const COL_WIDTH = 280;
 
 // A pane's inert leading columns wear this on the TD. The wash is a
 // background rather than an opacity, so the gridlines stay at full strength
@@ -978,33 +978,61 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 return false;
             }
 
-            // The sheet's own first column is the cursor's left edge, so a
-            // leftward move from it stays put rather than stepping onto a
-            // column that holds no cell of this sheet. A shift-extend leaves
-            // the highlight on the anchor and walks the range's `to`, so that
-            // is the edge about to enter the pad; every other leftward key
-            // moves the highlight itself. An edge left in there decorates
-            // columns collectMeta refuses to save, so the bolding outlives
-            // every sheet switch with nothing stored to clear it by.
+            // Nothing may leave the cursor or a range's edge on a spacer. A
+            // spacer holds no cell of this sheet, so a cursor parked there is
+            // refused every keystroke with no lock hint to say why, and an
+            // edge left there decorates columns collectMeta refuses to save,
+            // so the bolding outlives every sheet switch with nothing stored
+            // to clear it by. A shift-extend leaves the highlight on the
+            // anchor and walks the range's `to`, so that is the edge about to
+            // enter the pad; every other key moves the highlight itself.
+            //
+            // Handsontable's grid context aims Home, Shift+Home, Ctrl/Meta+Home
+            // and Ctrl/Meta+A at grid column 0. Each is answered with the
+            // sheet's own first column rather than swallowed, because a key
+            // that silently does nothing is the same puzzle the pad exists to
+            // avoid.
             const range = hot?.getSelectedRangeLast();
-            const edge = e.shiftKey && e.key === "ArrowLeft" ? range?.to : range?.highlight;
             const pad = loadedSpacersRef.current;
-            if (hot && pad > 0 && edge?.col === pad) {
-                if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
-                    e.preventDefault();
-                    return false;
-                }
-            }
-
-            // At the sheet's own first column, Shift+Tab has nowhere to move
-            // inside the grid, so Handsontable lets the browser tab focus out to
-            // the previous tabbable element (a sidebar sheet). Swallow it so
-            // focus stays put.
-            if (hot && e.key === "Tab" && e.shiftKey) {
-                if (hot.getSelectedRangeLast()?.highlight.col === loadedSpacersRef.current) {
+            if (hot && range) {
+                const shiftLeft = e.key === "ArrowLeft" || e.key === "Home";
+                const edge = e.shiftKey && shiftLeft ? range.to : range.highlight;
+                const mod = e.metaKey || e.ctrlKey;
+                // At the sheet's own first column Shift+Tab has nowhere to
+                // move inside the grid, so Handsontable lets the browser tab
+                // focus out to the previous tabbable element (a sidebar
+                // sheet). stopImmediate is what also keeps the chord off
+                // useKeymap's window listener.
+                if (e.key === "Tab" && e.shiftKey && edge.col === pad) {
                     e.preventDefault();
                     e.stopImmediatePropagation();
                     return false;
+                }
+                if (pad > 0) {
+                    if (e.key === "ArrowLeft" && edge.col === pad) {
+                        e.preventDefault();
+                        return false;
+                    }
+                    if (e.key === "Home") {
+                        e.preventDefault();
+                        // Ctrl/Meta+Home is the top of the sheet; a header
+                        // selection highlights row -1, which names no cell to
+                        // land on.
+                        const row = mod ? 0 : Math.max(0, edge.row ?? 0);
+                        if (e.shiftKey) {
+                            hot.selection.setRangeEnd(hot._createCellCoords(row, pad));
+                        } else {
+                            hot.selectCell(row, pad);
+                        }
+                        return false;
+                    }
+                    if (mod && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+                        e.preventDefault();
+                        // Everything the sheet owns, and the viewport stays
+                        // where the debater left it.
+                        hot.selectCell(0, pad, hot.countRows() - 1, hot.countCols() - 1, false);
+                        return false;
+                    }
                 }
             }
 
@@ -1113,6 +1141,19 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         [],
     );
 
+    // Whether a cell takes the editor. Handsontable merges what this returns
+    // into meta it keeps between renders, so the answer has to be total: a
+    // cell outside the pad that answered `{}` would keep a refusal laid down
+    // while the pad was wider, and the load that narrows the pad clears no
+    // cell state. The coach's clause is what keeps a `false` here from
+    // overriding the pane-wide readOnly the same role sets.
+    const cellRule = useCallback(
+        (_row: number, col: number) => ({
+            readOnly: viewOnly || col < loadedSpacersRef.current,
+        }),
+        [viewOnly],
+    );
+
     return (
         // ht-blurred hides this pane's cell-selection marker while its cursor
         // stays in memory, so only the focused pane shows an active cell.
@@ -1139,7 +1180,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 resolves the percentage against the pane), and Handsontable reads
                 its own clientHeight (pane / zoom) to fill the visible box, so its
                 scrollbars stay at the pane edges instead of overflowing. */}
-            <div data-testid="grid-pad" style={{ zoom: gridZoom, width: "100%", height: "100%" }}>
+            <div data-testid="grid-zoom" style={{ zoom: gridZoom, width: "100%", height: "100%" }}>
                 <HotTable
                     ref={hotRef}
                     rowHeaders={false}
@@ -1155,9 +1196,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     readOnly={viewOnly}
                     contextMenu={viewOnly ? false : (FLOW_CONTEXT_MENU as unknown as string[])}
                     copyPaste={{ pasteMode: insertPaste ? "shift_down" : "overwrite" }}
-                    cells={(_row: number, col: number) =>
-                        col < loadedSpacersRef.current ? { readOnly: true } : {}
-                    }
+                    cells={cellRule}
                     beforeOnCellMouseDown={beforeOnCellMouseDown}
                     beforeOnCellMouseOver={beforeOnCellMouseOver}
                     afterGetColHeader={afterGetColHeader}

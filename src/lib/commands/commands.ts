@@ -104,8 +104,9 @@ function toggleDecoration(
         const spacers = getActiveSpacers();
         for (const [row, col] of flipped) {
             // `flipped` holds grid columns; a stored meta key and an op both
-            // name a cell, so both are read at the converted column. A cursor
-            // cannot reach a spacer, so a null here decorates nothing.
+            // name a cell, so both are read at the converted column. The
+            // pane's guards keep a range's edge as well as the cursor out of
+            // the pad, so a null here decorates nothing.
             const at = toModelCol(gridCol(col), spacers);
             if (at === null) continue;
             recordOp({

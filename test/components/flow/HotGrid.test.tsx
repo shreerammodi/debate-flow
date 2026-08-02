@@ -13,6 +13,7 @@ import { gridCol, toModelCol } from "@/lib/grid/colSpace";
 import { getActiveHot, getActiveSpacers } from "@/lib/grid/hotInstance";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
+import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 registerAllModules();
@@ -323,6 +324,51 @@ describe("speech alignment", () => {
         );
         expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
     });
+
+    /** Handsontable's own key, so the padded pane owes it the same answer. */
+    function press(hot: Handsontable, key: string, mods: Partial<KeyboardEventInit> = {}) {
+        hot.rootElement.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }),
+        );
+    }
+
+    it("lands Home on the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 3);
+        press(hot, "Home");
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
+
+    it("still lands Home on the first column when there is no pad", async () => {
+        const hot = await mount(negSheet.id, false);
+        hot.selectCell(0, 3);
+        press(hot, "Home");
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(0);
+    });
+
+    it("stops a Shift+Home extend at the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 3);
+        press(hot, "Home", { shiftKey: true });
+        const range = hot.getSelectedRangeLast()!;
+        expect(range.highlight.col).toBe(3);
+        expect(range.to.col).toBe(1);
+    });
+
+    it("lands Ctrl+Home on the first row of the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(2, 3);
+        press(hot, "Home", { ctrlKey: true });
+        const highlight = hot.getSelectedRangeLast()!.highlight;
+        expect([highlight.row, highlight.col]).toEqual([0, 1]);
+    });
+
+    it("starts a select-all past the pad", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 2);
+        press(hot, "a", { ctrlKey: true });
+        expect(hot.getSelectedLast()).toEqual([0, 1, hot.countRows() - 1, hot.countCols() - 1]);
+    });
 });
 
 /**
@@ -542,5 +588,79 @@ describe("a partner's patch landing between the render and the load", () => {
         // The grid was still carrying its pad, so the partner's first cell is
         // grid column 1 and the spacer it leads with stays empty.
         expect(landed).toEqual([null, "theirs"]);
+    });
+});
+
+/**
+ * A spacer refuses the editor and the sheet's own columns take it. The rule
+ * that says so is consulted per cell and merged into meta Handsontable keeps,
+ * so a pad that shrinks has to be able to lift the refusal it laid down, not
+ * only lay it down.
+ */
+describe("a spacer's read-only across a change of pad", () => {
+    afterEach(() => {
+        useCollabStore.setState({ selfRole: "partner" });
+        useFlowStore.setState({
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+            alignSpeeches: false,
+        });
+    });
+
+    it("frees the first column when a padded sheet is stepped off onto an unpadded one", async () => {
+        const { aff, neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+
+        const { rerender } = render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        expect(hot.getCellMeta(0, 0).readOnly).toBe(true);
+
+        rerender(<HotGrid sheetId={aff.id} pane={1} />);
+        await waitFor(() => expect(hot.getDataAtCell(0, 0)).toBe("kritik"));
+
+        // 1AC now sits in grid column 0, and the aff sheet has no pad at all.
+        expect(hot.getCellMeta(0, 0).readOnly).toBeFalsy();
+    });
+
+    it("lets the editor open on the freed column", async () => {
+        const { aff, neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+
+        const { rerender } = render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        rerender(<HotGrid sheetId={aff.id} pane={1} />);
+        await waitFor(() => expect(hot.getDataAtCell(0, 0)).toBe("kritik"));
+
+        hot.selectCell(0, 0);
+        hot.getActiveEditor()!.beginEditing();
+        expect(hot.getActiveEditor()!.isOpened()).toBe(true);
+    });
+
+    it("frees the first column when the setting is turned off", async () => {
+        const { neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+
+        render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+        expect(hot.getCellMeta(0, 0).readOnly).toBe(true);
+
+        act(() => useFlowStore.setState({ alignSpeeches: false }));
+        await waitFor(() => expect(hot.countCols()).toBe(6));
+
+        expect(hot.getCellMeta(0, 0).readOnly).toBeFalsy();
+    });
+
+    it("keeps a coach's own columns read-only on a padded pane", async () => {
+        const { neg } = alignedPair();
+        useFlowStore.setState({ activeSheetId: neg.id });
+        useCollabStore.setState({ selfRole: "coach" });
+
+        render(<HotGrid sheetId={neg.id} pane={1} />);
+        const hot = await mounted();
+
+        expect(hot.getCellMeta(0, 0).readOnly).toBe(true);
+        expect(hot.getCellMeta(0, 1).readOnly).toBe(true);
+        expect(hot.getCellMeta(0, 3).readOnly).toBe(true);
     });
 });
