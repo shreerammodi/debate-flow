@@ -13,11 +13,10 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   default. On, every flow sheet lines up on the round's speaking order: a sheet
   that does not open the round sits further right, with empty space where the
   speeches it skips would be. A cross-examination sheet stays flush, since its
-  columns are periods rather than speeches.
-  A speech then holds one place on screen for the
-  whole round, so moving between sheets no longer slides the columns sideways
-  under the cursor. Off, a sheet still starts at its own side's first speech
-  and gives up no width.
+  columns are periods rather than speeches. A speech then holds one place on
+  screen for the whole round, so moving between sheets no longer slides the
+  columns sideways under the cursor. Off, a sheet still starts at its own
+  side's first speech and gives up no width.
 - **A Parliamentary flow template**, on `r` in the New flow menu. Five columns
   carry the six speeches - PM, LOC, MGC, Block, PMR - because the MOC and the
   LOR run back to back, so they share one column the way Policy's 2NC and 1NR
