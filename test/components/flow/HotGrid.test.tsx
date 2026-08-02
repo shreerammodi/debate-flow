@@ -9,7 +9,8 @@ import { seedDoc } from "@/lib/collab/doc";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import { clearReplica, getReplica, seedReplica } from "@/lib/collab/replica";
 import { createClock } from "@/lib/collab/stamp";
-import { getActiveHot } from "@/lib/grid/hotInstance";
+import { gridCol, toModelCol } from "@/lib/grid/colSpace";
+import { getActiveHot, getActiveSpacers } from "@/lib/grid/hotInstance";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import { makeFlowRound, makeFlowSheet, type CellMeta, type CellSource } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -222,6 +223,21 @@ describe("speech alignment", () => {
         act(() => useFlowStore.setState({ alignSpeeches: true }));
         await waitFor(() => expect(hot.countCols()).toBe(7));
         expect(hot.getSelectedLast()).toEqual([1, 2, 1, 2]);
+    });
+
+    it("keeps the cursor on its own cell when the setting is flipped", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 2);
+
+        act(() => useFlowStore.setState({ alignSpeeches: false }));
+        await waitFor(() => expect(getActiveHot()!.countCols()).toBe(6));
+        // Read back through the registry rather than the handle, because that
+        // is where a command finds the grid, and it is the pair that has to
+        // hold: the same speech, one column left, because the pad went with
+        // it, and a published count that converts it back to the cell it was.
+        const col = getActiveHot()!.getSelectedRangeLast()!.highlight.col!;
+        expect(col).toBe(1);
+        expect(toModelCol(gridCol(col), getActiveSpacers())).toBe(1);
     });
 
     it("refuses a write into a spacer", async () => {

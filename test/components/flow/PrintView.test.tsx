@@ -11,11 +11,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 import PrintView from "@/components/flow/PrintView";
 import type { Contacts } from "@/lib/collab/contacts";
-import { makeFlowRound } from "@/lib/model/flow";
+import { makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 function resetStore() {
-    useFlowStore.setState({ round: null, activeSheetId: null, contacts: {} });
+    useFlowStore.setState({ round: null, activeSheetId: null, contacts: {}, alignSpeeches: false });
 }
 
 function setup() {
@@ -70,6 +70,24 @@ describe("PrintView", () => {
         useFlowStore.getState().loadRound(round);
         render(<PrintView />);
         expect(screen.getAllByText("1AC CX Question")).toHaveLength(1);
+    });
+
+    it("prints a sheet's own columns whatever the alignment setting says", () => {
+        const round = setup();
+        const neg = makeFlowSheet({ title: "Neg", group: "neg", order: 1 });
+        neg.data = [["link"]];
+        round.sheets.push(neg);
+        useFlowStore.getState().loadRound(round);
+        useFlowStore.setState({ alignSpeeches: true });
+        render(<PrintView />);
+        // The pane pads a neg sheet with the speeches it does not show, but
+        // that pad is a view of the grid; the model carries no spacers, so it
+        // reaches no page and every printed column is the sheet's own.
+        const section = screen.getByTestId(`print-sheet-title-${neg.id}`).closest("section")!;
+        const headers = [...section.querySelectorAll("th")].map((th) => th.textContent);
+        expect(headers[0]).toBe("1NC");
+        expect(headers).not.toContain("1AC");
+        expect(section.querySelector("td")).toHaveTextContent("link");
     });
 
     describe("RFD", () => {
