@@ -266,6 +266,21 @@ describe("speech alignment", () => {
         expect(hot.getSelectedLast()).toEqual([-1, 1, hot.countRows() - 1, 1]);
     });
 
+    it("stops a leftward drag at the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        // A drag is a mousedown that keeps going: the mousedown lands on the
+        // sheet's own column, and only the mouseover carries the range left.
+        // Handsontable drops a mouseover the pointer did not move for, so the
+        // two events have to sit at different coordinates.
+        hot.getCell(0, 1)!.dispatchEvent(
+            new MouseEvent("mousedown", { bubbles: true, clientX: 400, clientY: 30 }),
+        );
+        hot.getCell(0, 0)!.dispatchEvent(
+            new MouseEvent("mouseover", { bubbles: true, clientX: 40, clientY: 30 }),
+        );
+        expect(hot.getSelectedRangeLast()!.to.col).toBe(1);
+    });
+
     it("keeps the cursor out of the spacer on arrow-left", async () => {
         const hot = await mount(negSheet.id, true);
         hot.selectCell(0, 1);
@@ -273,6 +288,26 @@ describe("speech alignment", () => {
             new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
         );
         expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
+
+    it("stops a shift-extend at the sheet's own first column", async () => {
+        const hot = await mount(negSheet.id, true);
+        // The anchor stays at grid column 3 while the moving edge walks left,
+        // so the guard has to watch the edge rather than the highlight.
+        hot.selectCell(0, 3);
+        for (let i = 0; i < 3; i++) {
+            hot.rootElement.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "ArrowLeft",
+                    shiftKey: true,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
+        }
+        const range = hot.getSelectedRangeLast()!;
+        expect(range.highlight.col).toBe(3);
+        expect(range.to.col).toBe(1);
     });
 
     it("stops a Cmd+Left jump at the sheet's own first column", async () => {

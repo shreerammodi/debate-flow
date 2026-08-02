@@ -287,14 +287,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // Inert leading columns: one per speech this sheet does not show. They are
     // real grid columns, so a grid column index is not a cell index while the
     // count is above zero, and every value crossing to the model converts.
-    // The selector returns a number, so a render only follows a change in it.
+    // The selector returns a number, so a render only follows a change in it,
+    // and that render is what reloads the pane when the setting is flipped.
     const spacers = useFlowStore((s) => spacerCount(s.round, sheetId, s.alignSpeeches));
-    // What the imperative callbacks read, since they run outside React's
-    // render and must not be re-created per keystroke to pick the count up.
-    // This is the count the current render wants; `loadedSpacersRef` below is
-    // the one the grid is holding.
-    const spacersRef = useRef(0);
-    spacersRef.current = spacers;
     // A coach reads the flow; the host drops their writes, so text typed here
     // would vanish on the next merge. Refusing the keystroke is honest where
     // silently losing it is not, and the same rule takes away the context menu,
@@ -310,18 +305,13 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const [ready, setReady] = useState(false);
     const currentSheetIdRef = useRef<string | null>(null);
     const viewCache = useRef(new Map<string, { row: number; col: ModelCol }>());
-    // The pad the grid currently carries, written only by the load below.
-    //
-    // It and `spacersRef` disagree from the render that changes the count
-    // until the load that redraws the grid, a passive effect later in the same
-    // commit, and that gap is what every conversion in this file turns on.
-    // Anything that can fire inside it - the save, the change hook, the
-    // closing editor's op, a partner's patch, the outgoing cursor - is looking
-    // at cells the old pad drew, so it reads this ref. Only `afterRenderer`
-    // and `afterGetColHeader` read `spacersRef`: they run from the load
-    // itself, which has already settled the new pad while this ref has not yet
-    // caught up. The store answers for neither, holding the incoming count as
-    // early as the render does.
+    // The pad the grid carries. The load settles it before the redraw, so it
+    // is the count the cells on screen were drawn with, and it is the one
+    // thing in this file that says what a grid column means: the save, the
+    // change hook, the closing editor's op, a partner's patch, the renderers,
+    // the readonly rule and the keyboard guards all read it. The store holds
+    // the incoming count as early as the render does, a commit before the
+    // grid carries it, so it answers for none of them.
     const loadedSpacersRef = useRef(0);
     // afterRenderer and afterGetColHeader run once per cell per render cycle, so
     // they index this instead of re-deriving the column list per cell. A sheet's
@@ -483,27 +473,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             const sel = hot.getSelectedLast();
             // The fallback is the first real column; a spacer takes no cursor.
             const id = requestAnimationFrame(() =>
-                hot.selectCell(sel?.[0] ?? 0, sel?.[1] ?? spacersRef.current),
+                hot.selectCell(sel?.[0] ?? 0, sel?.[1] ?? loadedSpacersRef.current),
             );
             return () => cancelAnimationFrame(id);
         }
     }, [isFocused, snapshot]);
-
-    // The pane owns its spacer count and publishes it, so a command reaching
-    // this grid through the registry converts against the number it was drawn
-    // with. Every writer publishes the loaded count and never the render's:
-    // a command acts on the grid as it stands, which through a switch is the
-    // pad the outgoing sheet was drawn with. The load publishes again once it
-    // has redrawn, so the registry is right at both ends of the gap.
-    //
-    // Published here on its own as well, because the other writers are a
-    // selection and a focus change, and flipping the setting is neither.
-    useEffect(() => {
-        const hot = hotRef.current?.hotInstance ?? null;
-        if (hot && getActiveHot() === hot) {
-            setActiveHot(hot, snapshot, currentSheetIdRef.current, loadedSpacersRef.current);
-        }
-    }, [spacers, snapshot]);
 
     // Sheet switching swaps data/columns on this pane's instance.
     const firstSide = useFlowStore((s) => s.round?.firstSide);
@@ -565,6 +539,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         // the orientation after text was written); pad to the wider of the two
         // so overflow columns survive the load and the next save.
         const width = gridWidth(own, sheet.data);
+        // Settled before the redraw, so the renderers, the readonly rule and
+        // every conversion the redraw reaches speak in the pad the cells they
+        // are handed carry.
+        loadedSpacersRef.current = lead;
         // Coalesce the data/header swap and the per-cell meta loop into one
         // render instead of updateSettings' render plus an explicit one.
         hot.batch(() => {
@@ -574,7 +552,6 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             });
             applyMeta(hot, sheet.meta, prevMeta, lead, prevLead);
         });
-        loadedSpacersRef.current = lead;
         // The grid now carries the new pad, so the registry says so before
         // anything reaching it through `getActiveSpacers` can act on it.
         if (getActiveHot() === hot) {
@@ -582,8 +559,12 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         }
         // A reload under a changed pad re-keys every column, and both undo
         // histories hold the grid coordinates their action was recorded with.
-        // There is nothing to rebase them onto, so an undo replayed here would
-        // write one column off; dropping them is the honest option.
+        // Nothing empties Handsontable's stack on a sheet switch, so what goes
+        // here is every edit the pane has made this session and not just this
+        // sheet's. rebaseActions shifts rows; a column delta would want
+        // machinery of its own for what is a settings toggle, and an undo
+        // replayed one column off would write into a cell nobody touched,
+        // which is worse than the loss.
         if (prev === sheet.id && prevLead !== lead) {
             hot.getPlugin("undoRedo")?.clear();
             resetMetaUndo();
@@ -591,7 +572,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         const v = viewCache.current.get(sheet.id) ?? { row: 0, col: modelCol(0) };
         hot.selectCell(v.row, toGridCol(v.col, lead));
         setReady(true);
-    }, [sheetId, firstSide, spacers]);
+    }, [sheetId, firstSide, spacers, snapshot]);
 
     // Clicking or arrowing into a pane focuses it (so keystrokes route here).
     //
@@ -633,7 +614,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         const id = requestAnimationFrame(() => {
             const hot = hotRef.current?.hotInstance;
             if (!hot) return;
-            const at = toGridCol(modelCol(revealTarget.col), spacersRef.current);
+            const at = toGridCol(modelCol(revealTarget.col), loadedSpacersRef.current);
             hot.selectCell(revealTarget.row, at);
             // A jump teleports the viewport, so the landing cell announces
             // itself: a one-shot decay from the sheet's selection violet.
@@ -675,7 +656,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             const sheet = round.sheets.find((s) => s.id === currentSheetIdRef.current);
             if (!hot || !sheet) return;
             const col = columnsForFlowSheet(round, sheet).findIndex((c) => c.id === speechId);
-            hot.selectCell(0, toGridCol(modelCol(col >= 0 ? col : 0), spacersRef.current));
+            hot.selectCell(0, toGridCol(modelCol(col >= 0 ? col : 0), loadedSpacersRef.current));
         });
         return () => cancelAnimationFrame(id);
     }, [speechTarget, isFocused]);
@@ -691,7 +672,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // The combined column list gives a spacer its own speech's ink;
             // dimming rather than the color is what says it is not on this
             // sheet.
-            if (col >= 0 && col < spacersRef.current) TH.classList.add("hd-spacer");
+            if (col >= 0 && col < loadedSpacersRef.current) TH.classList.add("hd-spacer");
             const side = col < 0 ? undefined : colsRef.current[col]?.side;
             if (side) TH.classList.add(side === "aff" ? "hd-aff" : "hd-neg");
         },
@@ -717,7 +698,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // hold, so it is greyed and asked nothing further. Clamping to the
             // first column instead would paint a partner's cursor on the pad
             // and on that column at once.
-            const at = toModelCol(gridCol(col), spacersRef.current);
+            const at = toModelCol(gridCol(col), loadedSpacersRef.current);
             if (at === null) {
                 TD.classList.add(SPACER_CLASS);
                 delete TD.dataset.peer;
@@ -826,7 +807,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         if (input) disableTextAssistance(input);
         const sid = currentSheetIdRef.current;
         // A spacer is read-only, so this is a guard rather than a path.
-        const at = toModelCol(gridCol(col), spacersRef.current);
+        const at = toModelCol(gridCol(col), loadedSpacersRef.current);
         if (sid && at !== null) claimCell({ sheetId: sid, col: at, row });
     }, []);
 
@@ -877,7 +858,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 for (const col of pasteCols(hot, shift)) {
                     // The shift's columns stay the grid's for the meta pass
                     // that follows the paste; only the ops speak in cells.
-                    const at = toModelCol(col, spacersRef.current);
+                    const at = toModelCol(col, loadedSpacersRef.current);
                     if (at === null) continue;
                     for (const op of openSpanOps(sid, at, shift.row, shift.height)) recordOp(op);
                 }
@@ -966,7 +947,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                             // A block never covers a spacer, so a null here is
                             // a session that should not have opened rather
                             // than a column to fold into the first one.
-                            const at = toModelCol(col, spacersRef.current);
+                            const at = toModelCol(col, loadedSpacersRef.current);
                             if (at === null) continue;
                             const texts = hot
                                 .getDataAtCol(col)
@@ -983,8 +964,13 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                         const lead =
                             dr > 0 ? block.blockStart + block.height - 1 : block.blockStart;
                         delta =
-                            smartJump(hot, lead, block.cols[0], { dr, dc: 0 }, spacersRef.current)
-                                .row - lead;
+                            smartJump(
+                                hot,
+                                lead,
+                                block.cols[0],
+                                { dr, dc: 0 },
+                                loadedSpacersRef.current,
+                            ).row - lead;
                     }
                     nudge(delta);
                     reselectMovingBlock(hot);
@@ -994,9 +980,16 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
             // The sheet's own first column is the cursor's left edge, so a
             // leftward move from it stays put rather than stepping onto a
-            // column that holds no cell of this sheet.
-            const atFirst = hot?.getSelectedRangeLast()?.highlight.col === spacersRef.current;
-            if (hot && atFirst && spacersRef.current > 0) {
+            // column that holds no cell of this sheet. A shift-extend leaves
+            // the highlight on the anchor and walks the range's `to`, so that
+            // is the edge about to enter the pad; every other leftward key
+            // moves the highlight itself. An edge left in there decorates
+            // columns collectMeta refuses to save, so the bolding outlives
+            // every sheet switch with nothing stored to clear it by.
+            const range = hot?.getSelectedRangeLast();
+            const edge = e.shiftKey && e.key === "ArrowLeft" ? range?.to : range?.highlight;
+            const pad = loadedSpacersRef.current;
+            if (hot && pad > 0 && edge?.col === pad) {
                 if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
                     e.preventDefault();
                     return false;
@@ -1008,7 +1001,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // the previous tabbable element (a sidebar sheet). Swallow it so
             // focus stays put.
             if (hot && e.key === "Tab" && e.shiftKey) {
-                if (hot.getSelectedRangeLast()?.highlight.col === spacersRef.current) {
+                if (hot.getSelectedRangeLast()?.highlight.col === loadedSpacersRef.current) {
                     e.preventDefault();
                     e.stopImmediatePropagation();
                     return false;
@@ -1053,7 +1046,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 // No hint for a cursor in the pad: nobody can hold a cell this
                 // sheet does not have.
                 const at =
-                    cell?.col != null ? toModelCol(gridCol(cell.col), spacersRef.current) : null;
+                    cell?.col != null
+                        ? toModelCol(gridCol(cell.col), loadedSpacersRef.current)
+                        : null;
                 const holder =
                     sid && cell && cell.row != null && at !== null
                         ? lockLabel(getPresences(), sid, at, cell.row, Date.now(), (id) =>
@@ -1080,7 +1075,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     origin.row,
                     origin.col,
                     dir,
-                    spacersRef.current,
+                    loadedSpacersRef.current,
                 );
                 if (e.shiftKey) hot.selection.setRangeEnd(hot._createCellCoords(row, col));
                 else hot.selectCell(row, col);
@@ -1100,9 +1095,20 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // arrives with a negative row and is redirected the same way.
     const beforeOnCellMouseDown = useCallback(
         (_event: unknown, coords: { row: number; col: number }) => {
-            if (coords.col >= 0 && coords.col < spacersRef.current) {
-                coords.col = spacersRef.current;
-            }
+            const lead = loadedSpacersRef.current;
+            if (coords.col >= 0 && coords.col < lead) coords.col = lead;
+        },
+        [],
+    );
+
+    // The same redirect for the moving end of a drag, which reaches the grid
+    // here rather than through the mousedown. A range whose edge sits in the
+    // pad decorates it, and collectMeta refuses to save a spacer's cells, so
+    // the bolding would sit on the grid with nothing stored to clear it by.
+    const beforeOnCellMouseOver = useCallback(
+        (_event: unknown, coords: { row: number; col: number }) => {
+            const lead = loadedSpacersRef.current;
+            if (coords.col >= 0 && coords.col < lead) coords.col = lead;
         },
         [],
     );
@@ -1150,9 +1156,10 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     contextMenu={viewOnly ? false : (FLOW_CONTEXT_MENU as unknown as string[])}
                     copyPaste={{ pasteMode: insertPaste ? "shift_down" : "overwrite" }}
                     cells={(_row: number, col: number) =>
-                        col < spacersRef.current ? { readOnly: true } : {}
+                        col < loadedSpacersRef.current ? { readOnly: true } : {}
                     }
                     beforeOnCellMouseDown={beforeOnCellMouseDown}
+                    beforeOnCellMouseOver={beforeOnCellMouseOver}
                     afterGetColHeader={afterGetColHeader}
                     afterRenderer={afterRenderer}
                     afterChange={afterChange}
