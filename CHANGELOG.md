@@ -10,9 +10,11 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 ### Added
 
 - **Visually align speeches**, a switch under Settings > Display, off by
-  default. On, every sheet lines up on the round's speaking order: a sheet
+  default. On, every flow sheet lines up on the round's speaking order: a sheet
   that does not open the round sits further right, with empty space where the
-  speeches it skips would be. A speech then holds one place on screen for the
+  speeches it skips would be. A cross-examination sheet stays flush, since its
+  columns are periods rather than speeches.
+  A speech then holds one place on screen for the
   whole round, so moving between sheets no longer slides the columns sideways
   under the cursor. Off, a sheet still starts at its own side's first speech
   and gives up no width.

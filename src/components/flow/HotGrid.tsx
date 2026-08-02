@@ -930,9 +930,16 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 The alignment pad sits inside the zoom, so it scales with the
                 columns it stands in for, and border-box keeps the padded pane
                 exactly the pane's width. A sheet's columns are the order minus
-                its offset, so every sheet of the round ends up one extent and
+                its offset, so the padded sheets of a round share one extent and
                 one maximum scroll, and the alignment holds however far the
-                debater has scrolled. */}
+                debater has scrolled. A sheet holding overflow columns from a
+                wider orientation runs past that shared extent, and drifts at
+                the far right of the scroll on its own.
+
+                Nothing bounds the pad against the pane. Nothing in the app
+                writes startSpeechId, so the offsets it derives are 0 and 1, and
+                the widest pad a debater can reach is one column against a split
+                pane's half width. */}
             <div
                 data-testid="grid-pad"
                 style={{

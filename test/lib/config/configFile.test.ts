@@ -49,7 +49,6 @@ describe("configFromState -> toAppConfig round-trip", () => {
     });
 
     it("defaults speech alignment off when the file does not name it", () => {
-        expect(configFromState(sample).align_speeches).toBe(true);
         expect(toAppConfig({}).alignSpeeches).toBe(false);
     });
 

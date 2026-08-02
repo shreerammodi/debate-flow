@@ -108,7 +108,12 @@ describe("speech alignment", () => {
     round.sheets.push(negSheet);
 
     afterEach(() => {
-        useFlowStore.setState({ alignSpeeches: false });
+        useFlowStore.setState({
+            alignSpeeches: false,
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+        });
     });
 
     function padOf(sheetId: string, alignSpeeches: boolean): string {
@@ -119,7 +124,9 @@ describe("speech alignment", () => {
             alignSpeeches,
         });
         render(<HotGrid sheetId={sheetId} pane={1} />);
-        return screen.getByTestId("grid-pad").style.paddingLeft;
+        const pad = screen.getByTestId("grid-pad");
+        expect(pad.style.zoom).not.toBe("");
+        return pad.style.paddingLeft;
     }
 
     it("pads a neg sheet by the speech that opens the round", () => {
@@ -132,5 +139,9 @@ describe("speech alignment", () => {
 
     it("pads nothing while the setting is off", () => {
         expect(padOf(negSheet.id, false)).toBe("0px");
+    });
+
+    it("leaves a cx sheet flush, since its columns are periods", () => {
+        expect(padOf(round.sheets[0].id, true)).toBe("0px");
     });
 });

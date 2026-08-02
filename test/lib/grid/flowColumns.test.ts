@@ -160,6 +160,12 @@ describe("speechOffset", () => {
                     const sheet = flowSheet(group);
                     const shown = columnsForFlowSheet(round, sheet).length;
                     expect(speechOffset(round, sheet) + shown).toBe(total);
+
+                    // group is a replicated register: a peer can put anything
+                    // on the wire, and startIndex falls the value back to aff.
+                    const garbage = { ...sheet, group: "garbage" as never };
+                    const garbageShown = columnsForFlowSheet(round, garbage).length;
+                    expect(speechOffset(round, garbage) + garbageShown).toBe(total);
                 }
             }
         }
