@@ -2,7 +2,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import Handsontable from "handsontable/base";
 import { registerAllModules } from "handsontable/registry";
 import { useLayoutEffect } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import HotGrid, { applyMeta, collectMeta } from "@/components/flow/HotGrid";
 import { seedDoc } from "@/lib/collab/doc";
@@ -17,6 +17,13 @@ import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 registerAllModules();
+
+// Every test outside the first describe mounts a real Handsontable and waits
+// out one or more full repaints; flipping alignment mid-test pays for two. On
+// a quiet machine that is a second or so, but the whole suite running in
+// parallel stretches it several times over, so this file gets a ceiling that
+// reflects the work rather than one tuned to an idle CPU.
+vi.setConfig({ testTimeout: 30_000 });
 
 const SRC: CellSource = {
     app: "cardmirror",
