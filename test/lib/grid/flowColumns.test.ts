@@ -149,6 +149,11 @@ describe("speechOffset", () => {
         const round = makeFlowRound({});
         expect(speechOffset(round, makeCxFlowSheet())).toBe(0);
         expect(speechOffset(round, { ...flowSheet("aff"), startSpeechId: "nope" })).toBe(0);
+        // A cx sheet carries the aff group, so a round the neg opens is the
+        // case that tells the kind apart from a flow sheet: read as one, it
+        // would start at the aff's first speech, a column into the order.
+        const negFirst = makeFlowRound({ event: "pf", firstSide: "neg" });
+        expect(speechOffset(negFirst, makeCxFlowSheet())).toBe(0);
     });
 
     it("accounts for exactly the columns a sheet does not show", () => {
