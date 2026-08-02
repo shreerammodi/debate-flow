@@ -1026,10 +1026,17 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                         }
                         return false;
                     }
-                    if (mod && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+                    // Ctrl/Meta+A takes the cells; Ctrl+Shift+Space takes the
+                    // cells and their headers. Both start at the sheet's own
+                    // first column, so a decoration applied to the selection
+                    // cannot land on a spacer, where nothing saves it and
+                    // nothing sweeps it up again.
+                    const selectAll =
+                        (mod && !e.shiftKey && (e.key === "a" || e.key === "A")) ||
+                        (e.ctrlKey && e.shiftKey && e.key === " ");
+                    if (selectAll) {
                         e.preventDefault();
-                        // Everything the sheet owns, and the viewport stays
-                        // where the debater left it.
+                        // The viewport stays where the debater left it.
                         hot.selectCell(0, pad, hot.countRows() - 1, hot.countCols() - 1, false);
                         return false;
                     }

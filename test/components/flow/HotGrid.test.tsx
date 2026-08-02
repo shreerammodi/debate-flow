@@ -369,6 +369,13 @@ describe("speech alignment", () => {
         press(hot, "a", { ctrlKey: true });
         expect(hot.getSelectedLast()).toEqual([0, 1, hot.countRows() - 1, hot.countCols() - 1]);
     });
+
+    it("starts the headers select-all past the pad too", async () => {
+        const hot = await mount(negSheet.id, true);
+        hot.selectCell(0, 2);
+        press(hot, " ", { ctrlKey: true, shiftKey: true });
+        expect(hot.getSelectedLast()).toEqual([0, 1, hot.countRows() - 1, hot.countCols() - 1]);
+    });
 });
 
 /**
