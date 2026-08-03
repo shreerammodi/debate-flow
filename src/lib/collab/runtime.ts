@@ -17,7 +17,11 @@ import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { serializeFlow } from "@/lib/persistence/flowFile";
 import { basename } from "@/lib/persistence/flowPaths";
-import { useCollabStore, type CollabPeerView } from "@/lib/store/useCollabStore";
+import {
+    useCollabStore,
+    type CollabPendingView,
+    type CollabPeerView,
+} from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { getCurrentVersion } from "@/lib/update/adapter";
 
@@ -47,6 +51,7 @@ import {
     startCollabSession,
     type CollabPeer,
     type CollabSession,
+    type PendingPeer,
     type SavedByPeer,
 } from "./session";
 import type { CollabDoc, Role } from "./types";
@@ -160,6 +165,20 @@ function publishRole(role: Role): void {
     useCollabStore.getState().setSelfRole(role);
 }
 
+/**
+ * Who the session is still trying to reach, named the way the chip names
+ * everyone else: the contact table's word for them, then a short id.
+ */
+function publishPending(pending: PendingPeer[]): void {
+    const contacts = useFlowStore.getState().contacts;
+    const view: CollabPendingView[] = pending.map((p) => ({
+        endpointId: p.endpointId,
+        name: contactName(contacts, p.endpointId),
+        unreachable: p.unreachable,
+    }));
+    useCollabStore.getState().setPending(view);
+}
+
 function publish(peers: CollabPeer[]): void {
     const contacts = useFlowStore.getState().contacts;
     const view: CollabPeerView[] = peers.map((p) => ({
@@ -256,6 +275,7 @@ export async function startForRound(
             apply: (incoming) => applyRemoteDoc(round, incoming),
             dial: knownPeers,
             onPeersChanged: publish,
+            onPendingChanged: publishPending,
             onRoleChanged: publishRole,
             contacts: () => useFlowStore.getState().contacts,
             onInvite: announceInvite,

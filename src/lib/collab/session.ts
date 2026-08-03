@@ -75,10 +75,30 @@ export interface SavedByPeer {
     relayUrl?: string;
 }
 
+/**
+ * A peer this side is trying to reach and has not.
+ *
+ * `unreachable` is what separates a partner who has not opened the round yet
+ * from one this side cannot get to at all: the first is the ordinary case five
+ * minutes before a round, and the second is the one a debater has to do
+ * something about. It is set by a dial that came back rather than by a link
+ * dropping, so it says a route was tried and refused.
+ */
+export interface PendingPeer {
+    endpointId: string;
+    unreachable: boolean;
+}
+
 export interface CollabSession {
     endpointId: string;
     roundId: string;
     peers(): CollabPeer[];
+    /**
+     * The peers a dial is still out for. Empty is a session holding everyone
+     * it expects, or one nobody has joined yet; the peer list beside it is
+     * what tells the two apart.
+     */
+    pending(): PendingPeer[];
     /**
      * What this side was admitted as. A host is always an editor: it holds the
      * file. A guest asks to edit and is granted whatever the host decided,
@@ -151,6 +171,8 @@ export interface CollabSessionDeps {
     /** What this side asks to be. The host's ticket is the authority. */
     role?: Role;
     onPeersChanged?: (peers: CollabPeer[]) => void;
+    /** Fires whenever the set of peers being waited for changes. */
+    onPendingChanged?: (pending: PendingPeer[]) => void;
     /** Fires when the host names what this side was admitted as. */
     onRoleChanged?: (role: Role) => void;
     schedule?: (fn: () => void, ms: number) => () => void;
@@ -208,9 +230,25 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
     // Started here and awaited only by `share`, because a relay is contacted
     // after the socket is bound and that answer is seconds away. Waiting for
     // it here would hold the whole session behind it, including the dials
-    // that put a reopened round's partners back. Empty is an ordinary answer:
-    // no relaying, or none reached in time.
-    const homeRelay = link.relayUrl().catch(() => "");
+    // that put a reopened round's partners back. Not asked at all with
+    // relaying off: there is no relay for this endpoint to be homed on.
+    let homed = settings.relay ? link.relayUrl().catch(() => "") : Promise.resolve("");
+
+    /**
+     * Where this host can be reached, waited out only when a ticket needs it.
+     *
+     * An empty answer is asked again rather than kept. The first one is a
+     * relay that had not answered by its deadline, and a debater clicking
+     * Share a second time is the retry: a memoized empty would make every
+     * later share on this session fail for as long as it runs, including the
+     * one taken after the wifi came back.
+     */
+    async function homeRelay(): Promise<string> {
+        const first = await homed;
+        if (first) return first;
+        homed = link.relayUrl().catch(() => "");
+        return homed;
+    }
 
     const dial = [...(deps.dial ?? [])];
     const readOnlyPeers = knownRoundViewers(deps.roundId);
@@ -242,6 +280,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * otherwise fire minutes later.
      */
     const retries = new Map<string, () => void>();
+    /**
+     * The peers a dial has come back empty for at least once. Held beside the
+     * ladder rather than inside it, because the ladder is armed the moment a
+     * link drops and a drop is not yet a failure to reach anyone.
+     */
+    const unreachable = new Set<string>();
     /**
      * Where each peer was last found: the round's own record, a saved contact,
      * the ticket in hand, and then the link itself once a connection stood up.
@@ -329,6 +373,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         deps.onPeersChanged?.([...live.values()].map((l) => l.peer));
     }
 
+    function pendingPeers(): PendingPeer[] {
+        return [...retries.keys()].map((endpointId) => ({
+            endpointId,
+            unreachable: unreachable.has(endpointId),
+        }));
+    }
+
+    function announcePending(): void {
+        deps.onPendingChanged?.(pendingPeers());
+    }
+
     function onPosition(
         peerId: string,
         cell: CellRef | null,
@@ -373,9 +428,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         readOnly: boolean,
         outbound: boolean,
     ): PeerSync | null {
-        // Nothing is climbing a backoff for a peer that is here.
+        // Nothing is climbing a backoff for a peer that is here, and nothing
+        // is out of reach that just answered.
         retries.get(peer.endpointId)?.();
         retries.delete(peer.endpointId);
+        unreachable.delete(peer.endpointId);
+        announcePending();
         // Learned from the link that just stood up, which is the only source
         // for a peer this side never held a ticket or a contact for. Beside
         // the round's own record, so tomorrow's open dials an address.
@@ -649,7 +707,22 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         // One ladder per peer: a second drop while a retry is armed would
         // otherwise leave two of them climbing the same backoff.
         retries.get(target)?.();
-        retries.set(target, retryForever({ dial: () => dialPeer(target), schedule }));
+        retries.set(
+            target,
+            retryForever({
+                dial: () =>
+                    dialPeer(target).catch((err: unknown) => {
+                        // A dial that came back is a route tried and refused,
+                        // which is what separates a partner who has not opened
+                        // the round from one this side cannot get to.
+                        unreachable.add(target);
+                        announcePending();
+                        throw err;
+                    }),
+                schedule,
+            }),
+        );
+        announcePending();
     }
 
     // Every remembered peer at once, not one after another. A peer that is not
@@ -666,7 +739,12 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
                 // except against a peer who answered: they heard this round
                 // offered and are not holding it, so dialling again would only
                 // repeat itself.
-                if (!stopped && !isInvited(err)) redial(target);
+                if (stopped || isInvited(err)) return;
+                // The opening dial is a route tried and refused just as a
+                // redial is, so a round reopening against a partner who is
+                // not up says so rather than reading as merely waiting.
+                unreachable.add(target);
+                redial(target);
             }
         }),
     );
@@ -679,20 +757,32 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             return [...live.values()].map((l) => l.peer);
         },
 
+        pending() {
+            return pendingPeers();
+        },
+
         role() {
             return myRole;
         },
 
         async share(role) {
+            // Where this host can be reached, so a guest two networks away has
+            // somewhere to send its first packet.
+            const relayUrl = settings.relay ? await homeRelay() : "";
+            // An EndpointId names a peer and does not route to one, so a
+            // ticket with relaying on and no relay in it works across a room
+            // and nowhere else - and looks correct while it fails. Refusing is
+            // the honest answer: the debater retries, or turns relaying off
+            // and is told what that costs.
+            if (settings.relay && !relayUrl) {
+                throw new Error("Could not reach a relay. Check your internet and try again.");
+            }
             const ticket = mintTicket({
                 endpointId,
                 roundId: deps.roundId,
                 role,
                 relay: settings.relay,
-                // Where this host can be reached, so a guest two networks
-                // away has somewhere to send its first packet. Empty when
-                // there is none, and the ticket then names no relay at all.
-                relayUrl: (await homeRelay) || undefined,
+                ...(relayUrl ? { relayUrl } : {}),
             });
             // The role rides with the secret. What the ticket grants is the
             // host's to decide, so a viewer's ticket cannot be spent as an
@@ -740,6 +830,8 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             forgetRoundPeer(deps.roundId, target);
             retries.get(target)?.();
             retries.delete(target);
+            unreachable.delete(target);
+            announcePending();
             const entry = live.get(target);
             if (!entry) return;
             // Out of the map before the close, so the close handler leaves the
@@ -795,6 +887,8 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
             // not a reason for one more dial.
             for (const stop of retries.values()) stop();
             retries.clear();
+            unreachable.clear();
+            announcePending();
             for (const l of [...live.values()]) {
                 l.sync.stop();
                 l.conn.send({ type: "bye" });

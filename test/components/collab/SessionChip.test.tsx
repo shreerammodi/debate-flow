@@ -66,32 +66,82 @@ describe("SessionChip", () => {
         expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 
-    it("shows the connection state and the peer count while collapsed", () => {
+    it("counts the partners who are here while collapsed", () => {
         live();
         render(<SessionChip />);
 
         const chip = screen.getByTestId("collab-chip");
-        expect(chip).toHaveTextContent("Connected");
-        expect(chip).toHaveTextContent("2 peers");
+        expect(chip).toHaveTextContent("Connected to 2 partners");
         expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 
-    it("names a single peer in the singular", () => {
+    it("names a single partner rather than counting them", () => {
         live([ALEX]);
         render(<SessionChip />);
-        expect(screen.getByTestId("collab-chip")).toHaveTextContent("1 peer");
+        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Connected to Alex");
     });
 
-    it("reports a session that is still dialing", () => {
-        useCollabStore.setState({ status: "connecting", peers: [] });
+    it("notes a relayed link quietly, on the same line", () => {
+        live([RIN]);
         render(<SessionChip />);
-        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Connecting");
+        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Connected to Rin, relayed");
     });
 
-    it("reports a session that dropped and is retrying", () => {
-        useCollabStore.setState({ status: "reconnecting", peers: [ALEX] });
+    it("says a session nobody has joined is open, not broken", () => {
+        useCollabStore.setState({ status: "connecting", peers: [], pending: [] });
         render(<SessionChip />);
-        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Reconnecting");
+        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Waiting to be joined");
+    });
+
+    it("names the partner it is waiting for", () => {
+        useCollabStore.setState({
+            status: "connecting",
+            peers: [],
+            pending: [{ endpointId: "sam-endpoint", name: "Sam", unreachable: false }],
+        });
+        render(<SessionChip />);
+        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Waiting for Sam");
+    });
+
+    it("says so when it cannot reach that partner", () => {
+        useCollabStore.setState({
+            status: "reconnecting",
+            peers: [],
+            pending: [{ endpointId: "sam-endpoint", name: "Sam", unreachable: true }],
+        });
+        render(<SessionChip />);
+        expect(screen.getByTestId("collab-chip")).toHaveTextContent("Can't reach Sam");
+    });
+
+    it("spells out what to do about a partner it cannot reach", async () => {
+        const user = userEvent.setup();
+        useCollabStore.setState({
+            status: "connected",
+            peers: [ALEX],
+            pending: [{ endpointId: "sam-endpoint", name: "Sam", unreachable: true }],
+        });
+        render(<SessionChip />);
+
+        await user.click(screen.getByTestId("collab-chip"));
+        expect(screen.getAllByTestId("collab-peer-row")).toHaveLength(1);
+        expect(screen.getByTestId("collab-pending-row")).toHaveTextContent(
+            "Can't reach Sam. You both need internet, or the same wifi.",
+        );
+    });
+
+    it("spells out that a partner has not opened the round yet", async () => {
+        const user = userEvent.setup();
+        useCollabStore.setState({
+            status: "connecting",
+            peers: [],
+            pending: [{ endpointId: "sam-endpoint", name: "Sam", unreachable: false }],
+        });
+        render(<SessionChip />);
+
+        await user.click(screen.getByTestId("collab-chip"));
+        expect(screen.getByTestId("collab-pending-row")).toHaveTextContent(
+            "Waiting for Sam to open this round",
+        );
     });
 
     it("expands on click into one row per peer, and collapses again", async () => {

@@ -20,9 +20,18 @@ export interface CollabPeerView {
     connectionType: "direct" | "relayed";
 }
 
+/** A peer a dial is still out for, and why it has not landed. */
+export interface CollabPendingView {
+    endpointId: string;
+    name: string;
+    unreachable: boolean;
+}
+
 export interface CollabUiState {
     status: CollabStatus;
     peers: CollabPeerView[];
+    /** Peers the session expects and does not have. */
+    pending: CollabPendingView[];
     /**
      * What this side was admitted as. Partner unless a host granted a
      * view-only ticket, which is the one thing that makes the surfaces stop
@@ -40,6 +49,7 @@ export interface CollabUiState {
     invites: readonly InviteNotice[];
     setStatus(status: CollabStatus): void;
     setPeers(peers: CollabPeerView[]): void;
+    setPending(pending: CollabPendingView[]): void;
     setSelfRole(role: Role): void;
     setEndpointId(endpointId: string): void;
     pushInvite(invite: InviteNotice): void;
@@ -47,8 +57,9 @@ export interface CollabUiState {
     reset(): void;
 }
 
-/** One array backs every empty peer list, so a reset changes no identity. */
+/** One array backs every empty list, so a reset changes no identity. */
 const NO_PEERS: CollabPeerView[] = [];
+const NO_PENDING: CollabPendingView[] = [];
 
 const NO_INVITES: readonly InviteNotice[] = [];
 
@@ -66,11 +77,13 @@ const MAX_INVITES = 20;
 export const useCollabStore = create<CollabUiState>((set) => ({
     status: "off",
     peers: NO_PEERS,
+    pending: NO_PENDING,
     selfRole: "editor",
     endpointId: null,
     invites: NO_INVITES,
     setStatus: (status) => set({ status }),
     setPeers: (peers) => set({ peers }),
+    setPending: (pending) => set({ pending }),
     setSelfRole: (selfRole) => set({ selfRole }),
     setEndpointId: (endpointId) => set({ endpointId }),
     // A partner who dials twice about one round is one invitation, not two.
@@ -93,5 +106,12 @@ export const useCollabStore = create<CollabUiState>((set) => ({
     // An offer is only actionable while shared editing is running: with no
     // session, joining answers "turn on shared editing" and the sender has
     // long since moved on. Nothing survives a teardown that cannot be acted on.
-    reset: () => set({ status: "off", peers: NO_PEERS, selfRole: "editor", invites: NO_INVITES }),
+    reset: () =>
+        set({
+            status: "off",
+            peers: NO_PEERS,
+            pending: NO_PENDING,
+            selfRole: "editor",
+            invites: NO_INVITES,
+        }),
 }));
