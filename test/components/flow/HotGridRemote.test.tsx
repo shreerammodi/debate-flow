@@ -116,4 +116,41 @@ describe("a partner's change on the live grid", () => {
         await waitFor(() => expect(hot.getDataAtCell(1, 0)).toBe("also theirs"));
         expect(hot.getActiveEditor()!.getValue()).toBe("mine, still typing");
     });
+
+    /**
+     * Holding a cell back under an open editor is only half the rule: the text
+     * has to land once the editor is gone. Escape is what proves it, because
+     * it abandons the edit and moves nothing, so nothing announces the close.
+     * Left held, the grid keeps the line that was there before the partner
+     * wrote, and the next snapshot pushes that back over their text.
+     */
+    it("lands a held-back cell once the editor is abandoned", async () => {
+        const hot = await mount();
+        hot.selectCell(0, 0);
+        hot.getActiveEditor()!.beginEditing();
+        hot.getActiveEditor()!.setValue("mine, still typing");
+
+        applyRemoteDoc(
+            round,
+            fromSam(
+                { kind: "cellText", sheetId, col: 0, row: 0, text: "theirs" },
+                { kind: "cellText", sheetId, col: 0, row: 1, text: "also theirs" },
+            ),
+        );
+        await waitFor(() => expect(hot.getDataAtCell(1, 0)).toBe("also theirs"));
+
+        // Escape: abandon the edit entirely.
+        hot.getActiveEditor()!.cancelChanges();
+        hot.getActiveEditor()!.finishEditing(true);
+        // Moving off the cell is the first chance to show what was held.
+        hot.selectCell(1, 1);
+        await waitFor(() => expect(hot.getDataAtCell(0, 0)).toBe("theirs"));
+
+        // And an unrelated edit reads the grid back into the store, which is
+        // where their line would have been lost.
+        hot.setDataAtCell(1, 1, "my later note");
+        await waitFor(() => expect(hot.getDataAtCell(1, 1)).toBe("my later note"));
+        const st = useFlowStore.getState().round!.sheets.find((s) => s.id === sheetId)!;
+        expect(st.data[0][0]).toBe("theirs");
+    });
 });

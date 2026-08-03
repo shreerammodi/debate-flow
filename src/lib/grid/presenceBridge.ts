@@ -21,6 +21,7 @@
 import type { Presence } from "@/lib/collab/presence";
 
 import type { ModelCol } from "./colSpace";
+import { getActiveHot } from "./hotInstance";
 
 /** One array backs every empty table, so a clear changes no identity. */
 const NO_PRESENCE: readonly Presence[] = [];
@@ -86,4 +87,20 @@ export function claimCell(cell: HeldCell): void {
  */
 export function claimCursor(cell: HeldCell): void {
     cursorHandler?.(cell);
+}
+
+/**
+ * Whether an editor is open here right now.
+ *
+ * Handsontable announces an editor opening and says nothing when one closes,
+ * so a claim cannot be released by an event: whoever holds one asks instead,
+ * and the grid answers from the editor itself. Escape is the case that proves
+ * it - the editor shuts, the selection does not move, and no hook runs at all.
+ *
+ * The focused pane is the one asked, which in a split is the pane that opened
+ * the editor: an editor only opens on a selection, and selecting is what moves
+ * the focus here.
+ */
+export function editingHere(): boolean {
+    return getActiveHot()?.getActiveEditor()?.isOpened() ?? false;
 }

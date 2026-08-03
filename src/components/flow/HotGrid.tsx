@@ -10,15 +10,17 @@ import "handsontable/styles/handsontable.min.css";
 import "handsontable/styles/ht-theme-main.min.css";
 
 import { contactName } from "@/lib/collab/contacts";
+import { liveCells } from "@/lib/collab/doc";
 import {
     isReplicatedSource,
     rowOpFromHook,
     textOpsFromChanges,
     type ModelChange,
 } from "@/lib/collab/gridOps";
-import { gridPatchFor, type GridPatch } from "@/lib/collab/gridPatch";
+import { gridPatchFor, type CellWrite, type GridPatch } from "@/lib/collab/gridPatch";
 import { planRemoteApply } from "@/lib/collab/remoteApply";
-import { recordOp } from "@/lib/collab/replica";
+import { getReplica, recordOp } from "@/lib/collab/replica";
+import { rowOfIdentity, type CellRef } from "@/lib/collab/selection";
 import { openSpanOps, replaceSpanOps } from "@/lib/collab/spanOps";
 import { executeCommand } from "@/lib/commands/commands";
 import { shiftMetaDown, type PasteShift } from "@/lib/grid/cellShift";
@@ -60,7 +62,13 @@ import {
     revertMove,
 } from "@/lib/grid/moveSession";
 import { disableTextAssistance } from "@/lib/grid/plainTextInput";
-import { claimCell, claimCursor, getPresences, onPresenceChanged } from "@/lib/grid/presenceBridge";
+import {
+    claimCell,
+    claimCursor,
+    editingHere,
+    getPresences,
+    onPresenceChanged,
+} from "@/lib/grid/presenceBridge";
 import {
     LOCK_CLASS,
     lockLabel,
@@ -328,14 +336,58 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const [lockHint, setLockHint] = useState<string | null>(null);
     const lockHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // A partner's text for the cell an editor was open on, kept back from the
+    // grid rather than dropped. Named by identity so a row insert arriving
+    // afterwards cannot slide it onto a different cell.
+    const deferredRef = useRef<{ sheetId: string; cells: CellRef[] } | null>(null);
+
+    /**
+     * Puts a held-back cell on the grid once the editor that held it is gone.
+     *
+     * Deferring the write is only half of not overwriting a debater mid-word:
+     * the text still has to arrive, and Handsontable announces no editor
+     * closing to arrive on. So this is asked rather than fired, at the two
+     * moments that matter - before the grid is read back into the store, and
+     * on the next selection, so a debater sees their partner's line rather
+     * than waiting for one.
+     *
+     * Escape is the case that makes it necessary. The edit is abandoned, the
+     * grid keeps the text that was there before the partner wrote, and the
+     * next snapshot pushes that stale cell over their line in the store.
+     */
+    const flushDeferred = useCallback(() => {
+        const pending = deferredRef.current;
+        const hot = hotRef.current?.hotInstance;
+        if (!pending || !hot || editingHere()) return;
+        deferredRef.current = null;
+        // A sheet switch reloads every cell from the same projection, so a
+        // hold-back for the sheet left behind has already been honoured.
+        if (pending.sheetId !== currentSheetIdRef.current) return;
+        const sheet = getReplica()?.sheets[pending.sheetId];
+        if (!sheet) return;
+        const writes: CellWrite[] = [];
+        for (const ref of pending.cells) {
+            // Null is a cell a partner deleted while it was held: there is no
+            // longer a row to write, and the delete itself already landed.
+            const row = rowOfIdentity(sheet, ref);
+            if (row === null) continue;
+            writes.push({ row, col: ref.col, text: liveCells(sheet, ref.col)[row].text });
+        }
+        writeRemotePatch(hot, { writes, meta: [], height: 0 }, loadedSpacersRef.current);
+    }, []);
+
     const snapshot = useCallback(() => {
         const hot = hotRef.current?.hotInstance;
         const sid = currentSheetIdRef.current;
         if (!hot || !sid) return;
+        // Before the read, never after: the grid is about to become the store,
+        // and a cell still holding pre-partner text would take their line with
+        // it.
+        flushDeferred();
         const lead = loadedSpacersRef.current;
         const rows = (hot.getData() as (string | null)[][]).map((row) => row.slice(lead));
         useFlowStore.getState().updateSheetData(sid, trimGrid(rows), collectMeta(hot, lead));
-    }, []);
+    }, [flushDeferred]);
 
     useEffect(() => {
         const hot = hotRef.current?.hotInstance ?? null;
@@ -375,6 +427,13 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 selection: cursor,
                 activeSheetId: sid,
             });
+
+            // What the editor held back, kept for the moment it closes. The
+            // same cell deferred twice is the same identity, so the later plan
+            // simply replaces the earlier one.
+            if (plan.deferredCells.length > 0) {
+                deferredRef.current = { sheetId: sid, cells: plan.deferredCells };
+            }
 
             // A partner's text goes on cell by cell. Reloading the pane would
             // be simpler and would reset the scroll position and destroy the
@@ -590,6 +649,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // The session coalesces the claim onto the heartbeat, so firing per
     // selection costs no extra message.
     const afterSelectionEnd = useCallback(() => {
+        // Moving off a cell is the ordinary way an editor closes, so it is the
+        // first chance to give a partner's held-back line the screen.
+        flushDeferred();
         // A selection is a read of the grid as it stands, and so is anything a
         // command reaching it through the registry will do, so both the claim
         // and the publish speak in the pad it was drawn with.
@@ -610,7 +672,7 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             const at = toModelCol(gridCol(cell.col), lead);
             if (at !== null) claimCursor({ sheetId: sid, col: at, row: cell.row });
         }
-    }, [pane, snapshot]);
+    }, [pane, snapshot, flushDeferred]);
 
     // Search palette jump: declared after the sheet-switch effect so that when
     // both fire in one commit (a cross-sheet jump) this selection wins. The rAF
@@ -814,10 +876,9 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     );
 
     // A cell this side is typing in is claimed so a partner sees it before
-    // they start on the same one, and released the moment the editor closes.
-    // The claim is advisory and expires on its own, so the only thing that
-    // matters here is that a release always follows a claim: a lock left
-    // behind by a pane that unmounted is worse than no locking at all.
+    // they start on the same one. Only the claim is announced: Handsontable
+    // has no hook for an editor closing, so the release is the session asking
+    // `editingHere` rather than anything fired from here.
     const afterBeginEditing = useCallback((row: number, col: number) => {
         const input = hotRef.current?.hotInstance?.rootElement.querySelector<HTMLTextAreaElement>(
             "textarea.handsontableInput",
@@ -828,8 +889,6 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
         const at = toModelCol(gridCol(col), loadedSpacersRef.current);
         if (sid && at !== null) claimCell({ sheetId: sid, col: at, row });
     }, []);
-
-    const afterDestroyEditor = useCallback(() => claimCell(null), []);
 
     // A pane that went away leaves no ghost on the partner's screen: both the
     // claim and the cursor go with it.
@@ -1238,7 +1297,6 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                     afterRemoveRow={afterRemoveRow}
                     afterSelectionEnd={afterSelectionEnd}
                     afterBeginEditing={afterBeginEditing}
-                    afterDestroyEditor={afterDestroyEditor}
                     beforeKeyDown={beforeKeyDown}
                     licenseKey="non-commercial-and-evaluation"
                 />

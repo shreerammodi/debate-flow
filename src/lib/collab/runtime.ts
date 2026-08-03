@@ -12,7 +12,7 @@
 
 import { toast } from "sonner";
 
-import { setClaimHandler, setCursorHandler } from "@/lib/grid/presenceBridge";
+import { editingHere, setClaimHandler, setCursorHandler } from "@/lib/grid/presenceBridge";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
 import { serializeFlow } from "@/lib/persistence/flowFile";
@@ -260,6 +260,7 @@ export async function startForRound(
             contacts: () => useFlowStore.getState().contacts,
             onInvite: announceInvite,
             onContact: saveBack,
+            editing: editingHere,
         });
     } catch (err) {
         // A chip left saying "connecting" would outlast the corner message and

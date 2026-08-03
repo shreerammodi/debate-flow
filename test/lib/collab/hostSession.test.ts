@@ -97,7 +97,7 @@ beforeEach(() => {
     sheetId = shared.sheets.find((s) => s.kind !== "cx")!.id;
 });
 
-async function hostAndGuest(): Promise<{
+async function hostAndGuest(guestEditing?: () => boolean): Promise<{
     host: CollabSession;
     guest: CollabSession;
     hostSide: ReturnType<typeof replicaFor>;
@@ -125,6 +125,7 @@ async function hostAndGuest(): Promise<{
         ticket,
         dial: [ALEX],
         schedule: clock.schedule,
+        editing: guestEditing,
     }))!;
     await settle();
     return { host, guest, hostSide, guestSide, ticket };
@@ -490,6 +491,57 @@ describe("a partner's cursor across a session", () => {
         await settle();
         expect(getPresences()).toHaveLength(1);
         expect(getPresences()[0]).toMatchObject({ col: 1, row: 3, editing: false });
+        await host.stop();
+    });
+
+    /**
+     * The grid announces an editor opening and has nothing to say when one
+     * closes, so a claim outlives its editor unless something asks. Left
+     * standing it swallows every cursor move after it: the partner's marker
+     * stays pinned to the cell that was last edited, and stays refused, until
+     * the debater happens to open another editor somewhere else.
+     */
+    it("keeps following a partner who has finished editing a cell", async () => {
+        let editing = true;
+        const { host, guest } = await hostAndGuest(() => editing);
+        guest.setCursor({ sheetId, col: modelCol(1), row: 3 });
+        guest.setPresence({ sheetId, col: modelCol(1), row: 3 });
+        await settle();
+        expect(getPresences()[0]).toMatchObject({ row: 3, editing: true });
+
+        // The editor closes. Nothing announces it, so the claim is still held
+        // here and only the grid knows better.
+        editing = false;
+
+        guest.setCursor({ sheetId, col: modelCol(1), row: 4 });
+        await settle();
+        expect(getPresences()[0]).toMatchObject({ col: 1, row: 4, editing: false });
+
+        guest.setCursor({ sheetId, col: modelCol(1), row: 9 });
+        clock.advance(HEARTBEAT_MS);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        expect(getPresences()[0]).toMatchObject({ row: 9, editing: false });
+        await host.stop();
+    });
+
+    /**
+     * Escape shuts the editor and moves nothing, so no cursor follows it in.
+     * The heartbeat is the only thing left to notice, and a cell that stayed
+     * claimed would refuse the partner's keystrokes for the rest of the round.
+     */
+    it("hands back a cell abandoned without the cursor moving", async () => {
+        let editing = true;
+        const { host, guest } = await hostAndGuest(() => editing);
+        guest.setCursor({ sheetId, col: modelCol(2), row: 6 });
+        guest.setPresence({ sheetId, col: modelCol(2), row: 6 });
+        await settle();
+        expect(getPresences()[0].editing).toBe(true);
+
+        editing = false;
+        clock.advance(HEARTBEAT_MS);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+
+        expect(getPresences()[0]).toMatchObject({ col: 2, row: 6, editing: false });
         await host.stop();
     });
 

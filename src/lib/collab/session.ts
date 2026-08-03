@@ -154,6 +154,13 @@ export interface CollabSessionDeps {
     /** Fires when the host names what this side was admitted as. */
     onRoleChanged?: (role: Role) => void;
     schedule?: (fn: () => void, ms: number) => () => void;
+    /**
+     * Whether this side still has the editor open that it claimed a cell with.
+     * There is no close event to release the claim, so the heartbeat asks. A
+     * caller with no grid to ask leaves it out, and the claim stands until it
+     * is dropped by hand.
+     */
+    editing?: () => boolean;
     /** What this side calls the round, so an invite it sends can name it. */
     roundLabel?: string;
     /** What this side calls itself, carried to every peer it greets. */
@@ -275,10 +282,27 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
      * side's table.
      */
     function broadcastPosition(): void {
+        dropSpentClaim();
         const msg: WireMessage = held
             ? { type: "presence", cell: held }
             : { type: "cursor", cell: at };
         for (const l of live.values()) l.conn.send(msg);
+    }
+
+    /**
+     * Lets go of a claim the editor behind it no longer backs, and says
+     * whether it had one to let go of.
+     *
+     * A claim is the one thing here that arrives as an event and cannot leave
+     * as one, so it is checked wherever this side is about to speak. Left in,
+     * it silences every cursor move after it - the partner's marker stays
+     * pinned to the cell that was last edited, and stays refused, until the
+     * debater happens to open another editor.
+     */
+    function dropSpentClaim(): boolean {
+        if (!held || deps.editing?.() !== false) return false;
+        held = null;
+        return true;
     }
 
     /**
@@ -750,13 +774,17 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
         setCursor(cell) {
             at = cell;
             // An open editor already speaks for this side's position, and a
-            // cursor cannot move while one is open.
+            // cursor cannot move while one is open. A closed one speaks for
+            // nothing, so the claim it left behind goes first.
+            const freed = dropSpentClaim();
             if (held) return;
             // A heartbeat already ticking will carry this within HEARTBEAT_MS,
-            // which is what keeps arrowing down a column off the wire. Leaving
-            // is the exception: a cursor nobody is behind has to go at once,
-            // because the tick that would have cleared it is about to stop.
-            if (!cancelHeartbeat || cell === null) broadcastPosition();
+            // which is what keeps arrowing down a column off the wire. Two
+            // exceptions go at once: a cursor nobody is behind, because the
+            // tick that would have cleared it is about to stop, and a cell
+            // just handed back, because until that lands a partner typing
+            // into it is refused.
+            if (!cancelHeartbeat || cell === null || freed) broadcastPosition();
             if (at) armHeartbeat();
             else stopHeartbeat();
         },
