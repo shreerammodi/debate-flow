@@ -6,7 +6,7 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 
 import Sidebar from "@/components/flow/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -61,6 +61,7 @@ function resetStore() {
         activeSheetId: null,
         renamingSheetId: null,
         sidebarCollapsed: false,
+        contacts: {},
     });
 }
 
@@ -399,5 +400,66 @@ describe("Sidebar", () => {
                 invite.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
             ).toBeTruthy();
         });
+    });
+});
+
+describe("the share button", () => {
+    beforeEach(() => {
+        resetStore();
+        vi.clearAllMocks();
+        // Sharing is offered where an endpoint can be bound. isDesktop()
+        // reads this global, and jsdom has no shell unless a test says so.
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    });
+
+    afterEach(() => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    });
+
+    it("sits beside the session chip when a round is open", () => {
+        setupRound();
+        renderSidebar();
+        expect(screen.getByTestId("sidebar-share")).toBeInTheDocument();
+        expect(screen.getByTestId("sidebar-share-view")).toBeInTheDocument();
+    });
+
+    it("offers joining beside the round too, not only from the palette", () => {
+        setupRound();
+        renderSidebar();
+        expect(screen.getByTestId("sidebar-join")).toBeInTheDocument();
+    });
+
+    // The sidebar is the flow screen's, so with nothing open there is nothing
+    // here at all - the start screen is what a debater is looking at.
+    it("is not on screen at all with no flow open", () => {
+        renderSidebar();
+        expect(screen.queryByTestId("share-controls")).toBeNull();
+    });
+
+    it("is reachable from the collapsed rail too, where the chips float", () => {
+        setupRound();
+        useFlowStore.setState({ sidebarCollapsed: true });
+        renderSidebar();
+        expect(screen.getByTestId("sidebar-share")).toBeInTheDocument();
+    });
+
+    it("offers a saved partner only once there is one", () => {
+        setupRound();
+        const { unmount } = renderSidebar();
+        expect(screen.queryByTestId("sidebar-invite")).toBeNull();
+        unmount();
+
+        useFlowStore.setState({ contacts: { [`${"a".repeat(64)}`]: { name: "Alex" } } });
+        renderSidebar();
+        expect(screen.getByTestId("sidebar-invite")).toBeInTheDocument();
+    });
+
+    // A browser cannot bind an endpoint, so a button here would offer a
+    // debater something that cannot exist.
+    it("is absent off the desktop, round or no round", () => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+        setupRound();
+        renderSidebar();
+        expect(screen.queryByTestId("share-controls")).toBeNull();
     });
 });

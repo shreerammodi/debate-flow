@@ -9,6 +9,21 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Added
 
+- **Share a round with a code you can read out.** Invite partner puts eight
+  characters on screen, in two groups; your partner types them into Join and
+  the round opens on their machine. No invite to copy, and nothing to paste
+  through another application. Share view only does the same for anyone who
+  should watch and not type: a view-only code keeps working for as long as the
+  sheet is open, while a partner code is spent on the first person who uses it.
+  Sharing lives beside the round now, on the sidebar next to the session
+  corner, rather than in Settings, and the first time you share or join, ebb
+  asks whether to turn sharing on. Settings keeps the switches.
+- **Pairing works between two networks.** Both sides work out the same
+  temporary address from the code, including which relay to meet at, so venue
+  wifi on one side and a telephone hotspot on the other reach each other.
+  There is still nothing published anywhere and no server of ours in the
+  middle: the code travels between two people, and what crosses the connection
+  is the same single-use invite as before.
 - **Visually align speeches**, a switch under Settings > Display, off by
   default. On, every flow sheet lines up on the round's speaking order: a
   sheet that does not open the round leads with a greyed column for each
@@ -188,6 +203,19 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Fixed
 
+- **Shared editing no longer hands out an invite that cannot work.** An invite
+  carries the relay a partner sends their first packet to, and ebb was minting
+  one before that relay had answered: the invite looked correct, worked between
+  two laptops on one wifi, and failed between venue wifi and a telephone
+  hotspot. It also left the round with no route back to that partner, so
+  reopening the flow later did not reconnect them. Sharing now waits for the
+  connection to be ready and says so on the sheet if it cannot be, rather than
+  handing over something that names nowhere.
+- **The session corner says who is missing and why.** It read "Connecting, no
+  peers" whether a partner had not opened the round yet or could not be reached
+  at all. It now names them - "Waiting for Sam to open this round", or "Can't
+  reach Sam. You both need internet, or the same wifi." - and warns before
+  making a code that turning Allow relay off keeps a round on one wifi.
 - Mod+N opens a new window on an install that predates the change, instead of
   the New flow prompt. `config.toml` records every binding by name, so the
   chord's old owner stayed behind as an override and outranked the new one on

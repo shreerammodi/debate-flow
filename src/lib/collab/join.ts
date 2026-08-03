@@ -18,7 +18,7 @@ import { suggestFilename } from "@/lib/persistence/flowPaths";
 import { resolveFlowsDir } from "@/lib/persistence/flowsDir";
 import { loadRecents } from "@/lib/persistence/recents";
 import { buildSummary, recentLabel } from "@/lib/start/summary";
-import { askToRejoin, type RejoinAsk } from "@/lib/store/useTicketDialog";
+import { askToRejoin, type RejoinAsk } from "@/lib/store/useRejoinDialog";
 
 import { projectDoc } from "./doc";
 import { collabLive, collabSettings, type CollabSettings } from "./enabled";

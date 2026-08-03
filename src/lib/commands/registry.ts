@@ -144,9 +144,9 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.light": { id: "theme.light", label: "Theme: Light" },
     "theme.dark": { id: "theme.dark", label: "Theme: Dark" },
     "theme.system": { id: "theme.system", label: "Theme: System" },
-    "collab.share": { id: "collab.share", label: "Share this round" },
-    "collab.shareView": { id: "collab.shareView", label: "Share this round view only" },
-    "collab.join": { id: "collab.join", label: "Join a shared round" },
+    "collab.share": { id: "collab.share", label: "Invite partner" },
+    "collab.shareView": { id: "collab.shareView", label: "Share view only" },
+    "collab.join": { id: "collab.join", label: "Join with a code" },
     "collab.invite": { id: "collab.invite", label: "Invite a saved partner" },
     "collab.end": { id: "collab.end", label: "End shared session" },
 };

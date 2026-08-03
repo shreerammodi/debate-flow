@@ -120,6 +120,32 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       and beside the peer in the contact table. That is addressing, not a
       registry - nothing is published, and an idle ebb still says nothing about
       itself anywhere. Never close this gap by registering a discovery service.
+    - **A pairing code is an address a person carries, not a registry.** A code
+      is eight characters of Crockford base32, and both sides run one
+      HKDF-SHA256 over it to reach the same Ed25519 key and, under a separate
+      label, the same relay off iroh's default map. The host binds a second,
+      temporary endpoint with that key and homes it there; the guest dials that
+      endpoint at that relay from the endpoint it already has, so only the host
+      binds anything new. The relay is derived rather than defaulted because a
+      default homes each node on the nearest one, and a host in one region
+      would never meet a guest in another - which is the tournament failure the
+      whole thing exists to repair. Nothing is published and nothing is
+      queried: the code moves by hand exactly as a ticket does, and DNS
+      discovery stays disabled in every state. Never close the remaining gap by
+      registering a discovery service. The derivation lives in
+      `src-tauri/src/pairing.rs` and nowhere else - two implementations of one
+      HKDF must agree byte for byte and they drift, and the web build cannot
+      bind an endpoint at all, so it needs no copy. What crosses the pairing
+      connection is a `pairHello` and a `pairAck` carrying a `Ticket` of the
+      format that already exists, so `joinRound`, the sidecar, the redial
+      ladder and the grade rules are untouched; the guest's EndpointId and
+      relay are read off the connection iroh authenticated, never from what the
+      guest says about itself. The master switch gates the pairing bind exactly
+      as it gates the session's, in `collab.rs`'s `pair_start_gated`, and
+      `test/lib/collab/runtimePairing.test.ts` holds both routes to the off
+      case under a positive control. A code dies at the first of: the sheet
+      closing, the session ending, ten minutes, or - for a partner code - the
+      ticket going out.
     - **A collab command that waits on the network must be `async`.** Tauri
       runs a `#[tauri::command]` declared without it on the main thread, and a
       bind, a dial, a hang-up and a stop all wait on the network - which on

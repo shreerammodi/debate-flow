@@ -3,9 +3,12 @@ import localFont from "next/font/local";
 import { Toaster } from "sonner";
 
 import { BridgeHost } from "@/components/BridgeHost";
+import ConsentDialog from "@/components/collab/ConsentDialog";
 import ContactPickerDialog from "@/components/collab/ContactPickerDialog";
 import InviteWatch from "@/components/collab/InviteWatch";
-import TicketDialog from "@/components/collab/TicketDialog";
+import JoinDialog from "@/components/collab/JoinDialog";
+import RejoinDialog from "@/components/collab/RejoinDialog";
+import ShareSheet from "@/components/collab/ShareSheet";
 import ConfigFileSync from "@/components/ConfigFileSync";
 import { DesktopMenu } from "@/components/DesktopMenu";
 import MotionRoot from "@/components/MotionRoot";
@@ -359,7 +362,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         <SettingsPanel />
                         <NewFlowDialog />
                         <ContactPickerDialog />
-                        <TicketDialog />
+                        <RejoinDialog />
+                        <JoinDialog />
+                        <ShareSheet />
+                        <ConsentDialog />
                     </UpdateProvider>
                 </TooltipProvider>
                 <Toaster position="bottom-center" />

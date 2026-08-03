@@ -55,12 +55,11 @@ import { COLLAB_COMMANDS, COMMANDS } from "@/lib/commands/registry";
 import { getPresetKeymap } from "@/lib/keymap/presets";
 import { makeFlowRound } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-import { useTicketDialog } from "@/lib/store/useTicketDialog";
+import { useShareSheet } from "@/lib/store/useShareSheet";
 
 const net: MemoryNet = createMemoryNet();
 /** What iroh hands back. A ticket names its host, so the host holds a real one. */
 const HOST = "a".repeat(64);
-transport.link = net.create(HOST);
 
 /** A round open, the switch on, and the desktop shell in place: a share can run. */
 function ready(): void {
@@ -75,21 +74,30 @@ function ready(): void {
 function deps(over: Partial<CollabCommandDeps> = {}): CollabCommandDeps & {
     notices: string[];
     failures: string[];
-    shown: string[];
+    codes: string[];
+    sheetFailures: string[];
+    opened: { role: Role; warning: string }[];
 } {
     const notices: string[] = [];
     const failures: string[] = [];
-    const shown: string[] = [];
+    const codes: string[] = [];
+    const sheetFailures: string[] = [];
+    const opened: { role: Role; warning: string }[] = [];
     return {
         notices,
         failures,
-        shown,
+        codes,
+        sheetFailures,
+        opened,
         notify: (m) => notices.push(m),
         fail: (m) => failures.push(m),
-        askForTicket: async () => null,
-        presentTicket: (t) => {
-            shown.push(t);
-        },
+        // Answered from the switch rather than by a dialog, so a test that
+        // wants the refusal turns the switch off and gets it.
+        consent: async () => useFlowStore.getState().collabEnabled,
+        openShare: (role, warning) => opened.push({ role, warning }),
+        showCode: (code) => codes.push(code),
+        failShare: (m) => sheetFailures.push(m),
+        askForCode: async () => null,
         openFlow: vi.fn(),
         ...over,
     };
@@ -100,11 +108,14 @@ beforeEach(async () => {
     runtime.endFails = null;
     runtime.invited.length = 0;
     await endSession();
-    useFlowStore.setState({ collabEnabled: false, round: null });
+    useFlowStore.setState({ collabEnabled: false, collabRelayEnabled: true, round: null });
     // isDesktop() is false under jsdom unless the harness says otherwise.
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     net.reset();
-    useTicketDialog.setState({ open: false, ticket: "", resolve: null });
+    // One test swaps in a transport that refuses every code, so each starts
+    // from the plain one again.
+    transport.link = net.create(HOST);
+    useShareSheet.setState({ open: false, code: "", screen: "ready" });
 });
 
 describe("the commands are palette-only", () => {
@@ -114,68 +125,98 @@ describe("the commands are palette-only", () => {
     });
 
     it("is registered with a label a debater can search for", () => {
-        expect(COMMANDS["collab.share"].label).toBe("Share this round");
-        expect(COMMANDS["collab.shareView"].label).toBe("Share this round view only");
-        expect(COMMANDS["collab.join"].label).toBe("Join a shared round");
+        expect(COMMANDS["collab.share"].label).toBe("Invite partner");
+        expect(COMMANDS["collab.shareView"].label).toBe("Share view only");
+        expect(COMMANDS["collab.join"].label).toBe("Join with a code");
         expect(COMMANDS["collab.end"].label).toBe("End shared session");
     });
 });
 
 describe("share", () => {
-    it("refuses while the master switch is off, and mints nothing", async () => {
+    it("refuses while consent is withheld, and puts no sheet up", async () => {
         const d = deps();
         await runShare(d);
-        expect(d.shown).toEqual([]);
-        expect(d.failures[0]).toMatch(/Settings/);
+        expect(d.opened).toEqual([]);
+        expect(d.codes).toEqual([]);
     });
 
     it("refuses with no flow open", async () => {
         (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-        useFlowStore.setState({ collabEnabled: true, round: null });
+        useFlowStore.setState({ collabEnabled: true, collabRelayEnabled: true, round: null });
         const d = deps();
         await runShare(d);
         expect(d.failures[0]).toMatch(/Open a flow/);
     });
 
-    it("hands over a ticket a partner can edit through", async () => {
+    it("puts the sheet up before it has a code, and fills it in", async () => {
         ready();
         const d = deps();
         await runShare(d);
-        expect(d.failures).toEqual([]);
-        expect(parseTicket(d.shown[0])?.role).toBe("editor");
+        expect(d.opened).toEqual([{ role: "editor", warning: "" }]);
+        expect(d.codes[0]).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}$/);
+        expect(d.sheetFailures).toEqual([]);
     });
 
-    it("hands over a view-only ticket when the share asks for one", async () => {
+    it("names a view-only code for what it grants", async () => {
         ready();
         const d = deps();
         await runShare(d, "viewer");
-        expect(d.failures).toEqual([]);
-        expect(parseTicket(d.shown[0])?.role).toBe("viewer");
+        expect(d.opened[0].role).toBe("viewer");
+        expect(d.codes).toHaveLength(1);
+    });
+
+    it("warns before minting that relaying off keeps a round on one wifi", async () => {
+        ready();
+        useFlowStore.setState({ collabRelayEnabled: false });
+        const d = deps();
+        await runShare(d);
+        expect(d.opened[0].warning).toBe(
+            "Relaying is off, so this code only works on the same wifi.",
+        );
+    });
+
+    it("puts the reason on the sheet, and no code, when pairing fails", async () => {
+        ready();
+        // Every code's relay refuses, which is what the retry gives up on.
+        const base = net.create(HOST);
+        transport.link = async (config) => {
+            const link = await base(config);
+            return {
+                ...link,
+                async pairHost() {
+                    throw new Error("Could not reach the relay for that code");
+                },
+            };
+        };
+        const d = deps();
+        await runShare(d);
+        expect(d.codes).toEqual([]);
+        expect(d.sheetFailures[0]).toMatch(/relay/);
     });
 });
 
 describe("join", () => {
-    it("refuses while the master switch is off, and never asks for a ticket", async () => {
-        const askForTicket = vi.fn(async () => null);
-        await runJoin(deps({ askForTicket }));
-        expect(askForTicket).not.toHaveBeenCalled();
+    it("refuses while consent is withheld, and never asks for a code", async () => {
+        const askForCode = vi.fn(async () => null);
+        await runJoin(deps({ askForCode }));
+        expect(askForCode).not.toHaveBeenCalled();
     });
 
-    it("does nothing when the user backs out of the paste", async () => {
+    it("does nothing when the user backs out of the field", async () => {
         (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
         useFlowStore.setState({ collabEnabled: true });
-        const d = deps({ askForTicket: async () => null });
+        const d = deps({ askForCode: async () => null });
         await runJoin(d);
         expect(d.failures).toEqual([]);
         expect(d.notices).toEqual([]);
     });
 
-    it("reports a ticket it cannot read, rather than throwing", async () => {
+    it("reports a code nobody is holding, rather than throwing", async () => {
         (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
         useFlowStore.setState({ collabEnabled: true });
-        const d = deps({ askForTicket: async () => "not a ticket" });
+        const d = deps({ askForCode: async () => "TESTAA01" });
         await runJoin(d);
-        expect(d.failures[0]).toMatch(/ticket/i);
+        expect(d.failures).toHaveLength(1);
         expect(d.openFlow).not.toHaveBeenCalled();
     });
 });
@@ -207,25 +248,19 @@ describe("end", () => {
     });
 });
 
-describe("the ticket a share would hand over", () => {
-    it("round-trips through the parser the join side uses", () => {
-        const round = makeFlowRound({});
-        expect(parseTicket("nonsense")).toBeNull();
-        expect(round.id).toBeTruthy();
-    });
-
-    it("carries the editing role the palette asked for", async () => {
+describe("the code a share puts on the air", () => {
+    it("reaches the sheet from the palette", async () => {
         ready();
         executeCommand("collab.share");
-        await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
-        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("editor");
+        await vi.waitFor(() => expect(useShareSheet.getState().code).not.toBe(""));
+        expect(useShareSheet.getState().role).toBe("editor");
     });
 
     it("carries the view-only role the palette asked for", async () => {
         ready();
         executeCommand("collab.shareView");
-        await vi.waitFor(() => expect(useTicketDialog.getState().ticket).not.toBe(""));
-        expect(parseTicket(useTicketDialog.getState().ticket)?.role).toBe("viewer");
+        await vi.waitFor(() => expect(useShareSheet.getState().code).not.toBe(""));
+        expect(useShareSheet.getState().role).toBe("viewer");
     });
 });
 

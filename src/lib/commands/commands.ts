@@ -31,10 +31,12 @@ import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
 import { sortedSheets } from "@/lib/model/flow";
+import { askToShare } from "@/lib/store/useCollabConsent";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { chooseContact } from "@/lib/store/useContactPicker";
 import { focusedSheetId, useFlowStore, ZOOM_STEP } from "@/lib/store/useFlowStore";
-import { askForTicket, showTicket } from "@/lib/store/useTicketDialog";
+import { askForCode } from "@/lib/store/useJoinDialog";
+import { openShareSheet, showShareCode, showShareFailure } from "@/lib/store/useShareSheet";
 
 import { runEnd, runInvite, runJoin, runShare, type CollabCommandDeps } from "./collabCommands";
 import {
@@ -176,19 +178,23 @@ function startMove(): void {
 }
 
 /**
- * How the collaboration commands reach the user: corner messages, and two
- * dialogs. The ticket goes through one of them because the webview grants
- * `navigator.clipboard` only inside the task a click started, and a share has
- * to bind an endpoint before it has a ticket to write. The contact picker is
- * the other, because choosing who to dial is a decision and not a notice.
+ * How the collaboration commands reach the user: corner messages, and three
+ * dialogs. The share sheet is one, because a code has to be on screen while a
+ * partner types it; the code field is the second, because a paste is not a
+ * notice; the consent question is the third, asked once at the moment a
+ * debater says what they want. The contact picker is the fourth, because
+ * choosing who to dial is a decision.
  */
 function collabDeps(): CollabCommandDeps {
     return {
         chooseContact,
         notify: (message) => toast.success(message),
         fail: (message) => toast.error(message),
-        askForTicket,
-        presentTicket: showTicket,
+        consent: askToShare,
+        openShare: openShareSheet,
+        showCode: showShareCode,
+        failShare: showShareFailure,
+        askForCode,
         openFlow: (path) => navigateToFlow(path),
     };
 }

@@ -31,7 +31,7 @@ import type { FlowFs } from "@/lib/persistence/flowFs";
 import { createFlowFs } from "@/lib/persistence/flowFsMemory";
 import { saveRecents } from "@/lib/persistence/recents";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-import type { RejoinAsk } from "@/lib/store/useTicketDialog";
+import type { RejoinAsk } from "@/lib/store/useRejoinDialog";
 
 const net = createMemoryNet();
 

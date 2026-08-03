@@ -1,21 +1,25 @@
 /**
- * The three collaboration commands, and nothing else reaches a session.
+ * The four collaboration commands, and nothing else reaches a session.
  *
  * Palette only: no chord, no menu accelerator. Flowing owns most of the letter
  * space, and a printable key bound outside `HotGrid`'s guard erases the cell
  * the debater is standing on.
+ *
+ * Sharing and joining ask for consent first rather than checking a switch and
+ * refusing. A debater who has just clicked Share has said what they want, and
+ * that is a better moment to ask than a settings pane they never opened.
  */
 
 import { contactName, type Contacts } from "@/lib/collab/contacts";
-import { collabLive } from "@/lib/collab/enabled";
-import { joinRound } from "@/lib/collab/join";
-import { createPeerLinkFor } from "@/lib/collab/peerLink";
-import { currentSession, endSession, inviteContact, startForRound } from "@/lib/collab/runtime";
-import { encodeTicket } from "@/lib/collab/ticket";
+import { collabLive, collabSettings } from "@/lib/collab/enabled";
+import { inviteContact, joinByCode, startPairing } from "@/lib/collab/runtime";
+import { currentSession, endSession } from "@/lib/collab/runtime";
 import type { Role } from "@/lib/collab/types";
 import type { ContactChoice } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-import { getCurrentVersion } from "@/lib/update/adapter";
+
+/** What turning relaying off costs, said before a code is minted. */
+const RELAY_OFF_WARNING = "Relaying is off, so this code only works on the same wifi.";
 
 export interface CollabCommandDeps {
     /**
@@ -26,58 +30,58 @@ export interface CollabCommandDeps {
     /** Corner messages. Nothing here blocks the grid or takes focus. */
     notify(message: string): void;
     fail(message: string): void;
-    /** Reads the ticket a guest was handed. Returns null when they back out. */
-    askForTicket(): Promise<string | null>;
-    /** Hands the minted ticket to the user, to send however they like. */
-    presentTicket(ticket: string): void;
+    /** Whether this install may reach a peer, asking the debater if it must. */
+    consent(): Promise<boolean>;
+    /** Puts the share sheet up with nothing on it, while the endpoint homes. */
+    openShare(role: Role, warning: string): void;
+    /** Puts the code on that sheet, with the call that takes it off the air. */
+    showCode(code: string, stop: () => Promise<void>): void;
+    /** Says on that same sheet why there is no code. */
+    failShare(message: string): void;
+    /** Reads the code a guest was given. Returns null when they back out. */
+    askForCode(): Promise<string | null>;
     /** Routes to a flow file, for a join that landed. */
     openFlow(path: string): void;
 }
 
 /**
- * Mints a ticket for the open round and puts it in front of the user, starting
- * a session first when none is running. A view-only ticket grants its holder
- * the round as it unfolds and nothing more: the host drops the writes that
- * come back from it.
+ * Puts a pairing code on the air for the open round and shows it, starting a
+ * session first when none is running. A view-only code grants its holders the
+ * round as it unfolds and nothing more: the host drops the writes that come
+ * back from them.
  */
 export async function runShare(deps: CollabCommandDeps, role: Role = "editor"): Promise<void> {
-    if (!collabLive()) {
-        deps.fail("Turn on shared editing in Settings first");
-        return;
-    }
+    if (!(await deps.consent())) return;
     const round = useFlowStore.getState().round;
     if (!round) {
         deps.fail("Open a flow to share it");
         return;
     }
+    // Said before anything is minted rather than after a partner fails to
+    // arrive: with relaying off there is no route between two networks, and a
+    // debater who set that switch is owed the consequence up front.
+    deps.openShare(role, collabSettings().relay ? "" : RELAY_OFF_WARNING);
     try {
-        const session = currentSession() ?? (await startForRound(round));
-        if (!session) {
-            deps.fail("Could not start a session");
+        const hosted = await startPairing(round, role);
+        if (!hosted) {
+            deps.failShare("Could not start a session");
             return;
         }
-        deps.presentTicket(encodeTicket(await session.share(role)));
+        deps.showCode(hosted.code, hosted.stop);
     } catch (err) {
-        deps.fail(err instanceof Error ? err.message : "Could not share this round");
+        deps.failShare(err instanceof Error ? err.message : "Could not share this round");
     }
 }
 
-/** Takes a pasted ticket, fetches the round, and opens the file it landed in. */
+/** Takes a code, fetches the round, and opens the file it landed in. */
 export async function runJoin(deps: CollabCommandDeps): Promise<void> {
-    if (!collabLive()) {
-        deps.fail("Turn on shared editing in Settings first");
-        return;
-    }
-    const ticket = await deps.askForTicket();
-    if (!ticket) return;
+    if (!(await deps.consent())) return;
+    const code = await deps.askForCode();
+    if (!code) return;
     try {
-        const joined = await joinRound({
-            ticket,
-            createLink: createPeerLinkFor,
-            appVersion: await getCurrentVersion(),
-        });
+        const joined = await joinByCode(code);
         if (!joined) {
-            // Either the switch went off behind the paste, or the debater
+            // Either the switch went off behind the code, or the debater
             // declined to admit the issuer to a round they already hold. The
             // second has had its dialog and wants no corner message.
             if (!collabLive()) deps.fail("Turn on shared editing in Settings first");
@@ -112,12 +116,9 @@ export async function runEnd(deps: CollabCommandDeps): Promise<void> {
     }
 }
 
-/** Dials a saved contact. No ticket: their EndpointId already authorizes. */
+/** Dials a saved contact. No code: their EndpointId already authorizes. */
 export async function runInvite(deps: CollabCommandDeps): Promise<void> {
-    if (!collabLive()) {
-        deps.fail("Turn on shared editing in Settings first");
-        return;
-    }
+    if (!(await deps.consent())) return;
     const round = useFlowStore.getState().round;
     if (!round) {
         deps.fail("Open a flow to share it");

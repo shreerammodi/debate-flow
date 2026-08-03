@@ -3319,8 +3319,8 @@ mod loopback {
         pair_start(&state, events.clone(), "win-1", A_CODE).expect("a pairing endpoint");
 
         let guest = Guest::new();
-        let (_conn, mut send, _recv) = guest.dial(pair_addr(&state));
-        guest.write(&mut send, b"{\"type\":\"pairHello\"}\n");
+        let (_conn, mut stream, recv) = guest.dial(pair_addr(&state));
+        guest.write(&mut stream, b"{\"type\":\"pairHello\",\"name\":\"Sam\"}\n");
 
         events.wait("the pairing peer", |seen| !seen.pair_peers().is_empty());
         let conn_id = events.pair_peers()[0].clone();
@@ -3338,8 +3338,39 @@ mod loopback {
             events.message_routes(&conn_id),
             vec![Some("win-1".to_string())]
         );
-        assert!(holds(&state, &conn_id), "the window may answer it");
+        assert_eq!(
+            events.messages(),
+            vec!["{\"type\":\"pairHello\",\"name\":\"Sam\"}"]
+        );
 
+        // And the answer goes back the same way, which is the whole exchange:
+        // the ticket a code hands over rides this line.
+        let ack = "{\"type\":\"pairAck\",\"ticket\":\"ebb1:aGVsbG8\",\"name\":\"Alex\"}";
+        send(&state, "win-1", &conn_id, ack.to_string()).expect("the ticket");
+        assert_eq!(guest.read_lines(recv, 1), vec![ack.to_string()]);
+
+        stop(&state, "win-1").expect("stop");
+    }
+
+    /// The guest derives, the host binds, and the two have to land on one
+    /// endpoint or a code reaches nobody.
+    ///
+    /// The dial itself cannot be proven here: the address a code carries is a
+    /// relay URL, and reaching one is the network. What is left, and what
+    /// actually breaks when a derivation drifts, is that both halves name the
+    /// same endpoint from the same characters.
+    #[test]
+    fn the_endpoint_a_guest_derives_is_the_one_the_host_bound() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        let bound =
+            pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE).expect("a pairing");
+        // As the guest types it, which is not how the host minted it.
+        let target = pair_target("k7qm-3xpv").expect("a valid code");
+        assert_eq!(target.endpoint_id, bound);
+        assert!(
+            crate::pairing::RELAYS.contains(&target.relay_url.as_str()),
+            "a guest is sent to a relay this build ships"
+        );
         stop(&state, "win-1").expect("stop");
     }
 }

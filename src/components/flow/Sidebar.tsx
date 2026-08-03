@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import InviteChip from "@/components/collab/InviteChip";
 import SessionChip from "@/components/collab/SessionChip";
+import ShareButton from "@/components/collab/ShareButton";
 import { loadFeatures } from "@/components/MotionRoot";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
@@ -85,6 +86,7 @@ export default function Sidebar() {
                 <div className="no-print fixed bottom-3 left-11 z-30 flex flex-col items-start gap-1">
                     <InviteChip />
                     <SessionChip />
+                    <ShareButton />
                 </div>
             </>
         );
@@ -215,6 +217,9 @@ export default function Sidebar() {
                 when it has nothing, so an idle round shows no footer at all. */}
             <InviteChip className="border-border/60 shrink-0 border-t p-2" />
             <SessionChip className="border-border/60 shrink-0 border-t p-2" />
+            <div className="border-border/60 shrink-0 border-t p-2">
+                <ShareButton />
+            </div>
         </nav>
     );
 }

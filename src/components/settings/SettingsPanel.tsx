@@ -14,7 +14,6 @@ import { useEffect, useMemo, useState } from "react";
 import ContactList from "@/components/collab/ContactList";
 import DisplayNameRow from "@/components/collab/DisplayNameRow";
 import MyEndpointId from "@/components/collab/MyEndpointId";
-import SessionControls from "@/components/collab/SessionControls";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -624,7 +623,6 @@ export default function SettingsPanel() {
                                 />
                                 {collabEnabled && (
                                     <>
-                                        <SessionControls />
                                         <SettingRow
                                             title="Allow relay"
                                             description="Off restricts a session to direct connections. On enables connections across networks."
