@@ -21,6 +21,13 @@ function fakeBridge() {
                     connectionType: "direct",
                     relayUrl: "https://euw1-1.relay.n0.iroh.link./",
                 };
+            if (cmd === "collab_pair_code") return "TESTAA01";
+            if (cmd === "collab_pair_start") return "pair-endpoint";
+            if (cmd === "collab_pair_target")
+                return {
+                    endpointId: "pair-endpoint",
+                    relayUrl: "https://euc1-1.relay.n0.iroh.link./",
+                };
             return undefined;
         },
         async listen(event, cb) {
@@ -493,5 +500,108 @@ describe("a link stopping twice", () => {
         const before = fake.calls.filter((c) => c.cmd === "collab_send").length;
         conn.send({ type: "bye" });
         expect(fake.calls.filter((c) => c.cmd === "collab_send")).toHaveLength(before);
+    });
+});
+
+describe("pairing through the shell", () => {
+    it("mints a code where the alphabet lives", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        expect(await link.newCode()).toBe("TESTAA01");
+    });
+
+    it("binds the endpoint the shell derives from the code", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        expect(await link.pairHost("TESTAA01", () => {})).toBe("pair-endpoint");
+        expect(fake.calls).toContainEqual({
+            cmd: "collab_pair_start",
+            args: { code: "TESTAA01" },
+        });
+    });
+
+    it("routes a pairing peer to the pairing handler and not to the session", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const session: string[] = [];
+        const pairing: string[] = [];
+        await link.listen((conn) => session.push(conn.id));
+        await link.pairHost("TESTAA01", (conn) => pairing.push(conn.id));
+        fake.emit("collab:pair", {
+            connId: "p1",
+            endpointId: "sam",
+            connectionType: "relayed",
+            relayUrl: "https://euc1-1.relay.n0.iroh.link./",
+        });
+        expect(pairing).toEqual(["sam"]);
+        expect(session).toEqual([]);
+    });
+
+    it("carries what a guest says on the connection it arrived on", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        let guest: PeerConn | null = null;
+        await link.pairHost("TESTAA01", (conn) => {
+            guest = conn;
+        });
+        fake.emit("collab:pair", {
+            connId: "p1",
+            endpointId: "sam",
+            connectionType: "relayed",
+            relayUrl: "https://euc1-1.relay.n0.iroh.link./",
+        });
+        const heard: WireMessage[] = [];
+        guest!.onMessage((m) => heard.push(m));
+        fake.emit("collab:message", {
+            connId: "p1",
+            payload: JSON.stringify({ type: "pairHello", name: "Sam" }),
+        });
+        expect(heard).toEqual([{ type: "pairHello", name: "Sam" }]);
+        expect(guest!.relayUrl()).toBe("https://euc1-1.relay.n0.iroh.link./");
+    });
+
+    it("dials the target the shell derives, at the relay the shell derives", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const conn = await link.pairDial("TESTAA01");
+        expect(conn.id).toBe("pair-endpoint");
+        expect(fake.calls).toContainEqual({
+            cmd: "collab_dial",
+            args: {
+                endpointId: "pair-endpoint",
+                relayUrl: "https://euc1-1.relay.n0.iroh.link./",
+            },
+        });
+    });
+
+    it("stops answering a code once the pairing is off the air", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        const pairing: string[] = [];
+        await link.pairHost("TESTAA01", (conn) => pairing.push(conn.id));
+        await link.pairStop();
+        fake.emit("collab:pair", {
+            connId: "p1",
+            endpointId: "sam",
+            connectionType: "direct",
+            relayUrl: null,
+        });
+        expect(pairing).toEqual([]);
+        expect(fake.calls.some((c) => c.cmd === "collab_pair_stop")).toBe(true);
+    });
+
+    it("takes its code off the air when the link goes", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        await link.pairHost("TESTAA01", () => {});
+        await link.stop();
+        expect(fake.calls.filter((c) => c.cmd === "collab_pair_stop")).toHaveLength(1);
+    });
+
+    it("keeps no handler for a bind the shell refused", async () => {
+        const link = await createPeerLink({ discovery: "mdns", relay: true }, fake.bridge);
+        fake.refuse.add("collab_pair_start");
+        const pairing: string[] = [];
+        await expect(link.pairHost("TESTAA01", (conn) => pairing.push(conn.id))).rejects.toThrow();
+        fake.emit("collab:pair", {
+            connId: "p1",
+            endpointId: "sam",
+            connectionType: "direct",
+            relayUrl: null,
+        });
+        expect(pairing).toEqual([]);
     });
 });

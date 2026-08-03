@@ -112,6 +112,8 @@ export async function createPeerLink(
 
     const held = new Map<string, Held>();
     let onPeer: ((conn: PeerConn) => void) | null = null;
+    /** Where a peer arriving on the pairing endpoint goes. */
+    let onPairPeer: ((conn: PeerConn) => void) | null = null;
     const unlisten: (() => void)[] = [];
     /** This link's one hold on the shell's endpoint, spent exactly once. */
     let stopped = false;
@@ -226,6 +228,37 @@ export async function createPeerLink(
         }),
     );
 
+    unlisten.push(
+        await shell.listen("collab:pair", (payload) => {
+            const peer = asPeer(payload);
+            if (!peer) return;
+            if (held.has(peer.connId)) return;
+            // Its own channel, so a guest redeeming a code never reaches the
+            // session's listener, which would read one as a peer arriving with
+            // no hello and hang up on it.
+            onPairPeer?.(
+                makeConn(peer.connId, peer.endpointId, peer.connectionType, peer.relayUrl),
+            );
+        }),
+    );
+
+    async function dial(target: string, relayUrl?: string | null): Promise<PeerConn> {
+        const result = (await shell.invoke("collab_dial", {
+            endpointId: target,
+            relayUrl: relayUrl ?? null,
+        })) as {
+            connId: string;
+            connectionType: ConnectionKind;
+            relayUrl?: string | null;
+        };
+        return makeConn(
+            result.connId,
+            target,
+            result.connectionType,
+            typeof result.relayUrl === "string" && result.relayUrl !== "" ? result.relayUrl : null,
+        );
+    }
+
     return {
         async endpointId() {
             return endpointId;
@@ -243,23 +276,38 @@ export async function createPeerLink(
             onPeer = cb;
         },
 
-        async dial(target, relayUrl) {
-            const result = (await shell.invoke("collab_dial", {
-                endpointId: target,
-                relayUrl: relayUrl ?? null,
-            })) as {
-                connId: string;
-                connectionType: ConnectionKind;
-                relayUrl?: string | null;
+        dial,
+
+        async newCode() {
+            return (await shell.invoke("collab_pair_code", {})) as string;
+        },
+
+        async pairHost(code, cb) {
+            // Set before the bind, because the shell can announce a guest the
+            // moment the endpoint is up and a handler assigned afterwards
+            // would miss the one this code exists for.
+            onPairPeer = cb;
+            try {
+                return (await shell.invoke("collab_pair_start", { code })) as string;
+            } catch (err) {
+                onPairPeer = null;
+                throw err;
+            }
+        },
+
+        async pairDial(code) {
+            // The code is the whole address: the shell derives the endpoint
+            // and the relay from it, and the dial is the ordinary one.
+            const target = (await shell.invoke("collab_pair_target", { code })) as {
+                endpointId: string;
+                relayUrl: string;
             };
-            return makeConn(
-                result.connId,
-                target,
-                result.connectionType,
-                typeof result.relayUrl === "string" && result.relayUrl !== ""
-                    ? result.relayUrl
-                    : null,
-            );
+            return dial(target.endpointId, target.relayUrl);
+        },
+
+        async pairStop() {
+            onPairPeer = null;
+            await shell.invoke("collab_pair_stop", {});
         },
 
         async stop() {
@@ -272,6 +320,10 @@ export async function createPeerLink(
             for (const un of unlisten) un();
             unlisten.length = 0;
             onPeer = null;
+            // A link that goes takes its code off the air with it, or the
+            // pairing endpoint stays bound with nothing left to answer for.
+            onPairPeer = null;
+            await shell.invoke("collab_pair_stop", {}).catch(() => {});
             for (const entry of held.values()) entry.open = false;
             held.clear();
             await shell.invoke("collab_stop", {});

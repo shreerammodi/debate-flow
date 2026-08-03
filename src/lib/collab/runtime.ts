@@ -31,9 +31,11 @@ import { collabLive, collabSettings } from "./enabled";
 import { announceInvite } from "./inbox";
 import type { InviteNotice } from "./invite";
 import { startInviteListener, type InviteListener } from "./inviteListener";
+import { joinRound, type JoinResult } from "./join";
 import { lossMessage } from "./lossReport";
 import { broadcastName } from "./machineName";
 import { merge, type DroppedCell } from "./merge";
+import { hostPairing, redeemCode } from "./pairing";
 import { createPeerLinkFor } from "./peerLink";
 import { persistReplica } from "./persist";
 import {
@@ -46,7 +48,12 @@ import {
     setLocalChangeListener,
 } from "./replica";
 import { dropSelfNote } from "./rfdSync";
-import { knownRoundPeers, rememberRoundPeers, rememberRoundRole } from "./roundPeers";
+import {
+    knownRoundPeers,
+    rememberRoundPeers,
+    rememberRoundRelay,
+    rememberRoundRole,
+} from "./roundPeers";
 import {
     startCollabSession,
     type CollabPeer,
@@ -54,6 +61,7 @@ import {
     type PendingPeer,
     type SavedByPeer,
 } from "./session";
+import { encodeTicket } from "./ticket";
 import type { CollabDoc, Role } from "./types";
 
 let session: CollabSession | null = null;
@@ -362,6 +370,103 @@ export async function resumeSession(round: FlowRound): Promise<CollabSession | n
     const peers = knownRoundPeers(round.id);
     if (peers.length === 0) return null;
     return startForRound(round, peers);
+}
+
+/** A code on the air, and the call that takes it off. */
+export interface HostedCode {
+    code: string;
+    stop(): Promise<void>;
+}
+
+/**
+ * How many codes one Share click is worth.
+ *
+ * A code names its own relay, so a relay that will not answer is a property of
+ * that code and a new one is a new relay. Three is enough to get past one
+ * unreachable server and few enough that a debater is not left watching
+ * `Getting ready...` while ebb works through a list.
+ */
+const CODE_ATTEMPTS = 3;
+
+/**
+ * Puts a pairing code on the air for the open round.
+ *
+ * Null when shared editing is not offered here, which is the whole gate. The
+ * session comes up first: the ticket the code hands over names this install's
+ * real endpoint and the relay it is homed on, so there has to be one.
+ */
+export async function startPairing(round: FlowRound, role: Role): Promise<HostedCode | null> {
+    if (!collabLive()) return null;
+    const active = currentSession() ?? (await startForRound(round));
+    if (!active) return null;
+    const port = active.pairing();
+    const store = useFlowStore.getState();
+    const label = store.docPath ? basename(store.docPath).replace(/\.ebb$/i, "") : "";
+    const name = await broadcastName();
+    let last: unknown = new Error("Could not put a code on the air");
+    for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+        const code = await port.newCode();
+        try {
+            const live = await hostPairing({
+                port,
+                code,
+                // A partner is one person and the code is spent on them. A
+                // viewer code stays open, because there can be more than one
+                // viewer and none of them is recorded anywhere.
+                once: role === "editor",
+                mintTicket: async () => encodeTicket(await active.share(role)),
+                ...(name ? { displayName: name } : {}),
+                ...(label ? { roundLabel: label } : {}),
+                onGuest: (guest) => {
+                    // Where this guest was reached, kept beside the round: an
+                    // EndpointId names them and does not route to them, so a
+                    // later open would otherwise have a name and nowhere to
+                    // send it.
+                    if (guest.relayUrl) {
+                        rememberRoundRelay(round.id, guest.endpointId, guest.relayUrl);
+                    }
+                },
+            });
+            return { code, stop: live.stop };
+        } catch (err) {
+            // The relay this code named did not answer. A new code picks a
+            // different one, which is cheaper than telling the debater to try
+            // again.
+            last = err;
+        }
+    }
+    throw last instanceof Error ? last : new Error("Could not put a code on the air");
+}
+
+/**
+ * Redeems a code and opens the round it names.
+ *
+ * The pairing link is taken out and given back around the exchange alone: what
+ * opens the round is the ticket, over the join path that already exists, so a
+ * code is a different way to the same door and not a second door.
+ */
+export async function joinByCode(code: string): Promise<JoinResult | null> {
+    if (!collabLive()) return null;
+    const link = await createPeerLinkFor({
+        discovery: "mdns",
+        relay: collabSettings().relay,
+    });
+    let ticket: string;
+    try {
+        const paired = await redeemCode({
+            port: link,
+            code,
+            displayName: await broadcastName(),
+        });
+        ticket = paired.ticket;
+    } finally {
+        await link.stop();
+    }
+    return joinRound({
+        ticket,
+        createLink: createPeerLinkFor,
+        appVersion: await getCurrentVersion(),
+    });
 }
 
 /** Tells the live session an edit landed. A no-op with no session. */

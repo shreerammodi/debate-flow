@@ -31,6 +31,7 @@ import {
     HANDSHAKE_MS,
     isCellRef,
     type CellRef,
+    type PairingPort,
     type PeerConn,
     type PeerLink,
     type PeerLinkFactory,
@@ -105,6 +106,13 @@ export interface CollabSession {
      * which is the only place a viewer learns it is one.
      */
     role(): Role;
+    /**
+     * The pairing half of this session's transport, for a share sheet putting
+     * a code on the air. This session's link and not a second one, because an
+     * install binds one endpoint: a link taken out for pairing would be
+     * another share of it to remember to give back.
+     */
+    pairing(): PairingPort;
     /**
      * Mints the ticket the next peer presents. Replaces any unspent one.
      *
@@ -763,6 +771,10 @@ export async function startCollabSession(deps: CollabSessionDeps): Promise<Colla
 
         role() {
             return myRole;
+        },
+
+        pairing() {
+            return link;
         },
 
         async share(role) {

@@ -10,7 +10,7 @@ import {
     type WireMessage,
 } from "@/lib/collab/peerLink";
 import { HANDSHAKE_MS } from "@/lib/collab/peerLink";
-import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryRelay, noPairing } from "@/lib/collab/peerLinkMemory";
 import { forgetRoundPeers, knownRoundPeers, setRoundPeers } from "@/lib/collab/roundPeers";
 import {
     startCollabSession,
@@ -976,6 +976,7 @@ describe("a round that remembers several peers", () => {
         const held = new Promise<void>((resolve) => (release = resolve));
 
         const slow: PeerLinkFactory = async () => ({
+            ...noPairing,
             async endpointId() {
                 return ALEX;
             },
@@ -1013,6 +1014,7 @@ describe("a round that remembers several peers", () => {
         const pending = new Promise<string>((resolve) => (answer = resolve));
 
         const late: PeerLinkFactory = async () => ({
+            ...noPairing,
             async endpointId() {
                 return ALEX;
             },

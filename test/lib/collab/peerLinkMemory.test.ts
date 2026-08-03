@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PeerConn, PeerLinkConfig, WireMessage } from "@/lib/collab/peerLink";
-import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
+import { createMemoryNet, memoryPairId, memoryRelay } from "@/lib/collab/peerLinkMemory";
 
 const CONFIG: PeerLinkConfig = { discovery: "mdns", relay: true };
 
@@ -138,5 +138,71 @@ describe("peerLinkMemory", () => {
 
         const near = await net.create("kim")({ discovery: "mdns", relay: false });
         expect((await near.dial("alex")).relayUrl()).toBeNull();
+    });
+});
+
+describe("pairing over the memory net", () => {
+    it("puts the host and the guest on the same name from one code", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        const arrived: string[] = [];
+        const id = await host.pairHost("TESTAA01", (conn) => arrived.push(conn.id));
+        expect(id).toBe(memoryPairId("TESTAA01"));
+
+        const conn = await guest.pairDial("testaa01");
+        expect(conn.id).toBe(memoryPairId("TESTAA01"));
+        expect(arrived).toEqual(["sam"]);
+    });
+
+    it("reads a code the same however it is typed", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        await host.pairHost("TESTAA01", () => {});
+        await expect(guest.pairDial("testaa-01")).resolves.toBeDefined();
+    });
+
+    it("refuses a dial once the host has let the code go", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        await host.pairHost("TESTAA01", () => {});
+        await host.pairStop();
+        await expect(guest.pairDial("TESTAA01")).rejects.toThrow();
+    });
+
+    it("holds one code at a time, so a second replaces the first", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        await host.pairHost("TESTAA01", () => {});
+        await host.pairHost("TESTAA02", () => {});
+        await expect(guest.pairDial("TESTAA01")).rejects.toThrow();
+        await expect(guest.pairDial("TESTAA02")).resolves.toBeDefined();
+    });
+
+    it("takes a code off the air when the link stops", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        const guest = await net.create("sam")(CONFIG);
+        await host.pairHost("TESTAA01", () => {});
+        await host.stop();
+        await expect(guest.pairDial("TESTAA01")).rejects.toThrow();
+    });
+
+    it("records every pairing call, so an opt-in test can read an empty log", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        await host.newCode();
+        await host.pairHost("TESTAA01", () => {});
+        await host.pairStop();
+        expect(net.calls.map((c) => c.op)).toEqual(["create", "newCode", "pairHost", "pairStop"]);
+    });
+
+    it("mints a code the shell would accept back", async () => {
+        const net = createMemoryNet();
+        const host = await net.create("alex")(CONFIG);
+        expect(await host.newCode()).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}$/);
     });
 });

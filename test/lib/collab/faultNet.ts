@@ -13,6 +13,7 @@
  */
 
 import type { PeerConn, PeerLink, PeerLinkConfig, WireMessage } from "@/lib/collab/peerLink";
+import { noPairing } from "@/lib/collab/peerLinkMemory";
 
 interface Pending {
     /** The endpoint that will receive this, which is who a partition names. */
@@ -122,6 +123,7 @@ export function createFaultNet(): FaultNet {
             return async (config) => {
                 endpoints.set(endpointId, { config, onPeer: null });
                 return {
+                    ...noPairing,
                     async endpointId() {
                         return endpointId;
                     },

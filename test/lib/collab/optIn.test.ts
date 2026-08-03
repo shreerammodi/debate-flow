@@ -111,11 +111,13 @@ describe("with shared editing switched off", () => {
 });
 
 /**
- * The other four routes onto the network gate on the same `collabSettings()`
- * call, and each is held to the off case beside its own behavior: `join.ts` in
+ * The other routes onto the network gate on the same `collabSettings()` call,
+ * and each is held to the off case beside its own behavior: `join.ts` in
  * `join.test.ts`, `inviteListener.ts` in `inviteListener.test.ts`,
- * `startForRound` in `runtimeInvites.test.ts`, and `persistReplica` in
- * `persist.test.ts`.
+ * `startForRound` in `runtimeInvites.test.ts`, `persistReplica` in
+ * `persist.test.ts`, and the two a pairing code opens - `startPairing` and
+ * `joinByCode` - in `runtimePairing.test.ts`, under a positive control of
+ * their own.
  */
 describe("discovery", () => {
     it("never publishes a DNS record, switch on included", async () => {

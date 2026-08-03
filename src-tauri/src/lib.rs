@@ -9,6 +9,7 @@ mod collab;
 mod config;
 mod flowfile;
 mod menu;
+mod pairing;
 mod shutdown;
 mod sidecar;
 mod windows;
@@ -116,6 +117,10 @@ pub fn run() {
             collab::collab_close,
             collab::collab_dial,
             collab::collab_endpoint_id,
+            collab::collab_pair_code,
+            collab::collab_pair_start,
+            collab::collab_pair_stop,
+            collab::collab_pair_target,
             collab::collab_relay_url,
             collab::collab_send,
             collab::collab_start,

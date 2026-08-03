@@ -82,6 +82,18 @@ export type WireMessage =
      * is the receiver's own word and wins.
      */
     | { type: "contact"; name?: string }
+    /**
+     * A guest redeeming a pairing code, on the temporary endpoint that code
+     * names. It carries a name and nothing else: the guest's EndpointId and
+     * its relay are what the connection itself proves, and an address a peer
+     * reports about itself is one it could have made up.
+     */
+    | { type: "pairHello"; name?: string }
+    /**
+     * The host's answer: the ticket that opens the round, and who is offering
+     * it. Everything after this is the protocol that already exists.
+     */
+    | { type: "pairAck"; ticket: string; name?: string; roundLabel?: string }
     | { type: "bye" };
 
 /**
@@ -280,6 +292,23 @@ function isPosition(m: Record<string, unknown>): m is PositionMessage {
 }
 
 /**
+ * A ticket is base64url of JSON behind a prefix. Far longer than any other
+ * field here, and still bounded: what arrives on this channel is handed to a
+ * parser and then to a dial.
+ */
+const MAX_TICKET = 4096;
+
+function isPairAck(m: Record<string, unknown>): boolean {
+    return (
+        typeof m.ticket === "string" &&
+        m.ticket.length > 0 &&
+        m.ticket.length <= MAX_TICKET &&
+        isOptionalField(m.name) &&
+        isOptionalField(m.roundLabel)
+    );
+}
+
+/**
  * The message a peer sent, or null for anything that does not conform to its
  * variant.
  *
@@ -309,6 +338,21 @@ export function parseWireMessage(raw: unknown): WireMessage | null {
             // on the object survives into a message the app treats as one.
             return isOptionalField(raw.name)
                 ? { type: "contact", ...(raw.name === undefined ? {} : { name: raw.name }) }
+                : null;
+        case "pairHello":
+            return isOptionalField(raw.name)
+                ? { type: "pairHello", ...(raw.name === undefined ? {} : { name: raw.name }) }
+                : null;
+        case "pairAck":
+            return isPairAck(raw)
+                ? {
+                      type: "pairAck",
+                      ticket: raw.ticket as string,
+                      ...(raw.name === undefined ? {} : { name: raw.name as string }),
+                      ...(raw.roundLabel === undefined
+                          ? {}
+                          : { roundLabel: raw.roundLabel as string }),
+                  }
                 : null;
         case "bye":
             return { type: "bye" };
@@ -378,11 +422,36 @@ export interface PeerLink {
      * transport's own address book can find, which is one room.
      */
     dial(endpointId: string, relayUrl?: string | null): Promise<PeerConn>;
+    /**
+     * A fresh pairing code. Minted where the alphabet lives, which is the same
+     * place the derivation does: two implementations of one derivation drift,
+     * and a code this side would not accept back is one a partner cannot use.
+     */
+    newCode(): Promise<string>;
+    /**
+     * Binds the temporary endpoint a code names and answers on it, handing
+     * back that endpoint's id. A second call replaces the first: one code is
+     * on the air at a time.
+     */
+    pairHost(code: string, onPeer: (peer: PeerConn) => void): Promise<string>;
+    /**
+     * Dials the endpoint a code names, from this link's own endpoint. The code
+     * is the whole address, so nothing else is passed and nothing is looked up.
+     */
+    pairDial(code: string): Promise<PeerConn>;
+    /** Takes the pairing endpoint off the air. A no-op when there is none. */
+    pairStop(): Promise<void>;
     stop(): Promise<void>;
 }
 
 /** Anything that can hand back a link for a configuration. */
 export type PeerLinkFactory = (config: PeerLinkConfig) => Promise<PeerLink>;
+
+/**
+ * The pairing half of a link, for code that has been handed a transport and
+ * has no business re-deciding where it came from.
+ */
+export type PairingPort = Pick<PeerLink, "newCode" | "pairHost" | "pairDial" | "pairStop">;
 
 /**
  * The transport for a session: iroh, in the desktop shell, and nowhere else.

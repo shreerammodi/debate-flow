@@ -14,14 +14,37 @@
 
 import {
     parseWireMessage,
+    type PairingPort,
     type PeerConn,
     type PeerLink,
     type PeerLinkConfig,
     type WireMessage,
 } from "./peerLink";
 
+/**
+ * The pairing half of a link that never pairs, for a double built around one
+ * other behaviour. Spread in rather than repeated, so the port growing a
+ * method does not mean editing every stand-in in the suite.
+ */
+export const noPairing: PairingPort = {
+    newCode: () => Promise.reject(new Error("this link does not pair")),
+    pairHost: () => Promise.reject(new Error("this link does not pair")),
+    pairDial: () => Promise.reject(new Error("this link does not pair")),
+    pairStop: async () => {},
+};
+
 export interface MemoryCall {
-    op: "create" | "endpointId" | "relayUrl" | "listen" | "dial" | "stop";
+    op:
+        | "create"
+        | "endpointId"
+        | "relayUrl"
+        | "listen"
+        | "dial"
+        | "stop"
+        | "newCode"
+        | "pairHost"
+        | "pairDial"
+        | "pairStop";
     /** For a dial, the endpoint reached out to; otherwise the local one. */
     endpointId?: string;
     /** For a dial, the relay it was told to look on, if it was told one. */
@@ -37,6 +60,20 @@ export interface MemoryCall {
 export function memoryRelay(endpointId: string): string {
     return `https://relay.invalid/${endpointId}`;
 }
+
+/**
+ * The name a code goes by on this net.
+ *
+ * Not a derivation. The real one is an HKDF in the shell and lives in exactly
+ * one place; what a handshake needs from it is only that the two sides reach
+ * the same name from the same code, which this gives with nothing to drift.
+ */
+export function memoryPairId(code: string): string {
+    return `pair-${code.replace(/[-\s]/g, "").toUpperCase()}`;
+}
+
+/** Crockford base32, as the shell mints a code from. */
+const CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 export interface MemoryNet {
     /** Every call made through this net, in order. */
@@ -112,6 +149,31 @@ export function createMemoryNet(): MemoryNet {
             return async (config) => {
                 calls.push({ op: "create", endpointId, config });
                 endpoints.set(endpointId, { config, onPeer: null });
+                /** The one code this link has on the air, if it has one. */
+                let pairId: string | null = null;
+
+                /**
+                 * The far side hears about the connection after this call has
+                 * handed the dialler back, because that is when the shipping
+                 * transport hears about one: an accepted connection reaches
+                 * the webview as an event, long after the dialler returned. A
+                 * listener that answered synchronously - by refusing, say -
+                 * would reach a dialler with no handlers attached yet, which
+                 * on a real link cannot happen.
+                 */
+                async function dial(target: string) {
+                    const far = endpoints.get(target);
+                    if (!far?.onPeer) throw new Error(`no peer listening at ${target}`);
+                    const { dialler, listener } = connect(
+                        endpointId,
+                        target,
+                        config.relay && far.config.relay,
+                    );
+                    const announce = far.onPeer;
+                    queueMicrotask(() => announce(listener));
+                    return dialler;
+                }
+
                 return {
                     async endpointId() {
                         calls.push({ op: "endpointId", endpointId });
@@ -130,18 +192,39 @@ export function createMemoryNet(): MemoryNet {
                     },
                     async dial(target, relayUrl) {
                         calls.push({ op: "dial", endpointId: target, relayUrl: relayUrl ?? null });
-                        const far = endpoints.get(target);
-                        if (!far?.onPeer) throw new Error(`no peer listening at ${target}`);
-                        const { dialler, listener } = connect(
-                            endpointId,
-                            target,
-                            config.relay && far.config.relay,
-                        );
-                        far.onPeer(listener);
-                        return dialler;
+                        return dial(target);
+                    },
+                    async newCode() {
+                        calls.push({ op: "newCode", endpointId });
+                        let code = "";
+                        for (let i = 0; i < 8; i++) {
+                            code += CODE_ALPHABET[Math.floor(Math.random() * 32)];
+                        }
+                        return code;
+                    },
+                    async pairHost(code, onPeer) {
+                        calls.push({ op: "pairHost", endpointId });
+                        // One code on the air at a time, as the shell holds
+                        // one pairing endpoint at a time.
+                        if (pairId) endpoints.delete(pairId);
+                        pairId = memoryPairId(code);
+                        endpoints.set(pairId, { config, onPeer });
+                        return pairId;
+                    },
+                    async pairDial(code) {
+                        const target = memoryPairId(code);
+                        calls.push({ op: "pairDial", endpointId: target, relayUrl: null });
+                        return dial(target);
+                    },
+                    async pairStop() {
+                        calls.push({ op: "pairStop", endpointId });
+                        if (pairId) endpoints.delete(pairId);
+                        pairId = null;
                     },
                     async stop() {
                         calls.push({ op: "stop", endpointId });
+                        if (pairId) endpoints.delete(pairId);
+                        pairId = null;
                         endpoints.delete(endpointId);
                     },
                 };

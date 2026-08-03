@@ -142,6 +142,10 @@ struct ClosedEvent {
 enum Event {
     Peer(PeerEvent),
     Message(MessageEvent),
+    /// A peer that arrived on the temporary endpoint a pairing code named.
+    /// Its own channel, because a session's listener would read one as a guest
+    /// arriving with no hello and hang up on it.
+    PairPeer(PeerEvent),
     Closed(ClosedEvent),
 }
 
@@ -174,6 +178,8 @@ impl Events for AppHandle {
             (None, Event::Peer(e)) => Emitter::emit(self, "collab:peer", e),
             (None, Event::Message(e)) => Emitter::emit(self, "collab:message", e),
             (None, Event::Closed(e)) => Emitter::emit(self, "collab:closed", e),
+            (Some(w), Event::PairPeer(e)) => Emitter::emit_to(self, w, "collab:pair", e),
+            (None, Event::PairPeer(e)) => Emitter::emit(self, "collab:pair", e),
         };
     }
 }
@@ -238,6 +244,18 @@ impl Conn {
     }
 }
 
+/// The temporary endpoint one pairing code names.
+///
+/// A second endpoint rather than a second identity on the first: it is bound
+/// with a key anybody holding the code can compute, and it homes on the one
+/// relay that code picked. The install's real endpoint keeps its own key and
+/// its own relay, and nothing about it changes for a pairing.
+struct Pair {
+    endpoint: Endpoint,
+    endpoint_id: String,
+    accept: tokio::task::JoinHandle<()>,
+}
+
 struct Live {
     runtime: Arc<tokio::runtime::Runtime>,
     endpoint: Endpoint,
@@ -257,6 +275,10 @@ struct Live {
     /// whatever another window bound first.
     relay: bool,
     mdns: bool,
+    /// The pairing endpoint on the air right now, if there is one. At most
+    /// one: a second code replaces the first, because two codes for one round
+    /// is two endpoints held open for a debater who only sees the newer.
+    pair: Option<Pair>,
     /// One entry per window holding this endpoint, and how many times that
     /// window took it. Two PeerLinks overlap by design - the idle invite
     /// listener and a round's session - and they share one bind, so the
@@ -272,11 +294,11 @@ struct Live {
 
 pub struct CollabState {
     live: Mutex<Option<Live>>,
-    /// The two deadlines, as fields rather than as the constants they are set
-    /// from, so the loopback suite can prove they fire without waiting out a
-    /// real one.
+    /// The three deadlines, as fields rather than as the constants they are set
+    /// from, so the suite can prove they fire without waiting out a real one.
     hello: Duration,
     dial: Duration,
+    pair_online: Duration,
 }
 
 impl Default for CollabState {
@@ -285,6 +307,7 @@ impl Default for CollabState {
             live: Mutex::new(None),
             hello: HELLO_DEADLINE,
             dial: DIAL_DEADLINE,
+            pair_online: PAIR_ONLINE_DEADLINE,
         }
     }
 }
@@ -411,7 +434,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
-fn encode_hex(bytes: &[u8]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes
         .iter()
@@ -699,6 +722,81 @@ fn start_gated(
     start(state, events, relay, mdns, holder)
 }
 
+/// Accepts connections on one endpoint until the handle is dropped.
+///
+/// Shared by the session's endpoint and by the temporary one a pairing code
+/// names, because everything bounding what a stranger can spend - the
+/// connection cap, the pending count, the hello deadline, one task per
+/// connection - is the same question on both.
+///
+/// `owner` is the window every connection here answers to. None for the
+/// session's endpoint, whose accepted connections are claimed by whichever
+/// window admits their peer; a pairing endpoint was asked for by one window
+/// and belongs to it from the start. `pairing` says whether a peer arriving
+/// here is redeeming a code, which is its own channel to the webview.
+fn spawn_accept(
+    runtime: &tokio::runtime::Runtime,
+    events: Arc<dyn Events>,
+    endpoint: Endpoint,
+    conns: Arc<Mutex<HashMap<String, Conn>>>,
+    hello: Duration,
+    owner: Option<String>,
+    pairing: bool,
+) -> tokio::task::JoinHandle<()> {
+    let pending = Arc::new(AtomicUsize::new(0));
+    runtime.spawn(async move {
+        while let Some(incoming) = endpoint.accept().await {
+            // Refused before a task exists to hold it, and refusing costs
+            // one packet. Both populations count: an established peer sits
+            // in the map, one still finishing its handshake sits nowhere,
+            // and counting only the map would leave the cheapest connection
+            // to make the one thing a stranger can spend without limit.
+            if conns.lock().len() + pending.load(Ordering::Relaxed) >= MAX_CONNS {
+                incoming.refuse();
+                continue;
+            }
+            // Everything one connection costs runs off this loop. The
+            // handshake and the wait for the peer's first stream both take
+            // as long as the peer likes, and a loop awaiting them is a
+            // loop accepting nobody else: one dial that opens the ALPN and
+            // then goes quiet would keep the debater's own partner out.
+            let events = events.clone();
+            let conns = conns.clone();
+            let endpoint = endpoint.clone();
+            let owner = owner.clone();
+            pending.fetch_add(1, Ordering::Relaxed);
+            let counted = Pending(pending.clone());
+            tokio::spawn(async move {
+                // Held until this task ends, however it ends.
+                let _counted = counted;
+                let Ok(conn) = incoming.await else { return };
+                let Ok(Ok((send, recv))) = timeout(hello, conn.accept_bi()).await else {
+                    conn.close(2u32.into(), b"no stream");
+                    return;
+                };
+                let remote = conn.remote_id();
+                let conn_id = new_conn_id();
+                let (connection_type, relay_url) = remote_path(&endpoint, remote).await;
+                let peer = PeerEvent {
+                    conn_id: conn_id.clone(),
+                    endpoint_id: remote.to_string(),
+                    connection_type,
+                    relay_url,
+                };
+                events.emit(
+                    owner.as_deref(),
+                    if pairing {
+                        Event::PairPeer(peer)
+                    } else {
+                        Event::Peer(peer)
+                    },
+                );
+                spawn_conn(events, conns, conn_id, owner, hello, conn, send, recv);
+            });
+        }
+    })
+}
+
 /// Binds the endpoint, or takes a share of the one already bound.
 fn start(
     state: &CollabState,
@@ -762,61 +860,18 @@ fn start(
     let endpoint_id = endpoint.id().to_string();
     let conns: Arc<Mutex<HashMap<String, Conn>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let accept = {
-        let events = events.clone();
-        let endpoint = endpoint.clone();
-        let conns = conns.clone();
-        let hello = state.hello;
-        let pending = Arc::new(AtomicUsize::new(0));
-        runtime.spawn(async move {
-            while let Some(incoming) = endpoint.accept().await {
-                // Refused before a task exists to hold it, and refusing costs
-                // one packet. Both populations count: an established peer sits
-                // in the map, one still finishing its handshake sits nowhere,
-                // and counting only the map would leave the cheapest connection
-                // to make the one thing a stranger can spend without limit.
-                if conns.lock().len() + pending.load(Ordering::Relaxed) >= MAX_CONNS {
-                    incoming.refuse();
-                    continue;
-                }
-                // Everything one connection costs runs off this loop. The
-                // handshake and the wait for the peer's first stream both take
-                // as long as the peer likes, and a loop awaiting them is a
-                // loop accepting nobody else: one dial that opens the ALPN and
-                // then goes quiet would keep the debater's own partner out.
-                let events = events.clone();
-                let conns = conns.clone();
-                let endpoint = endpoint.clone();
-                pending.fetch_add(1, Ordering::Relaxed);
-                let counted = Pending(pending.clone());
-                tokio::spawn(async move {
-                    // Held until this task ends, however it ends.
-                    let _counted = counted;
-                    let Ok(conn) = incoming.await else { return };
-                    let Ok(Ok((send, recv))) = timeout(hello, conn.accept_bi()).await else {
-                        conn.close(2u32.into(), b"no stream");
-                        return;
-                    };
-                    let remote = conn.remote_id();
-                    let conn_id = new_conn_id();
-                    let (connection_type, relay_url) = remote_path(&endpoint, remote).await;
-                    // No owner. Which round this connection is for arrives in
-                    // its hello, above this module, so every window hears
-                    // about it and the one that answers claims it.
-                    events.emit(
-                        None,
-                        Event::Peer(PeerEvent {
-                            conn_id: conn_id.clone(),
-                            endpoint_id: remote.to_string(),
-                            connection_type,
-                            relay_url,
-                        }),
-                    );
-                    spawn_conn(events, conns, conn_id, None, hello, conn, send, recv);
-                });
-            }
-        })
-    };
+    // No owner. Which round an accepted connection is for arrives in its
+    // hello, above this module, so every window hears about it and the one
+    // that answers claims it.
+    let accept = spawn_accept(
+        &runtime,
+        events,
+        endpoint.clone(),
+        conns.clone(),
+        state.hello,
+        None,
+        false,
+    );
 
     *held = Some(Live {
         runtime: Arc::new(runtime),
@@ -827,6 +882,7 @@ fn start(
         closing: Mutex::new(Vec::new()),
         relay,
         mdns,
+        pair: None,
         holders: HashMap::from([(holder.to_string(), 1)]),
     });
     Ok(endpoint_id)
@@ -1094,6 +1150,245 @@ fn relay_url(state: &CollabState) -> String {
     })
 }
 
+/// How long a pairing endpoint has to home on the relay its code named.
+///
+/// A debater is looking at a `Getting ready...` screen for this, and a code
+/// that cannot be reached is worse than a slower one: the host discards it and
+/// mints another, which picks a different relay.
+const PAIR_ONLINE_DEADLINE: Duration = Duration::from_secs(8);
+
+/// Where a guest sends its first packet to redeem a code.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairTarget {
+    endpoint_id: String,
+    relay_url: String,
+}
+
+/// A fresh pairing code. Nothing is bound by minting one.
+#[tauri::command]
+pub fn collab_pair_code() -> String {
+    crate::pairing::new_code()
+}
+
+/// The endpoint and relay a code names, for the side that dials it.
+///
+/// A guest needs no second endpoint. It dials from the one it already has, to
+/// an address the code told it, which is the ordinary dial this module already
+/// does - so the whole guest half of pairing is this derivation.
+#[tauri::command]
+pub fn collab_pair_target(code: String) -> Result<PairTarget, String> {
+    pair_target(&code)
+}
+
+fn pair_target(code: &str) -> Result<PairTarget, String> {
+    let (key, relay) = crate::pairing::derive(code)?;
+    Ok(PairTarget {
+        endpoint_id: key.public().to_string(),
+        relay_url: relay.to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn collab_pair_start(
+    app: AppHandle,
+    window: WebviewWindow,
+    code: String,
+) -> Result<String, String> {
+    let holder = window.label().to_string();
+    let events: Arc<dyn Events> = Arc::new(app.clone());
+    off_thread(move || {
+        pair_start_gated(
+            &app.state::<CollabState>(),
+            events,
+            &holder,
+            &code,
+            crate::config::collab_enabled(),
+        )
+    })
+    .await
+}
+
+/// The pairing bind, behind the switch the debater set.
+///
+/// The pairing endpoint is a second way onto the network, so it asks the same
+/// question the session's bind does and in the same place: on the command,
+/// which is the only way into this module from a webview.
+fn pair_start_gated(
+    state: &CollabState,
+    events: Arc<dyn Events>,
+    holder: &str,
+    code: &str,
+    enabled: bool,
+) -> Result<String, String> {
+    if !enabled {
+        return Err("Shared editing is off".to_string());
+    }
+    pair_start(state, events, holder, code)
+}
+
+fn pair_start(
+    state: &CollabState,
+    events: Arc<dyn Events>,
+    holder: &str,
+    code: &str,
+) -> Result<String, String> {
+    let (key, relay) = crate::pairing::derive(code)?;
+    // The session's own switch. One install has one answer to "may this reach
+    // a relay", and a pairing endpoint that ignored it would be a way around
+    // the setting.
+    let relaying = {
+        let held = state.live.lock();
+        held.as_ref()
+            .ok_or("No collaboration session is running")?
+            .relay
+    };
+    pair_bind(state, events, holder, key, relay, relaying)
+}
+
+/// Binds the endpoint a code names, waits for it to be reachable, and answers
+/// on it.
+///
+/// Nothing is handed back until the endpoint is homed, because a code that
+/// cannot be reached is worse than no code: the debater reads it out, the
+/// partner types it, and the dial spends its whole deadline on an address that
+/// is not there. The caller discards the code and mints another, which picks a
+/// different relay.
+///
+/// A bind that gets that far and then fails closes the endpoint on the way
+/// out. A leaked endpoint is a socket, a relay connection and an accept loop
+/// outliving the window that asked for them.
+fn pair_bind(
+    state: &CollabState,
+    events: Arc<dyn Events>,
+    holder: &str,
+    key: SecretKey,
+    relay: RelayUrl,
+    relaying: bool,
+) -> Result<String, String> {
+    let (runtime, conns, hello, online, mdns) = {
+        let held = state.live.lock();
+        let live = held.as_ref().ok_or("No collaboration session is running")?;
+        (
+            live.runtime.clone(),
+            live.conns.clone(),
+            state.hello,
+            state.pair_online,
+            live.mdns,
+        )
+    };
+
+    let pinned = relay.clone();
+    let endpoint = runtime.block_on(async move {
+        // Minimal, never N0: see the module comment.
+        let builder = Endpoint::builder(presets::Minimal)
+            .portmapper_config(PortmapperConfig::Disabled)
+            .alpns(vec![ALPN.to_vec()])
+            .secret_key(key)
+            // The one relay the code picked, not the nearest. A host and a
+            // guest two networks apart must land on the same server, and a
+            // default homes each of them on whichever is closest to them.
+            .relay_mode(if relaying {
+                RelayMode::custom([pinned.clone()])
+            } else {
+                RelayMode::Disabled
+            });
+        let endpoint = builder
+            .bind()
+            .await
+            .map_err(|e| format!("Could not bind a pairing endpoint: {e}"))?;
+        if mdns {
+            // With relaying off this is the only thing left that can find the
+            // endpoint, and the debater is told what that costs before the
+            // code goes on screen.
+            if let Ok(lookup) = MdnsAddressLookup::builder().build(endpoint.id()) {
+                if let Ok(services) = endpoint.address_lookup() {
+                    services.add(lookup);
+                }
+            }
+        }
+        if relaying {
+            let homed = timeout(online, endpoint.online()).await.is_ok()
+                && endpoint
+                    .addr()
+                    .addrs
+                    .into_iter()
+                    .any(|a| matches!(a, TransportAddr::Relay(url) if url == pinned));
+            if !homed {
+                endpoint.close().await;
+                return Err("Could not reach the relay for that code".to_string());
+            }
+        }
+        Ok::<Endpoint, String>(endpoint)
+    })?;
+
+    let endpoint_id = endpoint.id().to_string();
+    let accept = spawn_accept(
+        &runtime,
+        events,
+        endpoint.clone(),
+        conns,
+        hello,
+        Some(holder.to_string()),
+        true,
+    );
+    let bound = Pair {
+        endpoint,
+        endpoint_id: endpoint_id.clone(),
+        accept,
+    };
+
+    let replaced = {
+        let mut held = state.live.lock();
+        match held.as_mut() {
+            // The session went away while this was homing, so nothing here has
+            // anywhere to live.
+            None => Some(bound),
+            Some(live) => live.pair.replace(bound),
+        }
+    };
+    if let Some(old) = replaced {
+        let orphaned = old.endpoint_id == endpoint_id;
+        shutdown_pair(&runtime, old);
+        if orphaned {
+            return Err("No collaboration session is running".to_string());
+        }
+    }
+    Ok(endpoint_id)
+}
+
+#[tauri::command]
+pub async fn collab_pair_stop(app: AppHandle) -> Result<(), String> {
+    off_thread(move || pair_stop(&app.state::<CollabState>())).await
+}
+
+/// Takes the pairing endpoint off the air. A no-op when there is none, because
+/// a sheet closing twice is not an error.
+fn pair_stop(state: &CollabState) -> Result<(), String> {
+    let taken = {
+        let mut held = state.live.lock();
+        let Some(live) = held.as_mut() else {
+            return Ok(());
+        };
+        live.pair.take().map(|pair| (live.runtime.clone(), pair))
+    };
+    if let Some((runtime, pair)) = taken {
+        shutdown_pair(&runtime, pair);
+    }
+    Ok(())
+}
+
+/// Closes one pairing endpoint and the loop accepting on it.
+///
+/// The connections it accepted are in the shared map and are not touched here:
+/// a guest that has already redeemed a code is mid-handshake on a connection
+/// the window still holds, and the endpoint going away does not take it.
+fn shutdown_pair(runtime: &tokio::runtime::Runtime, pair: Pair) {
+    pair.accept.abort();
+    let endpoint = pair.endpoint;
+    runtime.block_on(async move { endpoint.close().await });
+}
+
 /// Lets go of one holder's share of the endpoint.
 fn stop(state: &CollabState, holder: &str) -> Result<(), String> {
     let last = {
@@ -1125,7 +1420,7 @@ fn stop(state: &CollabState, holder: &str) -> Result<(), String> {
 
 /// Hangs up on every peer and waits out what they were already sent, then
 /// closes the accept loop and the endpoint.
-fn shutdown(live: Live) {
+fn shutdown(mut live: Live) {
     // Every peer at once, because the deadline is spent once rather than once
     // per peer: a host leaving a round of eight guests, two of them stalled,
     // has the shell's three seconds to be gone in.
@@ -1147,6 +1442,11 @@ fn shutdown(live: Live) {
         })
         .await;
     });
+    // The pairing endpoint goes with the session that hung it there. After the
+    // drain, so a farewell already in flight is not closed out from under.
+    if let Some(pair) = live.pair.take() {
+        shutdown_pair(&live.runtime, pair);
+    }
     live.accept.abort();
     let endpoint = live.endpoint.clone();
     live.runtime.block_on(async move { endpoint.close().await });
@@ -1530,12 +1830,14 @@ mod off_the_main_thread {
     ///
     /// The rest of this module's commands are a lock and a channel push, and
     /// belong where they are.
-    const OFF_THREAD: [&str; 5] = [
+    const OFF_THREAD: [&str; 7] = [
         "collab_start",
         "collab_dial",
         "collab_close",
         "collab_stop",
         "collab_relay_url",
+        "collab_pair_start",
+        "collab_pair_stop",
     ];
 
     #[test]
@@ -1712,6 +2014,23 @@ mod loopback {
         fn peers(&self) -> Vec<String> {
             self.pick(|event| match event {
                 Event::Peer(e) => Some(e.conn_id.clone()),
+                _ => None,
+            })
+        }
+
+        /// The peers announced on the pairing channel, which is a different
+        /// question from the ones the session's listener hears.
+        fn pair_peers(&self) -> Vec<String> {
+            self.pick(|event| match event {
+                Event::PairPeer(e) => Some(e.conn_id.clone()),
+                _ => None,
+            })
+        }
+
+        /// Who the pairing announcement for `conn_id` was addressed to.
+        fn pair_routes(&self, conn_id: &str) -> Vec<Option<String>> {
+            self.routes(conn_id, |event| match event {
+                Event::PairPeer(e) => Some(&e.conn_id),
                 _ => None,
             })
         }
@@ -2803,5 +3122,224 @@ mod loopback {
         events.wait("the hello", |seen| !seen.messages().is_empty());
 
         stop(&state, "session").expect("stop");
+    }
+
+    // --- The temporary endpoint a pairing code names -----------------------
+
+    /// A relay nobody answers on, so homing always runs out of time. The
+    /// shipping list is four real n0 servers, and what these prove is what the
+    /// shell does with an endpoint that cannot home - reaching a real one to
+    /// find out would put a unit test on the network.
+    const NOWHERE: [&str; 1] = ["https://relay.invalid./"];
+
+    const A_CODE: &str = "K7QM3XPV";
+    const ANOTHER_CODE: &str = "TESTAA01";
+
+    fn pair_addr(state: &CollabState) -> EndpointAddr {
+        state
+            .live
+            .lock()
+            .as_ref()
+            .expect("a live endpoint")
+            .pair
+            .as_ref()
+            .expect("a pairing endpoint")
+            .endpoint
+            .addr()
+    }
+
+    fn has_pair(state: &CollabState) -> bool {
+        state
+            .live
+            .lock()
+            .as_ref()
+            .is_some_and(|live| live.pair.is_some())
+    }
+
+    /// A bound session with relaying off, which is what a loopback test can
+    /// have: the pairing endpoint follows that switch and skips the wait for a
+    /// relay it is not allowed to use.
+    fn offline_session(events: Arc<Recorder>) -> CollabState {
+        let state = impatient();
+        start(&state, events, false, false, "win-1").expect("bind");
+        state
+    }
+
+    #[test]
+    fn a_pairing_endpoint_is_the_one_the_code_names() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        let (key, _) = crate::pairing::derive(A_CODE).expect("a valid code");
+        let id = pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE)
+            .expect("a pairing endpoint");
+        assert_eq!(id, key.public().to_string());
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn a_code_that_will_not_normalize_binds_nothing() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        assert!(pair_start(&state, Arc::new(Recorder::default()), "win-1", "IIIIIIII").is_err());
+        assert!(!has_pair(&state));
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn a_relay_that_never_answers_leaves_no_endpoint_behind() {
+        let mut state = impatient();
+        // Long enough to bind, far too short for a relay that is not there.
+        state.pair_online = Duration::from_millis(50);
+        start(&state, Arc::new(Recorder::default()), false, false, "win-1").expect("bind");
+
+        let (key, relay) = crate::pairing::derive_at(A_CODE, &NOWHERE).expect("a valid code");
+        let err = pair_bind(
+            &state,
+            Arc::new(Recorder::default()),
+            "win-1",
+            key,
+            relay,
+            true,
+        )
+        .expect_err("a relay that is not there");
+        assert!(err.contains("relay"), "{err}");
+        assert!(
+            !has_pair(&state),
+            "a failed bind must not leave an endpoint held"
+        );
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn stopping_a_pairing_lets_go_of_its_endpoint() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE).expect("a pairing");
+        let addr = pair_addr(&state);
+        pair_stop(&state).expect("release");
+        assert!(!has_pair(&state));
+
+        // The endpoint is gone, not merely forgotten: a guest that still holds
+        // the code reaches nothing.
+        let guest = Guest::new();
+        assert!(guest.try_dial(addr).is_err());
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn stopping_a_pairing_twice_is_not_an_error() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE).expect("a pairing");
+        pair_stop(&state).expect("release");
+        pair_stop(&state).expect("release again");
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn a_second_pairing_replaces_the_first_rather_than_leaking_it() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        let first = pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE)
+            .expect("a pairing endpoint");
+        let stale = pair_addr(&state);
+        let second = pair_start(&state, Arc::new(Recorder::default()), "win-1", ANOTHER_CODE)
+            .expect("a pairing endpoint");
+        assert_ne!(first, second);
+        assert_eq!(
+            state
+                .live
+                .lock()
+                .as_ref()
+                .expect("live")
+                .pair
+                .as_ref()
+                .expect("a pair")
+                .endpoint_id,
+            second
+        );
+
+        let guest = Guest::new();
+        assert!(
+            guest.try_dial(stale).is_err(),
+            "the old code is off the air"
+        );
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn releasing_the_session_takes_the_pairing_endpoint_with_it() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE).expect("a pairing");
+        let addr = pair_addr(&state);
+        stop(&state, "win-1").expect("stop");
+        assert!(state.live.lock().is_none());
+
+        let guest = Guest::new();
+        assert!(guest.try_dial(addr).is_err());
+    }
+
+    #[test]
+    fn pairing_needs_a_session_to_hang_off() {
+        let state = CollabState::default();
+        assert!(pair_start(&state, Arc::new(Recorder::default()), "win-1", A_CODE).is_err());
+        assert!(state.live.lock().is_none());
+    }
+
+    #[test]
+    fn the_switch_being_off_binds_nothing() {
+        let state = offline_session(Arc::new(Recorder::default()));
+        assert!(pair_start_gated(
+            &state,
+            Arc::new(Recorder::default()),
+            "win-1",
+            A_CODE,
+            false
+        )
+        .is_err());
+        assert!(!has_pair(&state));
+        stop(&state, "win-1").expect("stop");
+    }
+
+    #[test]
+    fn a_target_is_the_endpoint_and_relay_the_code_names() {
+        let (key, relay) = crate::pairing::derive(A_CODE).expect("a valid code");
+        let target = pair_target("k7qm-3xpv").expect("a valid code");
+        assert_eq!(target.endpoint_id, key.public().to_string());
+        assert_eq!(target.relay_url, relay.to_string());
+    }
+
+    #[test]
+    fn a_target_for_a_code_that_will_not_normalize_is_refused() {
+        assert!(pair_target("OOOOOOOO").is_err());
+    }
+
+    /// A guest redeeming a code reaches the window that minted it, on the
+    /// pairing channel rather than the session's: the session's listener would
+    /// read one as a guest arriving with no hello and hang up on it.
+    #[test]
+    fn a_guest_redeeming_a_code_reaches_the_window_that_minted_it() {
+        let events = Arc::new(Recorder::default());
+        let state = offline_session(events.clone());
+        pair_start(&state, events.clone(), "win-1", A_CODE).expect("a pairing endpoint");
+
+        let guest = Guest::new();
+        let (_conn, mut send, _recv) = guest.dial(pair_addr(&state));
+        guest.write(&mut send, b"{\"type\":\"pairHello\"}\n");
+
+        events.wait("the pairing peer", |seen| !seen.pair_peers().is_empty());
+        let conn_id = events.pair_peers()[0].clone();
+        assert!(
+            events.peers().is_empty(),
+            "a pairing peer is not announced to the session's listener"
+        );
+        assert_eq!(
+            events.pair_routes(&conn_id),
+            vec![Some("win-1".to_string())],
+            "the window that minted the code owns what redeems it"
+        );
+        events.wait("the pairHello", |seen| !seen.messages().is_empty());
+        assert_eq!(
+            events.message_routes(&conn_id),
+            vec![Some("win-1".to_string())]
+        );
+        assert!(holds(&state, &conn_id), "the window may answer it");
+
+        stop(&state, "win-1").expect("stop");
     }
 }
