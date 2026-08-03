@@ -2,14 +2,15 @@ import { render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import HotGrid from "@/components/flow/HotGrid";
-import { getActiveHot } from "@/lib/grid/hotInstance";
+import { getActiveHot, notifyGridMutated } from "@/lib/grid/hotInstance";
 import { makeFlowRound, makeFlowSheet } from "@/lib/model/flow";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
-// A sweep writes every column of a MIN_ROWS-deep grid, and each write costs a
-// full save: the grid is re-read cell by cell to collect its meta. That is one
-// order of magnitude past a single-cell case, so these cases get their own
-// ceiling rather than the suite default.
+// jsdom gives every row zero height, so Handsontable virtualizes nothing and
+// each write redraws all MIN_ROWS rows of every column. A sweep therefore
+// writes its whole row in one call: setDataAtCell takes the changes as a
+// batch, afterChange still converts each column of the batch on its own, and
+// the grid is redrawn once instead of once per column.
 const SWEEP_MS = 30_000;
 
 /**
@@ -59,9 +60,9 @@ describe("grid and model columns agree", () => {
                 const { hot, sheetId } = await padded(start);
                 const shown = hot.countCols() - spacers;
 
-                for (let c = 0; c < shown; c++) {
-                    hot.setDataAtCell(0, spacers + c, `col ${c}`);
-                }
+                hot.setDataAtCell(
+                    Array.from({ length: shown }, (_, c) => [0, spacers + c, `col ${c}`] as const),
+                );
                 const saved = useFlowStore.getState().round!.sheets.find((s) => s.id === sheetId)!;
                 for (let c = 0; c < shown; c++) {
                     expect(saved.data[0][c]).toBe(`col ${c}`);
@@ -77,11 +78,15 @@ describe("grid and model columns agree", () => {
                 const { hot, sheetId } = await padded(start);
                 const shown = hot.countCols() - spacers;
 
+                hot.setDataAtCell(
+                    Array.from({ length: shown }, (_, c) => [0, spacers + c, `col ${c}`] as const),
+                );
                 for (let c = 0; c < shown; c++) {
-                    hot.setDataAtCell(0, spacers + c, `col ${c}`);
                     hot.setCellMeta(0, spacers + c, "className", "flow-bold");
                 }
-                hot.setDataAtCell(0, spacers, "col 0");
+                // A decoration reaches no afterChange hook: the bold command
+                // writes the meta and calls this, which is what saves it.
+                notifyGridMutated();
 
                 const saved = useFlowStore.getState().round!.sheets.find((s) => s.id === sheetId)!;
                 for (let c = 0; c < shown; c++) {
