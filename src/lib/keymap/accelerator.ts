@@ -44,6 +44,13 @@ const KEY_TOKENS: Record<string, string> = {
     PageDown: "PageDown",
 };
 
+/**
+ * Shifted characters with an unshifted muda token, and the token they carry.
+ * Shift rides inside the character (see eventToChord), so it has to be put
+ * back explicitly - the same treatment an uppercase letter gets below.
+ */
+const SHIFTED_KEY_TOKENS: Record<string, string> = { "{": "BracketLeft", "}": "BracketRight" };
+
 const FUNCTION_KEY = /^F([1-9]|1[0-9]|2[0-4])$/;
 
 /** Splits a chord on "+", keeping a literal "+" key intact ("Meta++"). */
@@ -81,9 +88,12 @@ export function chordToAccelerator(chord: string): string | null {
         token = key;
     } else if (key in KEY_TOKENS) {
         token = KEY_TOKENS[key]!;
+    } else if (key in SHIFTED_KEY_TOKENS) {
+        shift = true;
+        token = SHIFTED_KEY_TOKENS[key]!;
     } else {
-        // Shifted symbols ("?") carry shift inside the character and have no
-        // unshifted muda token; withhold the accelerator rather than guess.
+        // Other shifted symbols ("?") carry shift inside the character and have
+        // no unshifted muda token; withhold the accelerator rather than guess.
         return null;
     }
 
@@ -123,6 +133,8 @@ export const MENU_COMMAND_IDS = [
     "row.delete",
     "sheet.next",
     "sheet.prev",
+    "sheet.moveUp",
+    "sheet.moveDown",
     "sheet.quickSwitch",
     "palette.open",
     "sidebar.toggle",

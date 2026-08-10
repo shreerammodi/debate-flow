@@ -55,16 +55,19 @@ const LETTER_BINDINGS: Record<Chord, CommandId> = (() => {
 })();
 
 /**
- * Sheet navigation: brackets step, 1-9 jump. Every one carries the platform
- * modifier because a bare key is text to the cell editor: Handsontable hands
- * a printable keydown to the editor the debater has open, so a bare bracket
- * types a bracket and never reaches the app. Meta on Mac, Ctrl elsewhere.
+ * Sheet navigation: brackets step, 1-9 jump, and the shifted brackets take the
+ * sheet with you. Every one carries the platform modifier because a bare key
+ * is text to the cell editor: Handsontable hands a printable keydown to the
+ * editor the debater has open, so a bare bracket types a bracket and never
+ * reaches the app. Meta on Mac, Ctrl elsewhere.
  */
 const SHEET_NAV: Record<Chord, CommandId> = (() => {
     const mod = isMacPlatform() ? "Meta" : "Ctrl";
     return {
         [`${mod}+]`]: "sheet.next",
         [`${mod}+[`]: "sheet.prev",
+        [`${mod}+}`]: "sheet.moveDown",
+        [`${mod}+{`]: "sheet.moveUp",
         [`${mod}+1`]: "sheet.jump1",
         [`${mod}+2`]: "sheet.jump2",
         [`${mod}+3`]: "sheet.jump3",
@@ -88,6 +91,17 @@ const SPLIT_BINDINGS: Record<Chord, CommandId> = {
     "Alt+l": "split.focusRight",
 };
 
+/**
+ * Growing the sidebar's sheet selection. Alt beside the split chords rather
+ * than the platform modifier, which the unshifted brackets already hold for
+ * stepping between sheets: extending is the same two keys with the hand in a
+ * different place.
+ */
+const SELECTION_BINDINGS: Record<Chord, CommandId> = {
+    "Alt+[": "sheet.extendUp",
+    "Alt+]": "sheet.extendDown",
+};
+
 /** The single flat keymap: sheet switching, formatting, and utility chords. */
 export const FLAT_KEYMAP: Keymap = {
     name: "default",
@@ -96,6 +110,7 @@ export const FLAT_KEYMAP: Keymap = {
         ...LETTER_BINDINGS,
         ...SHEET_NAV,
         ...SPLIT_BINDINGS,
+        ...SELECTION_BINDINGS,
     },
 };
 

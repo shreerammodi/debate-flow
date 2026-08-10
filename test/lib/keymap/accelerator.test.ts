@@ -33,6 +33,11 @@ describe("chordToAccelerator", () => {
         expect(chordToAccelerator("Meta+1")).toBe("Cmd+1");
     });
 
+    it("puts shift back for a shifted bracket, which carries it in the character", () => {
+        expect(chordToAccelerator("Meta+{")).toBe("Cmd+Shift+BracketLeft");
+        expect(chordToAccelerator("Meta+}")).toBe("Cmd+Shift+BracketRight");
+    });
+
     it("allows bare function keys", () => {
         expect(chordToAccelerator("F1")).toBe("F1");
         expect(chordToAccelerator("Meta+F5")).toBe("Cmd+F5");

@@ -61,3 +61,13 @@ it("binds the split-view chords", () => {
     expect(FLAT_KEYMAP.bindings["Alt+h"]).toBe("split.focusLeft");
     expect(FLAT_KEYMAP.bindings["Alt+l"]).toBe("split.focusRight");
 });
+
+it("binds the sheet move chords to the shifted brackets", () => {
+    expect(FLAT_KEYMAP.bindings[`${mod}+{`]).toBe("sheet.moveUp");
+    expect(FLAT_KEYMAP.bindings[`${mod}+}`]).toBe("sheet.moveDown");
+});
+
+it("binds range extension to the Alt brackets", () => {
+    expect(FLAT_KEYMAP.bindings["Alt+["]).toBe("sheet.extendUp");
+    expect(FLAT_KEYMAP.bindings["Alt+]"]).toBe("sheet.extendDown");
+});

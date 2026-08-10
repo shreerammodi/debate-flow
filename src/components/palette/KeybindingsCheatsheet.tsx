@@ -86,6 +86,10 @@ const GROUPS: { label: string; rows: { commandId: CommandId }[] }[] = [
         rows: [
             { commandId: "sheet.prev" as CommandId },
             { commandId: "sheet.next" as CommandId },
+            { commandId: "sheet.moveUp" as CommandId },
+            { commandId: "sheet.moveDown" as CommandId },
+            { commandId: "sheet.extendUp" as CommandId },
+            { commandId: "sheet.extendDown" as CommandId },
             { commandId: "sheet.quickSwitch" as CommandId },
             { commandId: "sheet.newAff" as CommandId },
             { commandId: "sheet.newNeg" as CommandId },

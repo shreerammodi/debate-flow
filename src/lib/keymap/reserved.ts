@@ -47,6 +47,14 @@ const RESERVED_KEYS = [
     // -- Sheet navigation --------------------------------------------------
     "[", // previous sheet (suppresses the browser's history back)
     "]", // next sheet (suppresses the browser's history forward)
+    // Move sheet up / down. Chrome reserves Cmd+Shift+[ and Cmd+Shift+] for
+    // tab switching at the browser level and never delivers them to the page,
+    // so preventDefault cannot reclaim them there; the web build loses these
+    // two chords and reaches the commands through the palette instead. The
+    // desktop shell's WKWebView does deliver them, which is what these
+    // entries are for.
+    "{",
+    "}",
     // -- Sheet jumps -----------------------------------------------------------
     "1",
     "2",

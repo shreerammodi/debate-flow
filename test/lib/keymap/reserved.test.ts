@@ -113,4 +113,13 @@ describe("reservedChords", () => {
         expect(reservedChords().has("Ctrl+[")).toBe(true);
         expect(reservedChords().has("Ctrl+]")).toBe(true);
     });
+
+    it("reserves the platform modifier+shifted brackets (moving a sheet)", () => {
+        setPlatform("MacIntel");
+        expect(reservedChords().has("Meta+{")).toBe(true);
+        expect(reservedChords().has("Meta+}")).toBe(true);
+        setPlatform("Win32");
+        expect(reservedChords().has("Ctrl+{")).toBe(true);
+        expect(reservedChords().has("Ctrl+}")).toBe(true);
+    });
 });

@@ -154,11 +154,22 @@ pub fn build<R: Runtime>(
         .item(&cmd("row.delete", "Delete Row", "CmdOrCtrl+Backspace")?)
         .build()?;
 
-    // View: navigation and panel toggles. Next/Previous Sheet are bound to
-    // bare `]` / `[` in the keymap, which can never be accelerators.
+    // View: navigation and panel toggles. Every accelerator here is the
+    // keymap's, looked up per command; the strings below are only the
+    // fallback for a command the map does not name.
     let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&cmd("sheet.next", "Next Sheet", "")?)
-        .item(&cmd("sheet.prev", "Previous Sheet", "")?)
+        .item(&cmd("sheet.next", "Next Sheet", "CmdOrCtrl+BracketRight")?)
+        .item(&cmd("sheet.prev", "Previous Sheet", "CmdOrCtrl+BracketLeft")?)
+        .item(&cmd(
+            "sheet.moveUp",
+            "Move Sheet Up",
+            "CmdOrCtrl+Shift+BracketLeft",
+        )?)
+        .item(&cmd(
+            "sheet.moveDown",
+            "Move Sheet Down",
+            "CmdOrCtrl+Shift+BracketRight",
+        )?)
         .separator()
         .item(&cmd("sheet.quickSwitch", "Search Cells", "CmdOrCtrl+P")?)
         .item(&cmd(
