@@ -1,9 +1,11 @@
 /**
  * The four collaboration commands, and nothing else reaches a session.
  *
- * Palette only: no chord, no menu accelerator. Flowing owns most of the letter
- * space, and a printable key bound outside `HotGrid`'s guard erases the cell
- * the debater is standing on.
+ * No chord and no accelerator: flowing owns most of the letter space, and a
+ * printable key bound outside `HotGrid`'s guard erases the cell the debater is
+ * standing on. They are reached by click - the palette, the sidebar's sharing
+ * controls, and for join, the File menu, which is the one route a guest with a
+ * code can take before any flow is open.
  *
  * Sharing and joining ask for consent first rather than checking a switch and
  * refusing. A debater who has just clicked Share has said what they want, and

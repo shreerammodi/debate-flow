@@ -17,7 +17,10 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   sheet is open, while a partner code is spent on the first person who uses it.
   Sharing lives beside the round now, on the sidebar next to the session
   corner, rather than in Settings, and the first time you share or join, ebb
-  asks whether to turn sharing on. Settings keeps the switches.
+  asks whether to turn sharing on. Settings keeps the switches. Joining is also
+  on the start screen, on `j`, and in the File menu as Join Round, since
+  someone arriving with a code has no round open to stand beside. The start
+  screen's cursor moves on the arrow keys and `k`; `j` is Join.
 - **Pairing works between two networks.** Both sides work out the same
   temporary address from the code, including which relay to meet at, so venue
   wifi on one side and a telephone hotspot on the other reach each other.

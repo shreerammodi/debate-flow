@@ -100,9 +100,16 @@ pub fn build<R: Runtime>(
     // submenu below) - both are commands a debater uses mid-speech or
     // reaches for reflexively, so they outrank a between-rounds action. The
     // start screen binds bare "o" and "n" instead.
+    //
+    // Join sits with them because it is the third way a flow arrives on
+    // screen, and the only one a guest reaches with nothing open: the
+    // sidebar's sharing controls need a round, and the palette only mounts
+    // on the flow screen. Click-only, since the collaboration commands carry
+    // no chord at all.
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&cmd("flow.new", "New Flow", "")?)
         .item(&cmd("flow.open", "Open Flow...", "")?)
+        .item(&cmd("collab.join", "Join Round...", "")?)
         .separator()
         .item(&cmd("flow.save", "Save", "CmdOrCtrl+S")?)
         .item(&cmd("flow.saveAs", "Save As...", "CmdOrCtrl+Shift+S")?)

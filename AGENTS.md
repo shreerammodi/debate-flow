@@ -267,6 +267,14 @@ edge case; otherwise leave the code bare.
   chord and no menu accelerator, for the same reason `flow.open` does not -
   the start screen binds a bare `n` instead, and the command palette or the
   File menu still reach it by click.
+- **The start screen's letters are actions, and its cursor is on the arrows.**
+  `n`, `o`, `j` and `s` run New flow, Open, Join with a code and Settings, and
+  `i` takes the oldest waiting invitation. `j` used to walk the column down;
+  it does not, because a debater arriving with a code has no round open and
+  the start screen is the only place they can be standing. `k` still walks up,
+  and the arrows walk both ways. Join is also in the File menu, click-only
+  like the rest of the collaboration commands, and `menuDispatch`'s
+  `GLOBAL_COMMANDS` is what lets it run off the flow route.
 - **Every window is a fully independent app instance; there is no "main"
   window.** `src-tauri/src/windows.rs` builds every window at runtime
   (`tauri.conf.json`'s `app.windows` is deliberately empty) with a unique

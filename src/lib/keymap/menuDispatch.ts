@@ -35,7 +35,10 @@ const FLOW_ROUTE = "/flow";
  * The flow.* commands belong here because they are exactly the ones the start
  * screen needs, and each already no-ops when no flow is open. window.new and
  * window.close belong here for the same reason in reverse: neither is
- * flow-scoped at all.
+ * flow-scoped at all. collab.join joins them because it takes a code and opens
+ * the flow it fetches, which is a route onto the flow screen rather than an
+ * edit to a round already there - and the start screen is exactly where a
+ * guest with a code is standing.
  */
 const GLOBAL_COMMANDS = new Set<CommandId>([
     "window.new",
@@ -50,6 +53,7 @@ const GLOBAL_COMMANDS = new Set<CommandId>([
     "theme.light",
     "theme.dark",
     "theme.system",
+    "collab.join",
 ]);
 
 /** True when the current route is not the flow screen and the command is flow-scoped. */

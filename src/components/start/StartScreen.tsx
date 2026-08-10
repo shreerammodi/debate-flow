@@ -8,6 +8,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { acceptInvite } from "@/lib/collab/inbox";
 import { inviteToastFor } from "@/lib/collab/invite";
+import { executeCommand } from "@/lib/commands/commands";
 import { openFlowFromPicker } from "@/lib/commands/fileCommands";
 import { flowRouteFor } from "@/lib/commands/flowNav";
 import { openNewWindow } from "@/lib/commands/windowCommands";
@@ -36,9 +37,9 @@ function Rule() {
  * The start screen, modelled on nvim's.
  *
  * There is no list of flows to manage here, because the filesystem is the
- * library now: three commands, the flows you were last in, and where to read
- * more. Every target is one keypress, which is the point - the screen exists to
- * be left quickly.
+ * library now: the handful of commands that put a flow on screen, the flows you
+ * were last in, and where to read more. Every target is one keypress, which is
+ * the point - the screen exists to be left quickly.
  */
 export default function StartScreen() {
     const router = useRouter();
@@ -95,6 +96,21 @@ export default function StartScreen() {
         ...inviteRows,
         { id: "new", key: "n", label: "New flow", run: () => setNewFlowOpen(true) },
         { id: "open", key: "o", label: "Open", run: () => void openFlowFromPicker() },
+        // A guest with a code has no flow open, so this screen is the only
+        // place they can be standing: the sidebar's sharing controls need a
+        // round and the palette only mounts on the flow screen. Desktop only,
+        // the way every route to a session is - a browser cannot bind an
+        // endpoint. The command carries the consent question with it.
+        ...(isDesktop()
+            ? [
+                  {
+                      id: "join",
+                      key: "j",
+                      label: "Join with a code",
+                      run: () => executeCommand("collab.join"),
+                  },
+              ]
+            : []),
         { id: "settings", key: "s", label: "Settings", run: () => setSettingsOpen(true) },
     ];
 
@@ -138,7 +154,9 @@ export default function StartScreen() {
                 }
                 return;
             }
-            if (e.key === "j" || e.key === "ArrowDown") {
+            // Down has no letter left: j is Join, an action a debater reaches
+            // for by name. k keeps its half, nothing competes for it.
+            if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setCursor((c) => (total ? (c + 1) % total : 0));
             } else if (e.key === "k" || e.key === "ArrowUp") {

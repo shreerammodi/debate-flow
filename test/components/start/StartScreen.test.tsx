@@ -22,6 +22,13 @@ vi.mock("@/lib/collab/inbox", () => ({
     announceInvite: () => {},
 }));
 
+const ran: string[] = [];
+vi.mock("@/lib/commands/commands", () => ({
+    executeCommand: (id: string) => {
+        ran.push(id);
+    },
+}));
+
 import StartScreen from "@/components/start/StartScreen";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 
@@ -138,13 +145,13 @@ describe("StartScreen", () => {
         expect(useFlowStore.getState().settingsOpen).toBe(true);
     });
 
-    it("walks the column with j and opens the highlighted row with Enter", async () => {
+    it("walks the column with the arrows and opens the highlighted row with Enter", async () => {
         seedRecents([`${FLOWS_DIR}/a.ebb`]);
         render(<StartScreen />);
         await screen.findByTestId("start-recent-1");
 
         // Three actions, then the single recent.
-        await userEvent.keyboard("jjj{Enter}");
+        await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
         expect(push).toHaveBeenCalledWith(`/flow?path=${encodeURIComponent(`${FLOWS_DIR}/a.ebb`)}`);
     });
@@ -210,5 +217,35 @@ describe("an invitation on the start screen", () => {
         render(<StartScreen />);
         await userEvent.keyboard("i");
         expect(joined).toEqual([invite]);
+    });
+});
+
+describe("joining with a code from the start screen", () => {
+    beforeEach(() => {
+        ran.length = 0;
+        useCollabStore.setState({ invites: [] });
+        // A session is an iroh endpoint, which only the shell can bind.
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    });
+
+    afterEach(() => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    });
+
+    it("sits in the column with the other ways a flow arrives", () => {
+        render(<StartScreen />);
+        expect(screen.getByTestId("start-join")).toHaveTextContent("Join with a code");
+    });
+
+    it("runs the one join command on j, consent question and all", async () => {
+        render(<StartScreen />);
+        await userEvent.keyboard("j");
+        expect(ran).toEqual(["collab.join"]);
+    });
+
+    it("is absent off the desktop, where no endpoint can be bound", () => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+        render(<StartScreen />);
+        expect(screen.queryByTestId("start-join")).toBeNull();
     });
 });

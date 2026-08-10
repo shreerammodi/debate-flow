@@ -180,6 +180,11 @@ describe("dispatchMenuCommand off the flow screen", () => {
         expect(executeCommand).toHaveBeenCalledWith("settings.open");
     });
 
+    it("still runs Join Round, the one route a guest with a code has here", () => {
+        dispatchMenuCommand("collab.join");
+        expect(executeCommand).toHaveBeenCalledWith("collab.join");
+    });
+
     it("still runs selectAll", () => {
         const input = focusInput("hello");
         const select = vi.spyOn(input, "select");
