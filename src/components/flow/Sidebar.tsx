@@ -13,11 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/ui/tooltip";
 import { sideLabels } from "@/lib/format/events";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
-import { compareSheets, type FlowSheet } from "@/lib/model/flow";
+import { compareSheets, dropSheetRange, sheetRangeIds, type FlowSheet } from "@/lib/model/flow";
 import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
 import { cn } from "@/lib/utils";
 
 const EMPTY_SHEETS: FlowSheet[] = [];
+
+/** Pointer travel, in px, past which a press was a drag rather than a click. */
+const DRAG_SLOP = 4;
 
 export default function Sidebar() {
     const sheets = useFlowStore((s) => s.round?.sheets ?? EMPTY_SHEETS);
@@ -34,7 +37,13 @@ export default function Sidebar() {
     const sidebarCollapsed = useFlowStore((s) => s.sidebarCollapsed);
     const setSidebarCollapsed = useFlowStore((s) => s.setSidebarCollapsed);
     const reorderSheets = useFlowStore((s) => s.reorderSheets);
+    const sheetRange = useFlowStore((s) => s.sheetRange);
+    const setSheetRange = useFlowStore((s) => s.setSheetRange);
     const addSheets = useFlowStore((s) => s.addSheets);
+    // The drag in flight: the row the pointer picked up, the block that came
+    // with it, and the ordering motion last proposed. A ref, not state - the
+    // gesture reads what it wrote and nothing renders on it.
+    const drag = useRef<{ id: string; block: string[]; landing: string[] } | null>(null);
     // Bulk count: empty (or junk) means one sheet, so the buttons stay single-add
     // by default and only fan out when the user types a number.
     const [bulkCount, setBulkCount] = useState("");
@@ -93,6 +102,58 @@ export default function Sidebar() {
     }
 
     const flowSheets = sheets.filter((s) => s.kind !== "cx").sort(compareSheets);
+    // Derived every render rather than stored: a sheet deleted out from under
+    // a range resolves to no selection instead of a stale id in a list.
+    const selectedIds = sheetRange
+        ? sheetRangeIds(flowSheets, sheetRange.anchor, sheetRange.head)
+        : [];
+    const selected = new Set(selectedIds);
+
+    /**
+     * A plain click moves the cursor, which collapses the range. A shifted one
+     * only paints: extending across nine sheets must fire no sheet switch, or
+     * the grid scrolls away from the speech being flowed.
+     */
+    function selectSheet(sheetId: string, extend: boolean) {
+        if (!extend) {
+            setActiveSheet(sheetId);
+            return;
+        }
+        const anchor = sheetRange?.anchor ?? focusedId;
+        if (anchor == null) return;
+        setSheetRange({ anchor, head: sheetId });
+    }
+
+    /** Records the row the pointer picked up, and the block that comes with it. */
+    function handleGrab(sheetId: string) {
+        const block = selected.has(sheetId) && selectedIds.length > 1 ? selectedIds : [];
+        drag.current = { id: sheetId, block, landing: [] };
+    }
+
+    /**
+     * Motion drags the single row under the pointer and proposes an ordering
+     * for it on every frame. Every proposal is committed as it comes, which is
+     * the contract Reorder.Group is built on - a remapped ordering handed back
+     * here is not the one motion asked for, and its internal order fights the
+     * difference for the rest of the gesture. The block the pointer picked up
+     * gathers at the grabbed row on release instead.
+     */
+    function handleReorder(nextIds: string[]) {
+        const gesture = drag.current;
+        if (gesture) gesture.landing = nextIds;
+        // A drag that began outside the range ends it; one that began inside
+        // keeps it, so the block it named still has two edges to gather on.
+        if (sheetRange && !gesture?.block.length) setSheetRange(null);
+        reorderSheets(nextIds);
+    }
+
+    /** Lands a dragged block where its grabbed row was released. */
+    function handleDrop() {
+        const gesture = drag.current;
+        drag.current = null;
+        if (!gesture || gesture.block.length === 0 || gesture.landing.length === 0) return;
+        reorderSheets(dropSheetRange(gesture.landing, gesture.block, gesture.id));
+    }
 
     return (
         <nav
@@ -178,11 +239,15 @@ export default function Sidebar() {
                         </button>
                     </div>
                 )}
+                {/* The count is the affordance and the readable state at once.
+                    A row is a role="button" div with a sibling delete button,
+                    so role="option" would be invalid ARIA in exchange for
+                    aria-selected. */}
                 <div
                     data-testid="sheets-section-label"
                     className="text-muted-foreground px-2 pb-1 font-mono text-[9px] font-bold tracking-widest uppercase"
                 >
-                    Sheets
+                    {selectedIds.length > 1 ? `${selectedIds.length} selected` : "Sheets"}
                 </div>
                 {flowSheets.length === 0 ? (
                     <div className="text-muted-foreground px-2 py-1 text-xs">No sheets</div>
@@ -195,14 +260,17 @@ export default function Sidebar() {
                             as="div"
                             axis="y"
                             values={flowSheets.map((s) => s.id)}
-                            onReorder={reorderSheets}
+                            onReorder={handleReorder}
                         >
                             {flowSheets.map((sheet) => (
                                 <SheetRow
                                     key={sheet.id}
                                     sheet={sheet}
                                     active={sheet.id === focusedId}
-                                    onSelect={() => setActiveSheet(sheet.id)}
+                                    selected={selected.has(sheet.id)}
+                                    onSelect={(extend) => selectSheet(sheet.id, extend)}
+                                    onGrab={() => handleGrab(sheet.id)}
+                                    onDrop={handleDrop}
                                     isRenaming={sheet.id === renamingSheetId}
                                     onStartRename={() => setRenamingSheet(sheet.id)}
                                     onDelete={() => deleteSheet(sheet.id)}
@@ -227,18 +295,38 @@ export default function Sidebar() {
 interface SheetRowProps {
     sheet: FlowSheet;
     active: boolean;
-    onSelect: () => void;
+    /** Inside the sidebar's range, which the active row may also be. */
+    selected: boolean;
+    /** `extend` is the click's shift state: paint the range, do not move focus. */
+    onSelect: (extend: boolean) => void;
+    /** The pointer picked this row up; the block follows it if it is in one. */
+    onGrab: () => void;
+    /** The pointer let it go, which is where a dragged block lands. */
+    onDrop: () => void;
     isRenaming: boolean;
     onStartRename: () => void;
     onDelete: () => void;
 }
 
-function SheetRow({ sheet, active, onSelect, isRenaming, onStartRename, onDelete }: SheetRowProps) {
+function SheetRow({
+    sheet,
+    active,
+    selected,
+    onSelect,
+    onGrab,
+    onDrop,
+    isRenaming,
+    onStartRename,
+    onDelete,
+}: SheetRowProps) {
     const renameSheet = useFlowStore((s) => s.renameSheet);
     const setRenamingSheet = useFlowStore((s) => s.setRenamingSheet);
     const sides = sideLabels(useFlowStore((s) => s.round?.event));
     const inputRef = useRef<HTMLInputElement>(null);
     const [value, setValue] = useState(sheet.title);
+    // Where the pointer went down, so a click that merely ends a drag can be
+    // told from one that asks for a sheet.
+    const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
     const titleRef = useRef<HTMLSpanElement>(null);
     const [titleTruncated, setTitleTruncated] = useState(false);
@@ -317,25 +405,51 @@ function SheetRow({ sheet, active, onSelect, isRenaming, onStartRename, onDelete
 
     // relative so the dragged row's auto z-index lifts it above its neighbors.
     return (
-        <Reorder.Item as="div" value={sheet.id} className="group relative flex items-center">
+        <Reorder.Item
+            as="div"
+            value={sheet.id}
+            onDragStart={onGrab}
+            onDragEnd={onDrop}
+            className="group relative flex items-center"
+        >
             <div
                 role="button"
                 tabIndex={0}
-                onClick={onSelect}
+                onPointerDown={(e) => {
+                    pressedAt.current = { x: e.clientX, y: e.clientY };
+                }}
+                onClick={(e) => {
+                    // A drag ends in a click on the row the pointer captured.
+                    // That is the browser finishing the gesture, not a debater
+                    // asking for a sheet, and honoring it would move the cursor
+                    // off the sheet being flowed and collapse the range the
+                    // drag just moved.
+                    const from = pressedAt.current;
+                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > DRAG_SLOP) {
+                        return;
+                    }
+                    onSelect(e.shiftKey);
+                }}
                 onDoubleClick={onStartRename}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        onSelect();
+                        onSelect(e.shiftKey);
                     }
                 }}
                 aria-current={active ? "true" : undefined}
                 data-testid={`sheet-${sheet.id}`}
+                data-selected={selected ? "true" : undefined}
                 className={cn(
                     "flex w-full flex-1 cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2 py-1.5 text-left text-[13px] text-foreground transition-colors",
+                    // The active row keeps the heavier treatment inside a
+                    // range, so the anchor stays legible in the block rather
+                    // than dissolving into it.
                     active
                         ? "border-border bg-accent font-semibold text-foreground"
-                        : "border-transparent hover:bg-accent/50",
+                        : selected
+                          ? "border-transparent bg-accent/60"
+                          : "border-transparent hover:bg-accent/50",
                 )}
             >
                 <span

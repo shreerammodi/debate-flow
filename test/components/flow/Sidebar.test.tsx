@@ -5,7 +5,7 @@
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 
 import Sidebar from "@/components/flow/Sidebar";
@@ -62,6 +62,7 @@ function resetStore() {
         round: null,
         activeSheetId: null,
         renamingSheetId: null,
+        sheetRange: null,
         sidebarCollapsed: false,
         contacts: {},
     });
@@ -284,7 +285,8 @@ describe("Sidebar", () => {
 
     // Drag-to-reorder is driven by Motion's Reorder pointer gestures, which need
     // real layout measurement jsdom can't provide; the store's reorderSheets is
-    // covered directly in useFlowStore.test.ts.
+    // covered directly in useFlowStore.test.ts, and where a dragged block of
+    // sheets lands is covered by dropSheetRange in model/flow.test.ts.
     it("renders flow sheets in order for reordering", () => {
         const { caseId, daId } = setupRound();
         renderSidebar();
@@ -292,6 +294,72 @@ describe("Sidebar", () => {
             .getAllByTestId(/^sheet-(?!marker)/)
             .map((r) => r.getAttribute("data-testid"));
         expect(ids.indexOf(`sheet-${caseId}`)).toBeLessThan(ids.indexOf(`sheet-${daId}`));
+    });
+
+    describe("selecting a range", () => {
+        /** The round, plus a third sheet, with the first one active. */
+        function threeSheets() {
+            const { caseId, daId } = setupRound();
+            const store = useFlowStore.getState();
+            const extraId = store.addSheet({ title: "T", group: "neg" });
+            store.setActiveSheet(caseId);
+            return { caseId, daId, extraId };
+        }
+
+        /** Clicks a row with Shift genuinely held down, as a debater does. */
+        async function shiftClick(user: UserEvent, id: string) {
+            await user.keyboard("{Shift>}");
+            await user.click(screen.getByTestId(`sheet-${id}`));
+            await user.keyboard("{/Shift}");
+        }
+
+        it("paints the range on a shifted click and leaves the grid where it is", async () => {
+            const user = userEvent.setup();
+            const { caseId, daId, extraId } = threeSheets();
+            renderSidebar();
+
+            await shiftClick(user, extraId);
+
+            expect(useFlowStore.getState().activeSheetId).toBe(caseId);
+            for (const id of [caseId, daId, extraId]) {
+                expect(screen.getByTestId(`sheet-${id}`)).toHaveAttribute("data-selected", "true");
+            }
+        });
+
+        it("reads the count in the section label", async () => {
+            const user = userEvent.setup();
+            const { daId } = threeSheets();
+            renderSidebar();
+
+            expect(screen.getByTestId("sheets-section-label")).toHaveTextContent("Sheets");
+            await shiftClick(user, daId);
+            expect(screen.getByTestId("sheets-section-label")).toHaveTextContent("2 selected");
+        });
+
+        it("collapses the range on a plain click", async () => {
+            const user = userEvent.setup();
+            const { caseId, daId } = threeSheets();
+            renderSidebar();
+
+            await shiftClick(user, daId);
+            await user.click(screen.getByTestId(`sheet-${daId}`));
+
+            expect(useFlowStore.getState().sheetRange).toBeNull();
+            expect(useFlowStore.getState().activeSheetId).toBe(daId);
+            expect(screen.getByTestId(`sheet-${caseId}`)).not.toHaveAttribute("data-selected");
+        });
+
+        it("ends the range when a row inside it is deleted", async () => {
+            const user = userEvent.setup();
+            const { daId, extraId } = threeSheets();
+            renderSidebar();
+
+            await shiftClick(user, extraId);
+            await user.click(screen.getByTestId(`delete-sheet-${daId}`));
+
+            expect(useFlowStore.getState().sheetRange).toBeNull();
+            expect(screen.getByTestId("sheets-section-label")).toHaveTextContent("Sheets");
+        });
     });
 
     describe("session chip", () => {

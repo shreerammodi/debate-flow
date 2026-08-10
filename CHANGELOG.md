@@ -9,6 +9,24 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Added
 
+- **Select a range of sheets and move it.** Shift+click a sidebar row to paint
+  the range from the sheet you are on to the one you clicked, and `Meta+{` and
+  `Meta+}` slide the whole block one slot up or down. A 1NC that is nine off
+  moves above the case in one gesture rather than nine drags. `Alt+[` and
+  `Alt+]` build the range from the keyboard, growing it away from the sheet you
+  started on and shrinking it back toward it, and they open a collapsed sidebar
+  so the block is visible while you build it. Painting a range never changes
+  which sheet the grid shows, so the speech being flowed stays on screen the
+  whole time, and a move leaves the cursor exactly where it was. Dragging any
+  row of the range drags all of it. With no range, the move chords act on the
+  sheet you are on, so a single-sheet move needs no gesture first. The range
+  ends whenever the sheet on screen changes - a plain click, stepping sheets, a
+  numbered jump - so it never outlives the moment it was made for. Deleting a
+  sheet still deletes only that row; there is no bulk delete, because erasing
+  nine columns of a live round by a mistargeted click is a far worse failure
+  than nine drags. Cross-examination is never in a range and is never
+  displaced by one. Move Sheet Up and Move Sheet Down are in the View menu
+  beside Next and Previous Sheet, and all four chords are in the `?` sheet.
 - **Share a round with a code you can read out.** Invite partner opens a short
   menu with the two ways a round travels - a saved partner, or a code - each
   offered to edit or to view, so what a peer may do is named before anyone is
