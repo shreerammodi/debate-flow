@@ -17,7 +17,21 @@ interface KeyEventLike {
 }
 
 /** Physical codes we accept as Alt-chord base keys beyond the letter block. */
-const ALT_CODE_KEYS: Record<string, string> = { Backslash: "\\" };
+const ALT_CODE_KEYS: Record<string, string> = {
+    Backslash: "\\",
+    BracketLeft: "[",
+    BracketRight: "]",
+};
+
+/**
+ * Punctuation whose shifted form a chord names, keyed by the unshifted
+ * character. macOS reports the unshifted one while Meta is held (Cmd+Shift+[
+ * arrives as "["), so without this the same physical chord would be "Meta+["
+ * on a Mac and "Ctrl+{" on Windows, and on the Mac it would collide with the
+ * unshifted binding. Only the characters the keymap binds: a full shift table
+ * would rewrite characters on layouts where the pairing does not hold.
+ */
+const SHIFTED_KEYS: Record<string, string> = { "[": "{", "]": "}" };
 
 /**
  * A printable single character is its own representation; shift is already
@@ -35,6 +49,8 @@ function isSinglePrintable(key: string): boolean {
  *   by `shiftKey` rather than `e.key`'s case. macOS reports letters lowercase
  *   when Meta is held even with Shift down, so trusting the reported case would
  *   collapse Meta+Shift+P onto Meta+P.
+ * - Brackets: shift encoded in the character ("{", "}"), driven by `shiftKey`
+ *   for the same reason.
  * - Other single printables (symbols like "?"): key as-is; shift already lives
  *   in the character, never prefixed with Shift+.
  * - Named keys (Tab, Enter, Escape, ArrowUp, etc.): Shift+ added when shiftKey.
@@ -50,6 +66,8 @@ export function eventToChord(e: KeyEventLike): Chord {
         if (letter) key = letter[1].toLowerCase();
         else if (e.code in ALT_CODE_KEYS) key = ALT_CODE_KEYS[e.code];
     }
+    // After the Alt derivation, so Alt+Shift+[ is Alt+{ and not Alt+[.
+    if (e.shiftKey && key in SHIFTED_KEYS) key = SHIFTED_KEYS[key];
     const printable = isSinglePrintable(key);
     const isLetter = printable && /^[a-zA-Z]$/.test(key);
     const parts: string[] = [];

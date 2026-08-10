@@ -44,6 +44,19 @@ describe("eventToChord", () => {
         expect(eventToChord(ev("?", { shiftKey: true }))).toBe("?");
     });
 
+    it("names the shifted bracket whichever character the engine reports", () => {
+        // macOS reports the unshifted "[" while Meta is held; Windows reports
+        // "{". One physical chord, one canonical name.
+        expect(eventToChord(ev("[", { metaKey: true, shiftKey: true }))).toBe("Meta+{");
+        expect(eventToChord(ev("{", { metaKey: true, shiftKey: true }))).toBe("Meta+{");
+        expect(eventToChord(ev("]", { ctrlKey: true, shiftKey: true }))).toBe("Ctrl+}");
+        expect(eventToChord(ev("}", { ctrlKey: true, shiftKey: true }))).toBe("Ctrl+}");
+    });
+
+    it("leaves an unshifted bracket alone", () => {
+        expect(eventToChord(ev("[", { metaKey: true }))).toBe("Meta+[");
+    });
+
     it("adds Shift+ for named keys when shiftKey is true", () => {
         expect(eventToChord(ev("Tab", { shiftKey: true }))).toBe("Shift+Tab");
     });
@@ -106,6 +119,29 @@ describe("eventToChord under Alt (macOS composes e.key)", () => {
                 shiftKey: false,
             }),
         ).toBe("Alt+\\");
+    });
+
+    it("derives the brackets from e.code, which macOS composes into quotes", () => {
+        expect(
+            eventToChord({
+                key: "\u201c",
+                code: "BracketLeft",
+                metaKey: false,
+                ctrlKey: false,
+                altKey: true,
+                shiftKey: false,
+            }),
+        ).toBe("Alt+[");
+        expect(
+            eventToChord({
+                key: "\u2018",
+                code: "BracketRight",
+                metaKey: false,
+                ctrlKey: false,
+                altKey: true,
+                shiftKey: false,
+            }),
+        ).toBe("Alt+]");
     });
 
     it("leaves non-Alt chords untouched", () => {
