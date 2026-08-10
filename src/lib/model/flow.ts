@@ -170,3 +170,67 @@ export function firstFlowSheetId(round: FlowRound): string | null {
     const sheets = sortedSheets(round);
     return (sheets.find((s) => s.kind !== "cx") ?? sheets[0])?.id ?? null;
 }
+
+/**
+ * The contiguous slice of flow sheets between two ids, in either direction.
+ * Empty when the round no longer holds one of them, which is what lets a
+ * selection be stored as two ids: a sheet deleted out from under a range
+ * resolves to no selection rather than a stale id in a list.
+ *
+ * Sorts its own copy, so the result is display order whatever the caller holds.
+ */
+export function sheetRangeIds(
+    sheets: readonly FlowSheet[],
+    anchor: string,
+    head: string,
+): string[] {
+    const ordered = sheets.slice().sort(compareSheets);
+    const a = ordered.findIndex((s) => s.id === anchor);
+    const b = ordered.findIndex((s) => s.id === head);
+    if (a === -1 || b === -1) return [];
+    return ordered.slice(Math.min(a, b), Math.max(a, b) + 1).map((s) => s.id);
+}
+
+/**
+ * The ordering with the selected block slid by `delta` slots, its internal
+ * order preserved. Clamped rather than guarded: a block already at the edge
+ * lands where it started, and the input is returned by reference so a caller
+ * can tell a real move from a no-op without comparing arrays.
+ */
+export function moveSheetRange(
+    orderedIds: readonly string[],
+    selectedIds: readonly string[],
+    delta: number,
+): readonly string[] {
+    const selected = new Set(selectedIds);
+    const block = orderedIds.filter((id) => selected.has(id));
+    if (block.length === 0) return orderedIds;
+    const first = orderedIds.indexOf(block[0]);
+    const rest = orderedIds.filter((id) => !selected.has(id));
+    const at = Math.min(Math.max(first + delta, 0), rest.length);
+    if (at === first) return orderedIds;
+    return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/**
+ * The ordering with the selected block landed where the grabbed row did.
+ *
+ * Motion drags the one row under the pointer and hands back an array with only
+ * that row moved, so the rest of the block has to follow it: the block goes
+ * back at the grabbed row's slot, counting only the rows that are not part of
+ * it, and the sheets it passed over close up behind it. Its internal order
+ * comes from `selectedIds`, since the array motion hands back has the grabbed
+ * row torn out of the block and dropped somewhere else in it.
+ */
+export function dropSheetRange(
+    orderedIds: readonly string[],
+    selectedIds: readonly string[],
+    grabbedId: string,
+): string[] {
+    const selected = new Set(selectedIds);
+    const landing = orderedIds.indexOf(grabbedId);
+    const rest = orderedIds.filter((id) => !selected.has(id));
+    const block = selectedIds.filter((id) => orderedIds.includes(id));
+    const at = orderedIds.slice(0, landing).filter((id) => !selected.has(id)).length;
+    return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}

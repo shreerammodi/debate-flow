@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import { EVENTS } from "@/lib/format/events";
 import {
     compareSheets,
+    dropSheetRange,
     firstFlowSheetId,
     makeCxFlowSheet,
     makeFlowRound,
     makeFlowSheet,
+    moveSheetRange,
     normalizeFlow,
+    sheetRangeIds,
     sortedSheets,
     type FlowRound,
 } from "@/lib/model/flow";
@@ -125,5 +128,80 @@ describe("sheet ordering", () => {
     it("firstFlowSheetId is null for an empty sheet list", () => {
         const r = { ...makeFlowRound({}), sheets: [] };
         expect(firstFlowSheetId(r)).toBeNull();
+    });
+});
+
+describe("sheet ranges", () => {
+    /** Five flow sheets named a-e, in order, shuffled so nothing rides on input order. */
+    function sheets() {
+        const made = ["a", "b", "c", "d", "e"].map((id, i) => ({
+            ...makeFlowSheet({ title: id.toUpperCase(), group: "aff" as const, order: i }),
+            id,
+        }));
+        return [made[3], made[0], made[4], made[1], made[2]];
+    }
+
+    const ids = ["a", "b", "c", "d", "e"];
+
+    it("slices between anchor and head in either direction", () => {
+        expect(sheetRangeIds(sheets(), "b", "d")).toEqual(["b", "c", "d"]);
+        expect(sheetRangeIds(sheets(), "d", "b")).toEqual(["b", "c", "d"]);
+    });
+
+    it("is the single sheet when anchor and head are the same", () => {
+        expect(sheetRangeIds(sheets(), "c", "c")).toEqual(["c"]);
+    });
+
+    it("is empty when either end is gone", () => {
+        expect(sheetRangeIds(sheets(), "a", "gone")).toEqual([]);
+        expect(sheetRangeIds(sheets(), "gone", "a")).toEqual([]);
+        expect(sheetRangeIds([], "a", "a")).toEqual([]);
+    });
+
+    it("moves a block up and down, shifting exactly the displaced sheet", () => {
+        expect(moveSheetRange(ids, ["c", "d"], -1)).toEqual(["a", "c", "d", "b", "e"]);
+        expect(moveSheetRange(ids, ["b", "c"], 1)).toEqual(["a", "d", "b", "c", "e"]);
+    });
+
+    it("preserves the block's internal order however the selection is listed", () => {
+        expect(moveSheetRange(ids, ["d", "b", "c"], 1)).toEqual(["a", "e", "b", "c", "d"]);
+    });
+
+    it("returns the input unchanged at each edge", () => {
+        expect(moveSheetRange(ids, ["a", "b"], -1)).toBe(ids);
+        expect(moveSheetRange(ids, ["d", "e"], 1)).toBe(ids);
+        expect(moveSheetRange(ids, ["a", "b", "c", "d", "e"], -1)).toBe(ids);
+    });
+
+    it("returns the input unchanged when nothing selected is in the list", () => {
+        expect(moveSheetRange(ids, [], -1)).toBe(ids);
+        expect(moveSheetRange(ids, ["gone"], 1)).toBe(ids);
+    });
+
+    it("moves one sheet, which is the no-selection case", () => {
+        expect(moveSheetRange(ids, ["e"], -1)).toEqual(["a", "b", "c", "e", "d"]);
+    });
+
+    it("lands the whole block where the grabbed row went", () => {
+        // Motion moved "d" to the front; "c" follows it and a, b close up.
+        expect(dropSheetRange(["d", "a", "b", "c", "e"], ["c", "d"], "d")).toEqual([
+            "c",
+            "d",
+            "a",
+            "b",
+            "e",
+        ]);
+        // And to the back.
+        expect(dropSheetRange(["a", "c", "d", "e", "b"], ["b", "c"], "b")).toEqual([
+            "a",
+            "d",
+            "e",
+            "b",
+            "c",
+        ]);
+    });
+
+    it("leaves a block dropped where it already sat alone", () => {
+        expect(dropSheetRange(ids, ["b", "c"], "b")).toEqual(ids);
     });
 });
