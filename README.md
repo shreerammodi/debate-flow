@@ -85,6 +85,25 @@ npm run desktop:dev      # run the desktop app against a live dev server
 npm run desktop:build    # produce a native installer in src-tauri/target
 ```
 
+#### Standalone binaries
+
+`desktop:build` bundles every installer the host platform can make, which on
+macOS means a `.dmg` you have to open before you can run anything. These build
+the runnable artifact on its own instead, into `src-tauri/target/release`, and
+skip the updater artifacts (no signing key needed):
+
+```bash
+npm run desktop:build:bin              # bare executable, any platform
+npm run desktop:build:macos            # ebb.app for the host arch, no dmg
+npm run desktop:build:macos-universal  # ebb.app for both Apple arches, no dmg
+npm run desktop:build:linux            # single-file AppImage
+```
+
+On Windows, `desktop:build:bin` is the portable route: `ebb.exe` lands in
+`src-tauri/target/release` with no NSIS installer beside it. The macOS
+universal build needs both `aarch64-apple-darwin` and `x86_64-apple-darwin`
+installed via `rustup target add`.
+
 ## Development
 
 ```bash

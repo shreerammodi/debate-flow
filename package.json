@@ -14,7 +14,11 @@
         "format:check": "oxfmt --check .",
         "tauri": "tauri",
         "desktop:dev": "tauri dev",
-        "desktop:build": "tauri build"
+        "desktop:build": "tauri build",
+        "desktop:build:bin": "tauri build --config src-tauri/tauri.standalone.conf.json --no-bundle",
+        "desktop:build:macos": "tauri build --config src-tauri/tauri.standalone.conf.json --bundles app",
+        "desktop:build:macos-universal": "tauri build --config src-tauri/tauri.standalone.conf.json --bundles app --target universal-apple-darwin",
+        "desktop:build:linux": "tauri build --config src-tauri/tauri.standalone.conf.json --bundles appimage"
     },
     "dependencies": {
         "@base-ui/react": "^1.6.0",
