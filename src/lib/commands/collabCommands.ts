@@ -1,5 +1,5 @@
 /**
- * The four collaboration commands, and nothing else reaches a session.
+ * The collaboration commands, and nothing else reaches a session.
  *
  * No chord and no accelerator: flowing owns most of the letter space, and a
  * printable key bound outside `HotGrid`'s guard erases the cell the debater is
@@ -17,7 +17,6 @@ import { collabLive, collabSettings } from "@/lib/collab/enabled";
 import { inviteContact, joinByCode, startPairing } from "@/lib/collab/runtime";
 import { currentSession, endSession } from "@/lib/collab/runtime";
 import type { Role } from "@/lib/collab/types";
-import type { ContactChoice } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 
 /** What turning relaying off costs, said before a code is minted. */
@@ -25,10 +24,11 @@ const RELAY_OFF_WARNING = "Relaying is off, so this code only works on the same 
 
 export interface CollabCommandDeps {
     /**
-     * Picks a saved contact and what to grant them on this round, or null when
-     * the user backs out.
+     * Picks the saved contact to grant `role` on this round and answers with
+     * their EndpointId, or null when the user backs out. The grant arrives
+     * already chosen, from the menu entry the debater clicked.
      */
-    chooseContact?(contacts: Contacts): Promise<ContactChoice | null>;
+    chooseContact?(contacts: Contacts, role: Role): Promise<string | null>;
     /** Corner messages. Nothing here blocks the grid or takes focus. */
     notify(message: string): void;
     fail(message: string): void;
@@ -119,7 +119,7 @@ export async function runEnd(deps: CollabCommandDeps): Promise<void> {
 }
 
 /** Dials a saved contact. No code: their EndpointId already authorizes. */
-export async function runInvite(deps: CollabCommandDeps): Promise<void> {
+export async function runInvite(deps: CollabCommandDeps, role: Role = "editor"): Promise<void> {
     if (!(await deps.consent())) return;
     const round = useFlowStore.getState().round;
     if (!round) {
@@ -131,14 +131,14 @@ export async function runInvite(deps: CollabCommandDeps): Promise<void> {
         deps.fail("No saved partners yet. Share a round once to save one.");
         return;
     }
-    const choice = await deps.chooseContact?.(contacts);
-    if (!choice) return;
+    const endpointId = await deps.chooseContact?.(contacts, role);
+    if (!endpointId) return;
     try {
-        await inviteContact(round, choice.endpointId, choice.role);
+        await inviteContact(round, endpointId, role);
         deps.notify(
-            choice.role === "viewer"
-                ? `Invited ${contactName(contacts, choice.endpointId)} to view`
-                : `Invited ${contactName(contacts, choice.endpointId)} to edit`,
+            role === "viewer"
+                ? `Invited ${contactName(contacts, endpointId)} to view`
+                : `Invited ${contactName(contacts, endpointId)} to edit`,
         );
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not reach that partner");

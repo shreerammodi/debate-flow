@@ -125,9 +125,11 @@ describe("the commands are palette-only", () => {
     });
 
     it("is registered with a label a debater can search for", () => {
-        expect(COMMANDS["collab.share"].label).toBe("Invite partner");
-        expect(COMMANDS["collab.shareView"].label).toBe("Share view only");
+        expect(COMMANDS["collab.share"].label).toBe("Generate a code to edit");
+        expect(COMMANDS["collab.shareView"].label).toBe("Generate a code to view");
         expect(COMMANDS["collab.join"].label).toBe("Join with a code");
+        expect(COMMANDS["collab.invite"].label).toBe("Invite a saved partner to edit");
+        expect(COMMANDS["collab.inviteView"].label).toBe("Invite a saved partner to view");
         expect(COMMANDS["collab.end"].label).toBe("End shared session");
     });
 });
@@ -277,13 +279,11 @@ describe("invite", () => {
         });
     }
 
-    /** Answers the picker the way a click on one of its two buttons does. */
-    function picks(role: Role) {
-        return async () => ({ endpointId: ALEX, role });
-    }
+    /** Answers the picker the way a click on one of its rows does. */
+    const picksAlex = async () => ALEX;
 
     it("refuses while the master switch is off, and never picks a contact", async () => {
-        const chooseContact = vi.fn(picks("editor"));
+        const chooseContact = vi.fn(picksAlex);
         await runInvite(deps({ chooseContact }));
         expect(chooseContact).not.toHaveBeenCalled();
     });
@@ -291,7 +291,7 @@ describe("invite", () => {
     it("says so when nothing has been saved yet", async () => {
         (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
         useFlowStore.setState({ collabEnabled: true, round: makeFlowRound({}), contacts: {} });
-        const chooseContact = vi.fn(picks("editor"));
+        const chooseContact = vi.fn(picksAlex);
         const d = deps({ chooseContact });
         await runInvite(d);
         expect(d.failures[0]).toMatch(/No saved partners/);
@@ -311,14 +311,26 @@ describe("invite", () => {
     });
 
     // The grade belongs to this invitation, not to the contact row: the same
-    // partner is an editor on one round and a viewer on the next.
-    it("hands the runtime the grade the picker answered with", async () => {
+    // partner is an editor on one round and a viewer on the next. It rides in
+    // from the menu entry the debater clicked, and the picker is only asked
+    // who, so what the picker is handed is what the runtime gets.
+    it("hands the runtime the grade the command was invoked with", async () => {
         alexIsSaved();
-        await runInvite(deps({ chooseContact: picks("viewer") }));
+        const viewing = deps({ chooseContact: vi.fn(picksAlex) });
+        await runInvite(viewing, "viewer");
         expect(runtime.invited).toEqual([{ endpointId: ALEX, role: "viewer" }]);
+        expect(viewing.chooseContact).toHaveBeenCalledWith({ [ALEX]: { name: "Alex" } }, "viewer");
 
         runtime.invited.length = 0;
-        await runInvite(deps({ chooseContact: picks("editor") }));
+        await runInvite(deps({ chooseContact: picksAlex }), "editor");
+        expect(runtime.invited).toEqual([{ endpointId: ALEX, role: "editor" }]);
+    });
+
+    // Edit is never what happens because nobody said otherwise; it is what the
+    // menu entry named. The default only spares every caller the argument.
+    it("grants edit when no grade is named", async () => {
+        alexIsSaved();
+        await runInvite(deps({ chooseContact: picksAlex }));
         expect(runtime.invited).toEqual([{ endpointId: ALEX, role: "editor" }]);
     });
 
@@ -326,12 +338,12 @@ describe("invite", () => {
     // say which of the two things happened.
     it("names the grade it granted, and the partner it granted it to", async () => {
         alexIsSaved();
-        const viewing = deps({ chooseContact: picks("viewer") });
-        await runInvite(viewing);
+        const viewing = deps({ chooseContact: picksAlex });
+        await runInvite(viewing, "viewer");
         expect(viewing.notices).toEqual(["Invited Alex to view"]);
 
-        const editing = deps({ chooseContact: picks("editor") });
-        await runInvite(editing);
+        const editing = deps({ chooseContact: picksAlex });
+        await runInvite(editing, "editor");
         expect(editing.notices).toEqual(["Invited Alex to edit"]);
     });
 });

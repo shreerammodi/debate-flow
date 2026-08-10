@@ -70,4 +70,28 @@ function DropdownMenuItem({
     );
 }
 
-export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem };
+function DropdownMenuGroup({ ...props }: React.ComponentProps<typeof MenuPrimitive.Group>) {
+    return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
+}
+
+function DropdownMenuGroupLabel({
+    className,
+    ...props
+}: React.ComponentProps<typeof MenuPrimitive.GroupLabel>) {
+    return (
+        <MenuPrimitive.GroupLabel
+            data-slot="dropdown-menu-group-label"
+            className={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", className)}
+            {...props}
+        />
+    );
+}
+
+export {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuGroup,
+    DropdownMenuGroupLabel,
+};

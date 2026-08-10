@@ -458,6 +458,19 @@ describe("collab commands", () => {
         await vi.waitFor(() =>
             expect(useContactPicker.getState().contacts).toEqual({ alex: ALEX }),
         );
+        expect(useContactPicker.getState().role).toBe("editor");
+    });
+
+    // Two entries, one picker: the grade is the difference between them, so
+    // the picker has to open holding the one the debater clicked.
+    it("opens the picker on the grade the entry named", async () => {
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        loadRound();
+        useFlowStore.setState({ collabEnabled: true, contacts: { alex: ALEX } });
+
+        executeCommand("collab.inviteView");
+
+        await vi.waitFor(() => expect(useContactPicker.getState().role).toBe("viewer"));
     });
 });
 

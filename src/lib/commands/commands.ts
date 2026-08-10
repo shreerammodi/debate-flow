@@ -400,6 +400,9 @@ export function executeCommand(id: CommandId): void {
         case "collab.invite":
             void runInvite(collabDeps());
             return;
+        case "collab.inviteView":
+            void runInvite(collabDeps(), "viewer");
+            return;
         case "collab.end":
             void runEnd(collabDeps());
             return;

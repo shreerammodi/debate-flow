@@ -420,7 +420,20 @@ describe("the share button", () => {
         setupRound();
         renderSidebar();
         expect(screen.getByTestId("sidebar-share")).toBeInTheDocument();
-        expect(screen.getByTestId("sidebar-share-view")).toBeInTheDocument();
+    });
+
+    // Four routes behind one button, because the debater answers two
+    // questions and not four: who is arriving, and what they may do.
+    it("offers both grants for a saved partner and for a code", async () => {
+        setupRound();
+        renderSidebar();
+
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+
+        expect(await screen.findByTestId("sidebar-invite-editor")).toBeInTheDocument();
+        expect(screen.getByTestId("sidebar-invite-viewer")).toBeInTheDocument();
+        expect(screen.getByTestId("sidebar-code-editor")).toBeInTheDocument();
+        expect(screen.getByTestId("sidebar-code-viewer")).toBeInTheDocument();
     });
 
     it("offers joining beside the round too, not only from the palette", () => {
@@ -443,15 +456,21 @@ describe("the share button", () => {
         expect(screen.getByTestId("sidebar-share")).toBeInTheDocument();
     });
 
-    it("offers a saved partner only once there is one", () => {
+    // Shown before there is anybody to invite, so the route is discoverable
+    // rather than appearing out of nowhere once a first partner is saved.
+    it("shows the saved-partner entries dead until there is a partner", async () => {
         setupRound();
         const { unmount } = renderSidebar();
-        expect(screen.queryByTestId("sidebar-invite")).toBeNull();
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+        expect(await screen.findByTestId("sidebar-invite-editor")).toHaveAttribute("data-disabled");
         unmount();
 
         useFlowStore.setState({ contacts: { [`${"a".repeat(64)}`]: { name: "Alex" } } });
         renderSidebar();
-        expect(screen.getByTestId("sidebar-invite")).toBeInTheDocument();
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+        expect(await screen.findByTestId("sidebar-invite-editor")).not.toHaveAttribute(
+            "data-disabled",
+        );
     });
 
     // A browser cannot bind an endpoint, so a button here would offer a

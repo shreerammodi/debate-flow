@@ -65,6 +65,7 @@ export type CommandId =
     | "collab.shareView"
     | "collab.join"
     | "collab.invite"
+    | "collab.inviteView"
     | "collab.end";
 
 export interface CommandDef {
@@ -144,10 +145,11 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "theme.light": { id: "theme.light", label: "Theme: Light" },
     "theme.dark": { id: "theme.dark", label: "Theme: Dark" },
     "theme.system": { id: "theme.system", label: "Theme: System" },
-    "collab.share": { id: "collab.share", label: "Invite partner" },
-    "collab.shareView": { id: "collab.shareView", label: "Share view only" },
+    "collab.share": { id: "collab.share", label: "Generate a code to edit" },
+    "collab.shareView": { id: "collab.shareView", label: "Generate a code to view" },
     "collab.join": { id: "collab.join", label: "Join with a code" },
-    "collab.invite": { id: "collab.invite", label: "Invite a saved partner" },
+    "collab.invite": { id: "collab.invite", label: "Invite a saved partner to edit" },
+    "collab.inviteView": { id: "collab.inviteView", label: "Invite a saved partner to view" },
     "collab.end": { id: "collab.end", label: "End shared session" },
 };
 
@@ -160,6 +162,7 @@ export const COLLAB_COMMANDS: readonly CommandId[] = [
     "collab.shareView",
     "collab.join",
     "collab.invite",
+    "collab.inviteView",
     "collab.end",
 ];
 
@@ -230,6 +233,7 @@ export const EDITS_ROUND: Record<CommandId, boolean> = {
     "collab.shareView": false,
     "collab.join": false,
     "collab.invite": false,
+    "collab.inviteView": false,
     "collab.end": false,
 };
 
@@ -306,5 +310,6 @@ export const GRID_SCOPED: Record<CommandId, boolean> = {
     "collab.shareView": false,
     "collab.join": false,
     "collab.invite": false,
+    "collab.inviteView": false,
     "collab.end": false,
 };

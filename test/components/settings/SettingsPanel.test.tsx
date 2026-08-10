@@ -495,6 +495,7 @@ describe("SettingsPanel", () => {
                 "collab.shareView",
                 "collab.join",
                 "collab.invite",
+                "collab.inviteView",
                 "collab.end",
             ]) {
                 expect(screen.queryByTestId(`cmd-${id}`)).toBeNull();

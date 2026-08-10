@@ -2,8 +2,9 @@
  * ContactPickerDialog component tests.
  *
  * The dialog is the only surface `chooseContact` has, so what the promise
- * settles to is the assertion in every case. A contact carries no grade, so
- * the grant is part of the answer and not a lookup the caller does after.
+ * settles to is the assertion in every case. The grant is decided before the
+ * picker opens, so the answer is a peer and the grant is only what the title
+ * says the click is about to hand over.
  */
 
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -14,7 +15,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import ContactPickerDialog from "@/components/collab/ContactPickerDialog";
 import type { Contacts } from "@/lib/collab/contacts";
 import type { Role } from "@/lib/collab/types";
-import { chooseContact, type ContactChoice, useContactPicker } from "@/lib/store/useContactPicker";
+import { chooseContact, useContactPicker } from "@/lib/store/useContactPicker";
 
 const ALEX = "alex-endpoint";
 const RIN = "rin-endpoint";
@@ -29,37 +30,36 @@ const THREE: Contacts = {
 
 const PENDING = Symbol("pending");
 
-/** The class the cursor is drawn with, and the only mark that a grant is on. */
+/** The class the cursor is drawn with, and the only mark that a row is on. */
 const CURSOR_CLASS = "bg-accent";
 
-/** Opens the picker the way `collab.invite` does, from outside React. */
-function open(contacts: Contacts = THREE): Promise<ContactChoice | null> {
-    let picked!: Promise<ContactChoice | null>;
+/** Opens the picker the way the invite commands do, from outside React. */
+function open(role: Role = "editor", contacts: Contacts = THREE): Promise<string | null> {
+    let picked!: Promise<string | null>;
     act(() => {
-        picked = chooseContact(contacts);
+        picked = chooseContact(contacts, role);
     });
     return picked;
 }
 
-/** The button that grants `role` to `endpointId`, one of the two on its row. */
-const grant = (role: Role, endpointId: string) =>
-    screen.getByTestId(`contact-pick-${role}-${endpointId}`);
+/** The row that invites `endpointId`. */
+const row = (endpointId: string) => screen.getByTestId(`contact-pick-${endpointId}`);
 
 /**
  * Opens the picker and waits for the list to hold focus. The dialog settles
  * where focus goes a tick after it paints, so a key sent the moment the rows
  * exist lands on the body and reaches no handler at all.
  */
-async function openFocused() {
-    const picked = open();
+async function openFocused(role: Role = "editor") {
+    const picked = open(role);
     await screen.findByTestId("contact-picker");
     const group = screen.getByRole("group", { name: "Saved partners" });
     await waitFor(() => expect(group).toHaveFocus());
-    return { picked, group, grants: within(group).getAllByRole("button") };
+    return { picked, group, rows: within(group).getAllByRole("button") };
 }
 
 beforeEach(() => {
-    useContactPicker.setState({ contacts: null, resolve: null });
+    useContactPicker.setState({ contacts: null, role: "editor", resolve: null });
 });
 
 describe("ContactPickerDialog", () => {
@@ -68,48 +68,54 @@ describe("ContactPickerDialog", () => {
         expect(screen.queryByTestId("contact-picker")).toBeNull();
     });
 
-    it("offers both grants on every saved contact", async () => {
+    it("offers every saved contact, once each", async () => {
         render(<ContactPickerDialog />);
         const picked = open();
 
-        expect(await screen.findByTestId(`contact-pick-editor-${ALEX}`)).toHaveTextContent("Edit");
-        expect(grant("viewer", ALEX)).toHaveTextContent("View");
-        expect(grant("editor", RIN)).toBeInTheDocument();
-        expect(grant("viewer", JAY)).toBeInTheDocument();
+        expect(await screen.findByTestId(`contact-pick-${ALEX}`)).toHaveTextContent("Alex");
+        expect(row(RIN)).toBeInTheDocument();
+        expect(row(JAY)).toBeInTheDocument();
 
         await userEvent.keyboard("{Escape}");
         await picked;
     });
 
-    it("grants the round to a partner who may write when Edit is clicked", async () => {
+    // The grant is not chosen here, so the only place a debater can read what
+    // the next click hands over is the title and the rows themselves.
+    it("says which grant the click is about to hand over", async () => {
+        render(<ContactPickerDialog />);
+        const editing = open("editor");
+        expect(await screen.findByText("Invite a partner to edit")).toBeInTheDocument();
+        expect(row(ALEX)).toHaveAccessibleName("Invite Alex to edit");
+        await userEvent.keyboard("{Escape}");
+        await editing;
+
+        const viewing = open("viewer");
+        expect(await screen.findByText("Invite a partner to view")).toBeInTheDocument();
+        expect(row(ALEX)).toHaveAccessibleName("Invite Alex to view");
+        await userEvent.keyboard("{Escape}");
+        await viewing;
+    });
+
+    it("answers with the partner that was clicked", async () => {
         render(<ContactPickerDialog />);
         const picked = open();
 
-        await userEvent.click(await screen.findByTestId(`contact-pick-editor-${RIN}`));
+        await userEvent.click(await screen.findByTestId(`contact-pick-${RIN}`));
 
-        await expect(picked).resolves.toEqual({ endpointId: RIN, role: "editor" });
+        await expect(picked).resolves.toBe(RIN);
         expect(screen.queryByTestId("contact-picker")).toBeNull();
     });
 
-    it("grants read access only when View is clicked", async () => {
+    // This gesture admits a peer to the round, so nobody is the answer until
+    // the debater says who. The list itself takes focus and no row is marked,
+    // so an Enter that arrives before a choice invites nobody; opening onto a
+    // focused row would admit whoever happens to be first.
+    it("opens with nobody chosen, so an early Enter invites nobody", async () => {
         render(<ContactPickerDialog />);
-        const picked = open();
+        const { picked, rows } = await openFocused();
 
-        await userEvent.click(await screen.findByTestId(`contact-pick-viewer-${RIN}`));
-
-        await expect(picked).resolves.toEqual({ endpointId: RIN, role: "viewer" });
-    });
-
-    // This gesture decides whether a peer may write into the round, so no
-    // grant is the answer until the debater says which one. The list itself
-    // takes focus and no button is marked, so an Enter that arrives before a
-    // choice invites nobody; opening onto a focused Edit would hand out the
-    // wide grant to anyone who presses Enter twice.
-    it("opens with no grant chosen, so an early Enter invites nobody", async () => {
-        render(<ContactPickerDialog />);
-        const { picked, grants } = await openFocused();
-
-        for (const button of grants) {
+        for (const button of rows) {
             expect(button).not.toHaveFocus();
             expect(button.className).not.toContain(CURSOR_CLASS);
         }
@@ -131,9 +137,9 @@ describe("ContactPickerDialog", () => {
 
         await userEvent.keyboard("{ArrowDown}");
 
-        expect(grant("editor", ALEX)).toHaveFocus();
+        expect(row(ALEX)).toHaveFocus();
         await userEvent.keyboard("{Enter}");
-        await expect(picked).resolves.toEqual({ endpointId: ALEX, role: "editor" });
+        await expect(picked).resolves.toBe(ALEX);
     });
 
     it("enters the list at the last contact when the cursor comes up into it", async () => {
@@ -142,32 +148,20 @@ describe("ContactPickerDialog", () => {
 
         await userEvent.keyboard("{ArrowUp}");
 
-        expect(grant("editor", JAY)).toHaveFocus();
+        expect(row(JAY)).toHaveFocus();
         await userEvent.keyboard("{Enter}");
-        await expect(picked).resolves.toEqual({ endpointId: JAY, role: "editor" });
+        await expect(picked).resolves.toBe(JAY);
     });
 
-    it("steps a whole row at a time, so an arrow never changes the grant", async () => {
+    it("steps one contact at a time", async () => {
         render(<ContactPickerDialog />);
         const { picked } = await openFocused();
 
         await userEvent.keyboard("{ArrowDown}{ArrowDown}");
 
-        expect(grant("editor", RIN)).toHaveFocus();
+        expect(row(RIN)).toHaveFocus();
         await userEvent.keyboard("{Enter}");
-        await expect(picked).resolves.toEqual({ endpointId: RIN, role: "editor" });
-    });
-
-    it("holds the grant column the cursor is in when it steps down", async () => {
-        render(<ContactPickerDialog />);
-        const { picked } = await openFocused();
-        act(() => grant("viewer", ALEX).focus());
-
-        await userEvent.keyboard("{ArrowDown}");
-
-        expect(grant("viewer", RIN)).toHaveFocus();
-        await userEvent.keyboard("{Enter}");
-        await expect(picked).resolves.toEqual({ endpointId: RIN, role: "viewer" });
+        await expect(picked).resolves.toBe(RIN);
     });
 
     it("wraps past the last contact back to the first", async () => {
@@ -176,7 +170,7 @@ describe("ContactPickerDialog", () => {
 
         await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
-        await expect(picked).resolves.toEqual({ endpointId: ALEX, role: "editor" });
+        await expect(picked).resolves.toBe(ALEX);
     });
 
     it("wraps backwards from the first contact to the last", async () => {
@@ -185,7 +179,7 @@ describe("ContactPickerDialog", () => {
 
         await userEvent.keyboard("{ArrowDown}{ArrowUp}{Enter}");
 
-        await expect(picked).resolves.toEqual({ endpointId: JAY, role: "editor" });
+        await expect(picked).resolves.toBe(JAY);
     });
 
     it("dials nobody when dismissed with Escape", async () => {
