@@ -475,6 +475,21 @@ describe("the share button", () => {
         );
     });
 
+    // The corner is the sidebar's, so a flow that closes with the menu open
+    // must not bring it back open when the next round draws the corner again.
+    it("releases the corner when the sidebar goes", async () => {
+        setupRound();
+        const { unmount } = renderSidebar();
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+        expect(await screen.findByTestId("sidebar-invite-editor")).toBeInTheDocument();
+
+        unmount();
+        expect(useSidebarPopup.getState().open).toBeNull();
+
+        renderSidebar();
+        expect(screen.queryByTestId("sidebar-invite-editor")).toBeNull();
+    });
+
     // A browser cannot bind an endpoint, so a button here would offer a
     // debater something that cannot exist.
     it("is absent off the desktop, round or no round", () => {

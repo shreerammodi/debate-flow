@@ -1,6 +1,7 @@
 "use client";
 
 import { CaretDown, Eye, PencilSimple, ShareNetwork, SignIn } from "@phosphor-icons/react";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +47,11 @@ export default function ShareButton() {
     // above it can never be drawn over one another.
     const openPopup = useSidebarPopup((s) => s.open);
     const showPopup = useSidebarPopup((s) => s.show);
+    // The menu is drawn from this button, so a sidebar that goes - the flow
+    // closing, the rail collapsing - takes the menu with it. Releasing the
+    // slot on the way out is what keeps the corner from coming back with a
+    // menu open that nobody asked for.
+    useEffect(() => () => useSidebarPopup.getState().close("share"), []);
 
     if (!isDesktop()) return null;
 
