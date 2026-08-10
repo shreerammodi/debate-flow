@@ -17,6 +17,7 @@ import InviteChip from "@/components/collab/InviteChip";
 import { acceptInvite } from "@/lib/collab/inbox";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 
 const ALEX = "a1e0".repeat(16);
 const RIN = "b2f0".repeat(16);
@@ -26,6 +27,7 @@ const BRONX = { endpointId: RIN, roundId: "round_2", label: "Round 4 - Bronx" };
 
 beforeEach(() => {
     useCollabStore.getState().reset();
+    useSidebarPopup.setState({ open: null });
     useFlowStore.setState({
         contacts: {
             [ALEX]: { name: "Alex" },

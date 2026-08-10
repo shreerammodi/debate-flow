@@ -14,6 +14,7 @@ import {
 import { Tip } from "@/components/ui/tooltip";
 import { executeCommand } from "@/lib/commands/commands";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 import { isDesktop } from "@/lib/update/adapter";
 
 /**
@@ -41,13 +42,20 @@ export default function ShareButton() {
     // Shown even with nothing saved, so a debater learns the route exists
     // before they have a partner to take it with.
     const noContacts = Object.keys(contacts).length === 0;
+    // One slot for the whole corner, so this menu and the two chip panels
+    // above it can never be drawn over one another.
+    const openPopup = useSidebarPopup((s) => s.open);
+    const showPopup = useSidebarPopup((s) => s.show);
 
     if (!isDesktop()) return null;
 
     return (
         <div className="flex flex-wrap items-center gap-1" data-testid="share-controls">
             {round && (
-                <DropdownMenu>
+                <DropdownMenu
+                    open={openPopup === "share"}
+                    onOpenChange={(open) => showPopup(open ? "share" : null)}
+                >
                     <DropdownMenuTrigger asChild>
                         <Button
                             type="button"
@@ -56,7 +64,7 @@ export default function ShareButton() {
                             data-testid="sidebar-share"
                         >
                             <ShareNetwork />
-                            Invite partner
+                            Invite
                             <CaretDown className="size-3 opacity-60" />
                         </Button>
                     </DropdownMenuTrigger>
@@ -110,6 +118,7 @@ export default function ShareButton() {
                     onClick={() => executeCommand("collab.join")}
                 >
                     <SignIn />
+                    Join
                 </Button>
             </Tip>
         </div>

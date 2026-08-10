@@ -14,6 +14,7 @@ import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { makeFlowRound } from "@/lib/model/flow";
 import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 
 vi.mock("@/lib/grid/hotInstance", () => ({ focusActiveHot: vi.fn() }));
 vi.mock("@/lib/collab/runtime", () => ({
@@ -56,6 +57,7 @@ function lastToastAction(): { label: string; onClick: () => void } {
 
 function resetStore() {
     useCollabStore.getState().reset();
+    useSidebarPopup.setState({ open: null });
     useFlowStore.setState({
         round: null,
         activeSheetId: null,
@@ -480,5 +482,59 @@ describe("the share button", () => {
         setupRound();
         renderSidebar();
         expect(screen.queryByTestId("share-controls")).toBeNull();
+    });
+});
+
+// The two chips draw upward from the same corner and the Invite menu opens
+// over them, so two of these on screen at once is two panels stacked on one
+// another.
+describe("the sidebar's popups", () => {
+    beforeEach(() => {
+        resetStore();
+        vi.clearAllMocks();
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    });
+
+    afterEach(() => {
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    });
+
+    it("closes the session panel when the invitations panel opens, and back", async () => {
+        setupRound();
+        useCollabStore.setState({ status: "connected", peers: [ALEX] });
+        useCollabStore.getState().pushInvite({
+            endpointId: "b".repeat(64),
+            roundId: "round_1",
+            label: "Round 3 - Harvard",
+        });
+        renderSidebar();
+
+        await userEvent.click(screen.getByTestId("collab-chip"));
+        expect(screen.getByTestId("collab-chip-peers")).toBeInTheDocument();
+
+        await userEvent.click(screen.getByTestId("collab-invite-chip"));
+        expect(screen.getByTestId("collab-invite-list")).toBeInTheDocument();
+        expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
+
+        await userEvent.click(screen.getByTestId("collab-chip"));
+        expect(screen.getByTestId("collab-chip-peers")).toBeInTheDocument();
+        expect(screen.queryByTestId("collab-invite-list")).toBeNull();
+    });
+
+    it("closes the Invite menu when a chip panel opens, and the panel when it opens", async () => {
+        setupRound();
+        useCollabStore.setState({ status: "connected", peers: [ALEX] });
+        renderSidebar();
+
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+        expect(await screen.findByTestId("sidebar-invite-editor")).toBeInTheDocument();
+
+        await userEvent.click(screen.getByTestId("collab-chip"));
+        expect(screen.getByTestId("collab-chip-peers")).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByTestId("sidebar-invite-editor")).toBeNull());
+
+        await userEvent.click(screen.getByTestId("sidebar-share"));
+        expect(await screen.findByTestId("sidebar-invite-editor")).toBeInTheDocument();
+        expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 });

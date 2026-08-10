@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { contactName } from "@/lib/collab/contacts";
@@ -8,6 +8,7 @@ import { acceptInvite } from "@/lib/collab/inbox";
 import { inviteToastFor } from "@/lib/collab/invite";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 import { cn } from "@/lib/utils";
 
 export interface InviteChipProps {
@@ -30,14 +31,19 @@ export default function InviteChip({ className }: InviteChipProps) {
     const invites = useCollabStore((s) => s.invites);
     const dismissInvite = useCollabStore((s) => s.dismissInvite);
     const contacts = useFlowStore((s) => s.contacts);
-    const [expanded, setExpanded] = useState(false);
+    const openPopup = useSidebarPopup((s) => s.open);
+    const showPopup = useSidebarPopup((s) => s.show);
+    const expanded = openPopup === "invites";
     const panelId = useId();
 
     // The last invitation leaving closes the panel, so the next one opens
-    // collapsed. Adjusted during render rather than in an effect, which would
-    // take a second pass to settle.
-    if (invites.length === 0 && expanded) setExpanded(false);
-    if (invites.length === 0) return null;
+    // collapsed.
+    const none = invites.length === 0;
+    useEffect(() => {
+        if (none) useSidebarPopup.getState().close("invites");
+    }, [none]);
+
+    if (none) return null;
 
     return (
         // The caller owns the outer slot's position; the anchor stays `relative`
@@ -51,7 +57,7 @@ export default function InviteChip({ className }: InviteChipProps) {
                     data-testid="collab-invite-chip"
                     aria-expanded={expanded}
                     aria-controls={expanded ? panelId : undefined}
-                    onClick={() => setExpanded((open) => !open)}
+                    onClick={() => showPopup(expanded ? null : "invites")}
                     className={cn(
                         "border-border bg-card text-foreground flex w-full items-center gap-1.5 rounded-full border",
                         "hover:bg-accent px-2.5 py-1 text-[12px] transition-colors focus-visible:outline-2",

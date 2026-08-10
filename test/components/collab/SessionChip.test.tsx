@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import SessionChip from "@/components/collab/SessionChip";
 import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 
 const { disconnectPeer, endSession } = vi.hoisted(() => ({
     disconnectPeer: vi.fn(async () => {}),
@@ -40,6 +41,7 @@ function live(peers: CollabPeerView[] = [ALEX, RIN]) {
 
 beforeEach(() => {
     useCollabStore.getState().reset();
+    useSidebarPopup.setState({ open: null });
     disconnectPeer.mockClear();
     endSession.mockClear();
 });

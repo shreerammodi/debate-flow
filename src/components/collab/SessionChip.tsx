@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 import { chipSummary, pendingLine } from "@/lib/collab/statusLine";
 import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
+import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
 import { cn } from "@/lib/utils";
 
 /** What each role may do, in the words the chip shows a debater. */
@@ -35,14 +36,16 @@ export default function SessionChip({ className }: SessionChipProps) {
     const peers = useCollabStore((s) => s.peers);
     const pending = useCollabStore((s) => s.pending);
     const selfRole = useCollabStore((s) => s.selfRole);
-    const [expanded, setExpanded] = useState(false);
+    const openPopup = useSidebarPopup((s) => s.open);
+    const showPopup = useSidebarPopup((s) => s.show);
+    const expanded = openPopup === "session";
     const panelId = useId();
 
     // A session that ends closes the panel, so the next one opens collapsed.
-    // Adjusted during render rather than in an effect: an effect would take a
-    // second pass to settle, and React documents this shape for exactly the
-    // case of resetting state when something outside the component changes.
-    if (status === "off" && expanded) setExpanded(false);
+    useEffect(() => {
+        if (status === "off") useSidebarPopup.getState().close("session");
+    }, [status]);
+
     if (status === "off") return null;
 
     const summary = chipSummary(
@@ -66,7 +69,7 @@ export default function SessionChip({ className }: SessionChipProps) {
                     data-state={status}
                     aria-expanded={expanded}
                     aria-controls={expanded ? panelId : undefined}
-                    onClick={() => setExpanded((open) => !open)}
+                    onClick={() => showPopup(expanded ? null : "session")}
                     className={cn(
                         "border-border bg-card text-foreground flex w-full items-center gap-1.5 rounded-full border",
                         "hover:bg-accent px-2.5 py-1 text-[12px] transition-colors focus-visible:outline-2",
