@@ -40,6 +40,12 @@ export interface RemovedFlowSheet {
     wasActive: boolean;
 }
 
+/** The two edges of the sidebar's sheet selection; the anchor stays displayed. */
+export interface SheetRange {
+    anchor: string;
+    head: string;
+}
+
 export interface FlowState {
     round: FlowRound | null;
     /**
@@ -134,6 +140,18 @@ export interface FlowState {
     /** Peers shared with before, keyed by EndpointId. */
     contacts: Contacts;
     renamingSheetId: string | null;
+    /**
+     * The sidebar's sheet selection, held as its two edges rather than a list
+     * of ids: the visible range is derived through `sheetRangeIds` on every
+     * render, so a sheet deleted out from under it resolves to no selection
+     * instead of leaving a stale id behind, and a block move keeps the same
+     * two edges without rewriting anything.
+     *
+     * Local to this sidebar. Never an op, never in a `.ebb`, never on the
+     * wire: two debaters sharing a round each aim at what they are about to
+     * move.
+     */
+    sheetRange: SheetRange | null;
 }
 
 export interface FlowActions {
@@ -151,6 +169,8 @@ export interface FlowActions {
     restoreSheet(removed: RemovedFlowSheet): void;
     /** Renumbers the given flow sheets to contiguous order by array position. */
     reorderSheets(orderedFlowSheetIds: string[]): void;
+    /** Sets or clears the sidebar's sheet selection. */
+    setSheetRange(range: SheetRange | null): void;
     setActiveSheet(sheetId: string): void;
     /** Switch to a sheet and select one of its cells (used by the search palette). */
     revealCell(sheetId: string, row: number, col: number): void;
@@ -442,18 +462,24 @@ export function focusedSheetId(
  * Assign `sheetId` to the focused pane. In single mode that is just
  * `activeSheetId`. In split mode, picking the sheet already in the OTHER pane
  * swaps the two panes rather than showing a sheet twice.
+ *
+ * Every focus change funnels through here, which is where the sheet range
+ * collapses: a selection is aimed at the block a debater is about to move, so
+ * it never outlives the sheet it was built from.
  */
 function assignFocused(
     s: Pick<FlowState, "activeSheetId" | "splitSheetId" | "focusedPane">,
     sheetId: string,
-): { activeSheetId: string | null; splitSheetId: string | null } {
-    if (s.splitSheetId == null) return { activeSheetId: sheetId, splitSheetId: null };
+): { activeSheetId: string | null; splitSheetId: string | null; sheetRange: null } {
+    if (s.splitSheetId == null) {
+        return { activeSheetId: sheetId, splitSheetId: null, sheetRange: null };
+    }
     const focusedCur = s.focusedPane === 1 ? s.activeSheetId : s.splitSheetId;
     const other = s.focusedPane === 1 ? s.splitSheetId : s.activeSheetId;
     const newOther = sheetId === other ? focusedCur : other;
     return s.focusedPane === 1
-        ? { activeSheetId: sheetId, splitSheetId: newOther }
-        : { activeSheetId: newOther, splitSheetId: sheetId };
+        ? { activeSheetId: sheetId, splitSheetId: newOther, sheetRange: null }
+        : { activeSheetId: newOther, splitSheetId: sheetId, sheetRange: null };
 }
 
 export const useFlowStore = create<FlowStore>()((set, get) => ({
@@ -495,6 +521,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     collabName: initialDisplaySettings.collabName,
     contacts: initialDisplaySettings.contacts,
     renamingSheetId: null,
+    sheetRange: null,
 
     loadRound(round, opts) {
         // Unconditional: opening one flow straight over another never closes
@@ -513,6 +540,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             rfdOpen: opts?.newFlow ? false : loadDisplaySettings().rfdOpen,
             quickSwitcherOpen: false,
             renamingSheetId: null,
+            sheetRange: null,
         });
     },
 
@@ -531,6 +559,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             activeSheetId: null,
             splitSheetId: null,
             renamingSheetId: null,
+            sheetRange: null,
         });
     },
 
@@ -606,21 +635,28 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         const nextRound = touch({ ...round, sheets: remaining });
         recordOp({ kind: "removeSheet", sheetId });
 
+        // A deleted anchor or head would resolve to no selection on its own,
+        // but deleting from the middle of a range would silently shrink it,
+        // and a range that quietly changed what it covers is worse than one
+        // that ended.
+        const cleared = { sheetRange: null } as const;
+
         // Deleting a sheet that a split pane is showing collapses the split:
         // the surviving pane keeps its sheet, so the two panes never end up
         // pointing at the same sheet or at one that no longer exists.
         if (splitSheetId != null) {
             if (sheetId === splitSheetId) {
-                set({ round: nextRound, splitSheetId: null, focusedPane: 1 });
+                set({ ...cleared, round: nextRound, splitSheetId: null, focusedPane: 1 });
             } else if (wasActive) {
                 set({
+                    ...cleared,
                     round: nextRound,
                     activeSheetId: splitSheetId,
                     splitSheetId: null,
                     focusedPane: 1,
                 });
             } else {
-                set({ round: nextRound });
+                set({ ...cleared, round: nextRound });
             }
             return { sheet, wasActive };
         }
@@ -631,7 +667,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
             const below = flows.filter((s) => s.order < sheet.order).pop();
             nextActive = (below ?? flows[0])?.id ?? null;
         }
-        set({ round: nextRound, activeSheetId: nextActive });
+        set({ ...cleared, round: nextRound, activeSheetId: nextActive });
         return { sheet, wasActive };
     },
 
@@ -661,6 +697,10 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         for (const [sheetId, order] of orderById) {
             recordOp({ kind: "sheetField", sheetId, path: "order", value: order });
         }
+    },
+
+    setSheetRange(range) {
+        set({ sheetRange: range });
     },
 
     setActiveSheet(sheetId) {

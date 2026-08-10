@@ -256,6 +256,52 @@ describe("sheet operations", () => {
     });
 });
 
+describe("the sheet range", () => {
+    /** A round with three flow sheets, the range spanning the last two. */
+    function ranged() {
+        loadFresh();
+        const state = () => useFlowStore.getState();
+        const a = state().round!.sheets.find((s) => s.kind !== "cx")!.id;
+        const b = state().addSheet({ title: "B", group: "aff" });
+        const c = state().addSheet({ title: "C", group: "neg" });
+        state().setSheetRange({ anchor: b, head: c });
+        return { a, b, c, state };
+    }
+
+    it("round-trips through setSheetRange", () => {
+        const { b, c, state } = ranged();
+        expect(state().sheetRange).toEqual({ anchor: b, head: c });
+        state().setSheetRange(null);
+        expect(state().sheetRange).toBeNull();
+    });
+
+    it("collapses when the focused sheet changes", () => {
+        const { a, state } = ranged();
+        state().setActiveSheet(a);
+        expect(state().sheetRange).toBeNull();
+    });
+
+    it("collapses when a search hit jumps the grid to another sheet", () => {
+        const { a, state } = ranged();
+        state().revealCell(a, 0, 0);
+        expect(state().sheetRange).toBeNull();
+    });
+
+    it("ends rather than shrinks when a sheet is deleted", () => {
+        const { a, state } = ranged();
+        // A sheet outside the range: the two edges both survive, and the range
+        // still ends rather than quietly covering something else.
+        state().removeSheet(a);
+        expect(state().sheetRange).toBeNull();
+    });
+
+    it("does not outlive the round", () => {
+        const { state } = ranged();
+        state().closeRound();
+        expect(state().sheetRange).toBeNull();
+    });
+});
+
 describe("updateSheetData", () => {
     it("replaces data/meta and bumps updatedAt; identical payload does not bump", () => {
         loadFresh();
