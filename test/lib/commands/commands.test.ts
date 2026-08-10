@@ -13,7 +13,7 @@ import { COMMANDS, EDITS_ROUND, type CommandId } from "@/lib/commands/registry";
 import { BOLD_CLASS, GROUP_CLASS, HIGHLIGHT_CLASS, KICKED_CLASS } from "@/lib/grid/codec";
 import { setActiveHot } from "@/lib/grid/hotInstance";
 import { isMovingIn, movingBlock, revertMove } from "@/lib/grid/moveSession";
-import { makeFlowRound, type FlowRound } from "@/lib/model/flow";
+import { makeFlowRound, sortedSheets, type FlowRound } from "@/lib/model/flow";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useContactPicker } from "@/lib/store/useContactPicker";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -39,6 +39,7 @@ beforeEach(() => {
         infoOpen: false,
         sidebarCollapsed: false,
         renamingSheetId: null,
+        sheetRange: null,
     });
 });
 
@@ -103,6 +104,126 @@ describe("sheet commands", () => {
         executeCommand("sheet.rename");
         expect(useFlowStore.getState().sidebarCollapsed).toBe(false);
         expect(useFlowStore.getState().renamingSheetId).toBe(useFlowStore.getState().activeSheetId);
+    });
+});
+
+describe("moving and selecting a range of sheets", () => {
+    /** A round of four flow sheets in order, with the first one focused. */
+    function fourSheets() {
+        loadRound();
+        const store = useFlowStore.getState();
+        const ids = [store.activeSheetId!];
+        for (const title of ["B", "C", "D"]) ids.push(store.addSheet({ title, group: "aff" }));
+        useFlowStore.getState().setActiveSheet(ids[0]);
+        return ids;
+    }
+
+    /** The flow sheets' ids in sidebar order. */
+    function order(): string[] {
+        return sortedSheets(useFlowStore.getState().round!)
+            .filter((s) => s.kind !== "cx")
+            .map((s) => s.id);
+    }
+
+    it("slides the whole range one slot and leaves the cursor where it was", () => {
+        const [a, b, c, d] = fourSheets();
+        useFlowStore.getState().setSheetRange({ anchor: c, head: d });
+
+        executeCommand("sheet.moveUp");
+
+        expect(order()).toEqual([a, c, d, b]);
+        expect(useFlowStore.getState().activeSheetId).toBe(a);
+        // The two edges still name the block, so the selection follows it.
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: c, head: d });
+    });
+
+    it("reads a range built from either end the same way", () => {
+        const [a, b, c, d] = fourSheets();
+        useFlowStore.getState().setSheetRange({ anchor: d, head: c });
+
+        executeCommand("sheet.moveUp");
+
+        expect(order()).toEqual([a, c, d, b]);
+    });
+
+    it("moves the focused sheet alone when no range is live", () => {
+        const [a, b, c, d] = fourSheets();
+        useFlowStore.getState().setActiveSheet(b);
+
+        executeCommand("sheet.moveDown");
+
+        expect(order()).toEqual([a, c, b, d]);
+    });
+
+    it("stops when the block's edge reaches the end of the list", () => {
+        const [a, b, c, d] = fourSheets();
+        useFlowStore.getState().setSheetRange({ anchor: a, head: b });
+
+        executeCommand("sheet.moveUp");
+        expect(order()).toEqual([a, b, c, d]);
+
+        useFlowStore.getState().setSheetRange({ anchor: c, head: d });
+        executeCommand("sheet.moveDown");
+        expect(order()).toEqual([a, b, c, d]);
+    });
+
+    it("never displaces cross-ex, even with the cross-ex sheet focused", () => {
+        const ids = fourSheets();
+        const cx = useFlowStore.getState().round!.sheets.find((s) => s.kind === "cx")!;
+        useFlowStore.getState().setActiveSheet(cx.id);
+
+        executeCommand("sheet.moveDown");
+
+        expect(order()).toEqual(ids);
+        expect(useFlowStore.getState().round!.sheets.find((s) => s.kind === "cx")!.order).toBe(-1);
+    });
+
+    it("seeds a range at the focused sheet and grows it", () => {
+        const [a, b, c] = fourSheets();
+
+        executeCommand("sheet.extendDown");
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: a, head: b });
+
+        executeCommand("sheet.extendDown");
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: a, head: c });
+    });
+
+    it("shrinks rather than grows when the head steps back toward the anchor", () => {
+        const [a, b, c] = fourSheets();
+        useFlowStore.getState().setSheetRange({ anchor: a, head: c });
+
+        executeCommand("sheet.extendUp");
+
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: a, head: b });
+    });
+
+    it("never changes what the grid shows", () => {
+        const [a] = fourSheets();
+
+        executeCommand("sheet.extendDown");
+        executeCommand("sheet.extendDown");
+
+        expect(useFlowStore.getState().activeSheetId).toBe(a);
+    });
+
+    it("stops at the ends", () => {
+        const [a, , , d] = fourSheets();
+
+        executeCommand("sheet.extendUp");
+        expect(useFlowStore.getState().sheetRange).toBeNull();
+
+        useFlowStore.getState().setSheetRange({ anchor: a, head: d });
+        executeCommand("sheet.extendDown");
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: a, head: d });
+    });
+
+    it("opens a collapsed sidebar so the range being built is visible", () => {
+        fourSheets();
+        useFlowStore.setState({ sidebarCollapsed: true });
+
+        executeCommand("sheet.extendDown");
+
+        expect(useFlowStore.getState().sidebarCollapsed).toBe(false);
     });
 });
 
@@ -505,6 +626,22 @@ describe("a viewer at the keyboard", () => {
         expect(useFlowStore.getState().settingsOpen).toBe(true);
         executeCommand("sidebar.toggle");
         expect(useFlowStore.getState().sidebarCollapsed).toBe(true);
+    });
+
+    it("paints a range but cannot reorder the host's sheets", () => {
+        loadRound();
+        const first = useFlowStore.getState().activeSheetId!;
+        const second = useFlowStore.getState().addSheet({ title: "B", group: "aff" });
+        useFlowStore.getState().setActiveSheet(first);
+        useCollabStore.setState({ selfRole: "viewer" });
+
+        // Extending is one sidebar's own business and edits nothing.
+        executeCommand("sheet.extendDown");
+        expect(useFlowStore.getState().sheetRange).toEqual({ anchor: first, head: second });
+
+        executeCommand("sheet.moveDown");
+        const flows = sortedSheets(useFlowStore.getState().round!).filter((s) => s.kind !== "cx");
+        expect(flows.map((s) => s.id)).toEqual([first, second]);
     });
 
     it("lets an editor do all of it, which is what makes the refusal the role", () => {

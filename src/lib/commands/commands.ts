@@ -30,7 +30,7 @@ import {
 import { attachMetaUndo, snapshotClasses } from "@/lib/grid/metaUndo";
 import { beginMove } from "@/lib/grid/moveSession";
 import { STRUCTURED_WRITE } from "@/lib/grid/staleSource";
-import { sortedSheets } from "@/lib/model/flow";
+import { moveSheetRange, sheetRangeIds, sortedSheets } from "@/lib/model/flow";
 import { askToShare } from "@/lib/store/useCollabConsent";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { chooseContact } from "@/lib/store/useContactPicker";
@@ -274,6 +274,46 @@ export function executeCommand(id: CommandId): void {
             const next =
                 id === "sheet.next" ? Math.min(base + 1, sheets.length - 1) : Math.max(base - 1, 0);
             state.setActiveSheet(sheets[next].id);
+            return;
+        }
+        case "sheet.moveUp":
+        case "sheet.moveDown": {
+            if (!round) return;
+            const sheets = sortedSheets(round).filter((s) => s.kind !== "cx");
+            const focused = focusedSheetId(state);
+            const range = state.sheetRange;
+            const selected = range ? sheetRangeIds(sheets, range.anchor, range.head) : [];
+            // With no range the chord acts on the focused sheet alone, so a
+            // single-sheet move needs no selection gesture first. A focused CX
+            // sheet is not in this list, so it moves nothing.
+            const block = selected.length > 0 ? selected : focused ? [focused] : [];
+            const ordered = sheets.map((s) => s.id);
+            const moved = moveSheetRange(ordered, block, id === "sheet.moveUp" ? -1 : 1);
+            if (moved === ordered) return;
+            // The range keeps its two edges: they are still the block's, so the
+            // selection follows the block without being rewritten.
+            state.reorderSheets([...moved]);
+            return;
+        }
+        case "sheet.extendUp":
+        case "sheet.extendDown": {
+            if (!round) return;
+            const sheets = sortedSheets(round).filter((s) => s.kind !== "cx");
+            const range = state.sheetRange;
+            // No range yet: both edges start at the sheet on screen.
+            const anchor = range?.anchor ?? focusedSheetId(state);
+            const anchorIdx = sheets.findIndex((s) => s.id === anchor);
+            if (anchor == null || anchorIdx === -1) return;
+            const headIdx = range ? sheets.findIndex((s) => s.id === range.head) : anchorIdx;
+            if (headIdx === -1) return;
+            // Stepping the head toward the anchor shrinks the range; away from
+            // it grows the range; past either end does nothing.
+            const next = headIdx + (id === "sheet.extendUp" ? -1 : 1);
+            if (next < 0 || next >= sheets.length) return;
+            // A collapsed sidebar draws no rows, so the range being built would
+            // be invisible; open it, the courtesy sheet.rename already pays.
+            if (state.sidebarCollapsed) state.setSidebarCollapsed(false);
+            state.setSheetRange({ anchor, head: sheets[next].id });
             return;
         }
         case "sheet.newAff": {

@@ -33,6 +33,10 @@ export type CommandId =
     | "cell.sendToDoc"
     | "sheet.next"
     | "sheet.prev"
+    | "sheet.moveUp"
+    | "sheet.moveDown"
+    | "sheet.extendUp"
+    | "sheet.extendDown"
     | "sheet.newAff"
     | "sheet.newNeg"
     | "sheet.rename"
@@ -114,6 +118,18 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     "cell.sendToDoc": { id: "cell.sendToDoc", label: "Send to CardMirror" },
     "sheet.next": { id: "sheet.next", label: "Next sheet" },
     "sheet.prev": { id: "sheet.prev", label: "Previous sheet" },
+    "sheet.moveUp": { id: "sheet.moveUp", label: "Move sheet up" },
+    "sheet.moveDown": { id: "sheet.moveDown", label: "Move sheet down" },
+    "sheet.extendUp": {
+        id: "sheet.extendUp",
+        label: "Extend selection up",
+        keywords: "select range sheets multiple",
+    },
+    "sheet.extendDown": {
+        id: "sheet.extendDown",
+        label: "Extend selection down",
+        keywords: "select range sheets multiple",
+    },
     "sheet.newAff": { id: "sheet.newAff", label: "New aff sheet" },
     "sheet.newNeg": { id: "sheet.newNeg", label: "New neg sheet" },
     "sheet.rename": { id: "sheet.rename", label: "Rename active sheet" },
@@ -201,6 +217,12 @@ export const EDITS_ROUND: Record<CommandId, boolean> = {
     "cell.sendToDoc": false,
     "sheet.next": false,
     "sheet.prev": false,
+    // Reordering is the host's round to change; painting a selection is one
+    // sidebar's own business, so a viewer may build a range freely.
+    "sheet.moveUp": true,
+    "sheet.moveDown": true,
+    "sheet.extendUp": false,
+    "sheet.extendDown": false,
     "sheet.newAff": true,
     "sheet.newNeg": true,
     "sheet.rename": true,
@@ -278,6 +300,10 @@ export const GRID_SCOPED: Record<CommandId, boolean> = {
     "cell.sendToDoc": true,
     "sheet.next": false,
     "sheet.prev": false,
+    "sheet.moveUp": false,
+    "sheet.moveDown": false,
+    "sheet.extendUp": false,
+    "sheet.extendDown": false,
     "sheet.newAff": false,
     "sheet.newNeg": false,
     "sheet.rename": false,
