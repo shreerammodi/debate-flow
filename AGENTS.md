@@ -85,9 +85,17 @@ Formatting is `oxfmt` (via `npm run format` / `format:check`), not Prettier.
       its sidecar and a double-click is the whole gesture, so `resumeSession`
       reads `collabSettings().listen` before it reaches `startForRound`'s
       `collabLive()`: shared editing on and Listen for invites off binds
-      nothing on a cold launch. That route is held to both off cases in
+      nothing on a cold launch. A round this window joined by hand is the one
+      exception, marked in `src/lib/collab/joined.ts` by `joinRound` and
+      cleared with the round: typing a code or pressing Join is the debater
+      asking for that round to be live now, which is a different question from
+      whether ebb may sit on the network with no round in hand. Since a join
+      whose round is already the open flow routes to the URL the window is
+      already on, where nothing loads and nothing resumes, `resumeJoined` is
+      what brings that one up. The resume is held to both off cases in
       `runtimeInvites.test.ts`, under the positive control the other four
-      have. Switching the master off while a session is already running tears
+      have, and the two joined routes beside them.
+      Switching the master off while a session is already running tears
       it down rather than waiting for the next route to ask
       (`useInviteWatch.ts:42-47`, `test/lib/collab/useInviteWatch.test.tsx`),
       and one thrown while a session is still binding is caught on the far side

@@ -11,6 +11,7 @@ import { create } from "zustand";
 
 import { resolveCardMirrorTextType, type CardMirrorTextType } from "@/lib/bridge/cardmirror";
 import { resolveContacts, type Contacts } from "@/lib/collab/contacts";
+import { forgetJoined } from "@/lib/collab/joined";
 import { clearReplica, recordOp, seedReplica } from "@/lib/collab/replica";
 import { forgetRoundPeers } from "@/lib/collab/roundPeers";
 import { flattenLeaves, type Json } from "@/lib/collab/types";
@@ -521,6 +522,9 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         // start screen holding a closed round's partner ids keeps who a debater
         // shared with resident in memory for nothing.
         forgetRoundPeers();
+        // And a join is a gesture about the round that was open, not a
+        // standing grant: the next open of the same file is an open again.
+        forgetJoined();
         set({
             round: null,
             docPath: null,

@@ -208,6 +208,13 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ### Fixed
 
+- **Joining a round with a code now connects it.** The round arrived and the
+  file opened, but nothing after that was live: the flow sat there while your
+  partner's edits went nowhere, and their attempt to reach you turned up in the
+  corner as an invitation to the round already on your screen. Joining is you
+  asking for a round to be live, so it no longer waits on "Listen for invites",
+  and a round you join while it is already open connects where before nothing
+  happened at all.
 - **Shared editing no longer hands out an invite that cannot work.** An invite
   carries the relay a partner sends their first packet to, and ebb was minting
   one before that relay had answered: the invite looked correct, worked between

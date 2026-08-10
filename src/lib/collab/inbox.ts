@@ -18,6 +18,7 @@ import { collabLive } from "./enabled";
 import { inviteToastFor, shouldAnnounceInvite, type InviteNotice } from "./invite";
 import { joinRound } from "./join";
 import { createPeerLinkFor } from "./peerLink";
+import { resumeJoined } from "./runtime";
 
 /** How long an invitation stays in the corner. Long enough to act on between speeches. */
 const INVITE_TOAST_MS = 30_000;
@@ -75,8 +76,12 @@ export async function acceptInvite(notice: InviteNotice): Promise<void> {
             return;
         }
         useCollabStore.getState().dismissInvite(notice.endpointId, notice.roundId);
+        // Started before the route is asked, so the check reads the flow this
+        // window is holding rather than the one it is about to.
+        const resuming = resumeJoined(joined.path);
         toast.success(joined.created ? "Joined. The round is yours to keep." : "Joined.");
         navigateToFlow(joined.path);
+        await resuming;
     } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not join that round");
     }

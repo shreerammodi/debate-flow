@@ -23,6 +23,7 @@ import { askToRejoin, type RejoinAsk } from "@/lib/store/useRejoinDialog";
 import { projectDoc } from "./doc";
 import { collabLive, collabSettings, type CollabSettings } from "./enabled";
 import { helloFrom } from "./handshake";
+import { markJoined } from "./joined";
 import { broadcastName } from "./machineName";
 import { merge } from "./merge";
 import type { PeerLinkFactory, WireMessage } from "./peerLink";
@@ -186,6 +187,10 @@ export async function joinRound(deps: JoinDeps): Promise<JoinResult | null> {
         // And where the host was, for the same reason: the session that opens
         // this file re-dials by EndpointId, which routes across a room only.
         if (ticket?.relayUrl) rememberRoundRelay(doc.roundId, host.endpointId, ticket.relayUrl);
+
+        // The debater asked for this round, so its session is owed whatever
+        // Listen for invites says.
+        markJoined(doc.roundId);
 
         if (existing)
             return {

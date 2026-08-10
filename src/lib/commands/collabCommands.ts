@@ -14,7 +14,7 @@
 
 import { contactName, type Contacts } from "@/lib/collab/contacts";
 import { collabLive, collabSettings } from "@/lib/collab/enabled";
-import { inviteContact, joinByCode, startPairing } from "@/lib/collab/runtime";
+import { inviteContact, joinByCode, resumeJoined, startPairing } from "@/lib/collab/runtime";
 import { currentSession, endSession } from "@/lib/collab/runtime";
 import type { Role } from "@/lib/collab/types";
 import { useFlowStore } from "@/lib/store/useFlowStore";
@@ -89,8 +89,12 @@ export async function runJoin(deps: CollabCommandDeps): Promise<void> {
             if (!collabLive()) deps.fail("Turn on shared editing in Settings first");
             return;
         }
+        // Started before the route is asked, so the check reads the flow this
+        // window is holding rather than the one it is about to.
+        const resuming = resumeJoined(joined.path);
         deps.notify(joined.created ? "Joined. The round is yours to keep." : "Joined.");
         deps.openFlow(joined.path);
+        await resuming;
     } catch (err) {
         deps.fail(err instanceof Error ? err.message : "Could not join that round");
     }

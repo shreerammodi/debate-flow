@@ -12,6 +12,7 @@
 
 import { toast } from "sonner";
 
+import { errorMessage } from "@/lib/errorMessage";
 import { editingHere, setClaimHandler, setCursorHandler } from "@/lib/grid/presenceBridge";
 import { applyRemote } from "@/lib/grid/remoteBridge";
 import type { FlowRound } from "@/lib/model/flow";
@@ -32,6 +33,7 @@ import { announceInvite } from "./inbox";
 import type { InviteNotice } from "./invite";
 import { startInviteListener, type InviteListener } from "./inviteListener";
 import { joinRound, type JoinResult } from "./join";
+import { joinedHere } from "./joined";
 import { lossMessage } from "./lossReport";
 import { broadcastName } from "./machineName";
 import { merge, type DroppedCell } from "./merge";
@@ -355,7 +357,9 @@ export async function startForRound(
  * mint the local network prompt during startup and put this install back on
  * the LAN, on an identity every past peer holds, for a round the debater only
  * meant to read. With it off, Share this round is what starts the session,
- * and it dials the same remembered peers on the way up.
+ * and it dials the same remembered peers on the way up. A round this window
+ * joined by hand is the exception, because typing a code or pressing Join is
+ * the debater asking for that round to be live now.
  *
  * Called for every flow that opens, including the ones nobody shares, because
  * this is also where a session for the round being left is ended. A session
@@ -366,7 +370,7 @@ export async function startForRound(
  */
 export async function resumeSession(round: FlowRound): Promise<CollabSession | null> {
     if (session && session.roundId !== round.id) await endSession();
-    if (!collabSettings().listen) return null;
+    if (!collabSettings().listen && !joinedHere(round.id)) return null;
     const peers = knownRoundPeers(round.id);
     if (peers.length === 0) return null;
     return startForRound(round, peers);
@@ -467,6 +471,27 @@ export async function joinByCode(code: string): Promise<JoinResult | null> {
         createLink: createPeerLinkFor,
         appVersion: await getCurrentVersion(),
     });
+}
+
+/**
+ * Brings a round that was just joined online when it is the flow already open.
+ *
+ * Routing to the file is what starts a session, and a join whose round this
+ * window already holds routes to the URL it is already on: nothing loads, so
+ * nothing resumes, and the debater is left watching a flow that never
+ * connects while their partner's invitation lands in the corner instead.
+ *
+ * Reports rather than throws. The join itself has landed by the time this
+ * runs, and a round nobody can be reached about is still a round to flow.
+ */
+export async function resumeJoined(path: string): Promise<void> {
+    const store = useFlowStore.getState();
+    if (store.docPath !== path || !store.round) return;
+    try {
+        await resumeSession(store.round);
+    } catch (err) {
+        toast.error(errorMessage(err, "Could not reconnect to your partners"));
+    }
 }
 
 /** Tells the live session an edit landed. A no-op with no session. */

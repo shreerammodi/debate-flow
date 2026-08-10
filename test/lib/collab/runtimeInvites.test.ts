@@ -38,6 +38,7 @@ vi.mock("@/lib/collab/peerLink", async (importOriginal) => ({
 import { seedDoc } from "@/lib/collab/doc";
 import { hashText } from "@/lib/collab/hash";
 import type { InviteNotice } from "@/lib/collab/invite";
+import { forgetJoined, markJoined } from "@/lib/collab/joined";
 import { createMemoryNet, memoryRelay } from "@/lib/collab/peerLinkMemory";
 import { persistReplica, recoverReplica } from "@/lib/collab/persist";
 import { clearReplica, getReplica } from "@/lib/collab/replica";
@@ -55,6 +56,7 @@ import {
     endSession,
     inviteContact,
     notifyLocalChange,
+    resumeJoined,
     resumeSession,
     shutdownCollab,
     startForRound,
@@ -87,6 +89,7 @@ beforeEach(async () => {
     await endSession();
     net.reset();
     corners.length = 0;
+    forgetJoined();
     clearReplica();
     useCollabStore.getState().reset();
     useFlowStore.setState({
@@ -588,6 +591,16 @@ describe("resuming a round that was shared before", () => {
         expect(net.calls).toEqual([]);
     });
 
+    // A code typed by hand and a Join pressed on an invitation are the debater
+    // asking for this round to be live now, which is a different question from
+    // whether ebb may sit on the network with no round in hand.
+    it("binds and dials for a round this window joined, with Listen for invites off", async () => {
+        useFlowStore.setState({ collabListenEnabled: false });
+        markJoined(round.id);
+        expect(await resumeSession(round)).not.toBeNull();
+        expect(net.calls.filter((c) => c.op === "dial").map((c) => c.endpointId)).toEqual(["sam"]);
+    });
+
     // The replica is a singleton, so the round being left has to lose its
     // session whatever the switches say - that is why the guard sits after it.
     it("still ends the session for the round being left while Listen for invites is off", async () => {
@@ -598,6 +611,34 @@ describe("resuming a round that was shared before", () => {
 
         expect(currentSession()).toBeNull();
         expect(useCollabStore.getState().status).toBe("off");
+    });
+});
+
+/**
+ * A join whose round is already the open flow routes to the URL this window is
+ * already on, so nothing loads and nothing resumes. Without this the debater
+ * watches a flow that never connects, while the host's redial arrives in the
+ * corner as an invitation to the round they are looking at.
+ */
+describe("joining a round that is already the open flow", () => {
+    const PATH = "/flows/round-3-harvard.ebb";
+
+    beforeEach(() => {
+        useFlowStore.setState({ round, docPath: PATH });
+        rememberRoundPeers(round.id, ["sam"]);
+        markJoined(round.id);
+    });
+
+    it("dials the host with no route change to carry it", async () => {
+        await resumeJoined(PATH);
+        expect(currentSession()).not.toBeNull();
+        expect(net.calls.filter((c) => c.op === "dial").map((c) => c.endpointId)).toEqual(["sam"]);
+    });
+
+    it("leaves the open flow alone when the join landed in another file", async () => {
+        await resumeJoined("/flows/round-1-yale.ebb");
+        expect(currentSession()).toBeNull();
+        expect(net.calls.filter((c) => c.op === "dial")).toEqual([]);
     });
 });
 

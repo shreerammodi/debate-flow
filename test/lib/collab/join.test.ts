@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { seedDoc } from "@/lib/collab/doc";
 import { joinRound } from "@/lib/collab/join";
+import { forgetJoined, joinedHere } from "@/lib/collab/joined";
 import { merge } from "@/lib/collab/merge";
 import { applyOp, type OpContext } from "@/lib/collab/ops";
 import type { PeerLinkFactory, WireMessage } from "@/lib/collab/peerLink";
@@ -83,6 +84,7 @@ beforeEach(async () => {
     setSidecarFs(sidecar);
     net.reset();
     forgetRoundPeers();
+    forgetJoined();
     useFlowStore.setState({
         collabEnabled: true,
         collabRelayEnabled: true,
@@ -109,6 +111,16 @@ describe("joinRound", () => {
         const written = await fs.readFlow(result!.path);
         expect(written).not.toBeNull();
         expect(written!.text).toContain("perm");
+    });
+
+    // The switch that keeps ebb off the network between rounds does not speak
+    // to a round the debater just asked for: without this mark the file opens
+    // and never connects to the host that handed it over.
+    it("marks the round as one this window joined", async () => {
+        const ticket = await hostWithTicket();
+        expect(joinedHere(shared.id)).toBe(false);
+        await joinRound({ ticket, createLink: net.create("sam"), appVersion: "0.11.0", fs });
+        expect(joinedHere(shared.id)).toBe(true);
     });
 
     // The host hears this before anything else, and offers it as the contact
