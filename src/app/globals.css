@@ -402,13 +402,22 @@ html .ht-theme-main {
 .handsontable tbody tr td.ebb-peer.ebb-locked {
     outline-style: dashed;
 }
-.handsontable tbody tr td.ebb-peer[data-peer]::after {
+/* Handsontable gives the first row's first cell, while it is empty, an ::after
+   spacer of its own - `tbody tr:first-of-type td:first-child:empty::after`,
+   content "" and a min-height - on the very element the badge draws from. Four
+   class-level selectors beat a plain `.ebb-peer[data-peer]`, so cell (0,0)
+   would wear a blank orange square instead of the partner's initial. The theme
+   scope plus the repeated attribute outrank it, and min-height is reset
+   because it is a property of its own that would otherwise survive and
+   stretch the badge. */
+.ht-theme-main .handsontable tbody tr td.ebb-peer[data-peer][data-peer]::after {
     content: attr(data-peer);
     position: absolute;
     top: 0;
     right: 0;
     z-index: 1;
     min-width: 13px;
+    min-height: 0;
     height: 13px;
     padding: 0 2px;
     box-sizing: border-box;

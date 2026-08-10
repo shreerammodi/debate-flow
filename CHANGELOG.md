@@ -214,6 +214,10 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   reopening the flow later did not reconnect them. Sharing now waits for the
   connection to be ready and says so on the sheet if it cannot be, rather than
   handing over something that names nowhere.
+- A partner parked on the first cell of a sheet's first column shows their
+  initial there like anywhere else. The badge was a blank orange square:
+  Handsontable gives that one cell, while it is empty, a spacer of its own
+  drawn on the same corner, and it outranked the badge.
 - **The session corner says who is missing and why.** It read "Connecting, no
   peers" whether a partner had not opened the round yet or could not be reached
   at all. It now names them - "Waiting for Sam to open this round", or "Can't
