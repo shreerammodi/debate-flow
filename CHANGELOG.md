@@ -7,6 +7,12 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-10
+
+ebb's first stable release. A flow is a file on your own disk, the app is
+keyboard-first from the start screen to the last cell, and two debaters can
+flow one round together without a server of ours in the middle.
+
 ### Added
 
 - **Select a range of sheets and move it.** Shift+click a sidebar row to paint
@@ -140,9 +146,6 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   its shortcut. It acts on the cell you clicked, which in split view can sit
   in the pane that does not hold the cursor. A cell you typed yourself, and
   every cell while the integration is switched off, shows the row items alone.
-- Right-clicking a flow card on the dashboard now opens ebb's own menu instead
-  of the browser's: View details, Export to JSON or Excel, and Delete, the same
-  actions as the card's three-dot menu.
 
 ### Changed
 
@@ -186,10 +189,10 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 - **The dashboard is now a start screen.** No list of flows to manage: New
   flow, Open, and Settings, then the six flows you were last in, then links to
   the docs, the repo, and its author. Every row answers to one key - `n`, `o`,
-  `s`, or `1` through `6` - with `j` and `k` to walk them. The wordmark's caret
-  blinks like the one on ebb.smodi.net.
-- The File menu gained New Flow, Open, Save, Save As, Show in Finder, and
-  Close Flow, above the sheet items that were already there.
+  `j`, `s`, or `1` through `6` - with `k` and the arrows to walk them. The
+  wordmark's caret blinks like the one on ebb.smodi.net.
+- The File menu gained New Flow, Open, Join Round, Save, Save As, Show in
+  Finder, and Close Flow, above the sheet items that were already there.
 - Existing flows are no longer moved out of the old storage on their own. The
   first launch asks, shows where they would land, and lets you pick a different
   folder before anything is written. Declining leaves them untouched and asks
@@ -221,8 +224,8 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
   first-speaker submenu), or Lincoln-Douglas. Every flow holds both sides, so
   the choice only decided which sheet opened first, and the first speech
   already decides that. Rounds you already have keep all of their sheets. The
-  Aff/Neg/Judge pill is gone from the dashboard cards, and exported filenames
-  drop the role segment (`debate-flow-20260725.xlsx`).
+  Aff/Neg/Judge pill is gone, and exported filenames drop the role segment
+  (`debate-flow-20260725.xlsx`).
 
 ### Fixed
 
@@ -727,7 +730,8 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 - Initial tagged release.
 
-[Unreleased]: https://github.com/shreerammodi/ebb/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/shreerammodi/ebb/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/shreerammodi/ebb/compare/v0.7.2...v1.0.0
 [0.7.2]: https://github.com/shreerammodi/ebb/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/shreerammodi/ebb/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/shreerammodi/ebb/compare/v0.6.1...v0.7.0
