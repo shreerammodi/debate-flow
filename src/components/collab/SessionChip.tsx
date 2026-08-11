@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { disconnectPeer, endSession } from "@/lib/collab/runtime";
 import { chipSummary, pendingLine } from "@/lib/collab/statusLine";
 import { type CollabPeerView, useCollabStore } from "@/lib/store/useCollabStore";
-import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
+import { useReleasePopupOnUnmount, useSidebarPopup } from "@/lib/store/useSidebarPopup";
 import { cn } from "@/lib/utils";
 
 /** What each role may do, in the words the chip shows a debater. */
@@ -40,6 +40,7 @@ export default function SessionChip({ className }: SessionChipProps) {
     const showPopup = useSidebarPopup((s) => s.show);
     const expanded = openPopup === "session";
     const panelId = useId();
+    useReleasePopupOnUnmount("session");
 
     // A session that ends closes the panel, so the next one opens collapsed.
     useEffect(() => {

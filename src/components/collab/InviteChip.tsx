@@ -8,7 +8,7 @@ import { acceptInvite } from "@/lib/collab/inbox";
 import { inviteToastFor } from "@/lib/collab/invite";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-import { useSidebarPopup } from "@/lib/store/useSidebarPopup";
+import { useReleasePopupOnUnmount, useSidebarPopup } from "@/lib/store/useSidebarPopup";
 import { cn } from "@/lib/utils";
 
 export interface InviteChipProps {
@@ -35,6 +35,7 @@ export default function InviteChip({ className }: InviteChipProps) {
     const showPopup = useSidebarPopup((s) => s.show);
     const expanded = openPopup === "invites";
     const panelId = useId();
+    useReleasePopupOnUnmount("invites");
 
     // The last invitation leaving closes the panel, so the next one opens
     // collapsed.

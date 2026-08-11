@@ -102,6 +102,21 @@ describe("InviteChip", () => {
         expect(screen.getByTestId("collab-invite-chip")).toBeInTheDocument();
     });
 
+    // The panel sits in the sidebar's corner, so a flow that closes takes it
+    // away: the next round's chip is collapsed, not expanded from last time.
+    it("releases the corner when the chip goes", async () => {
+        useCollabStore.getState().pushInvite(HARVARD);
+        const { unmount } = render(<InviteChip />);
+        await userEvent.click(screen.getByTestId("collab-invite-chip"));
+        expect(screen.getByTestId("collab-invite-list")).toBeInTheDocument();
+
+        unmount();
+        expect(useSidebarPopup.getState().open).toBeNull();
+
+        render(<InviteChip />);
+        expect(screen.queryByTestId("collab-invite-list")).toBeNull();
+    });
+
     // Keyboard-first is the product value; a mouse-only invitation surface
     // would be the one screen a debater has to reach for the trackpad for.
     it("is reachable and joinable from the keyboard alone", async () => {

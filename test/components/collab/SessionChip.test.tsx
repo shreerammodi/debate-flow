@@ -68,6 +68,22 @@ describe("SessionChip", () => {
         expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
     });
 
+    // The panel sits in the sidebar's corner, so a flow that closes takes it
+    // away: the next round's chip is collapsed, not expanded from last time.
+    it("releases the corner when the chip goes", async () => {
+        const user = userEvent.setup();
+        live();
+        const { unmount } = render(<SessionChip />);
+        await user.click(screen.getByTestId("collab-chip"));
+        expect(screen.getByTestId("collab-chip-peers")).toBeInTheDocument();
+
+        unmount();
+        expect(useSidebarPopup.getState().open).toBeNull();
+
+        render(<SessionChip />);
+        expect(screen.queryByTestId("collab-chip-peers")).toBeNull();
+    });
+
     it("counts the partners who are here while collapsed", () => {
         live();
         render(<SessionChip />);
