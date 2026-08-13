@@ -50,7 +50,9 @@ describe("fillWorkbook", () => {
         expect(header.value).toBe("1AC");
         expect(header.font).toMatchObject({ bold: true, color: { argb: "FF1D4ED8" } });
         expect(header.alignment).toMatchObject({ horizontal: "center" });
-        expect(flow.sheetProtection?.sheet).toBeFalsy();
+        // exceljs types the protect() call but not the state it leaves behind.
+        const protection = flow as unknown as { sheetProtection?: { sheet?: boolean } };
+        expect(protection.sheetProtection?.sheet).toBeFalsy();
         expect(flow.properties.tabColor).toEqual({ argb: "FF1D4ED8" });
         expect(wb.getWorksheet("CX")!.properties.tabColor).toBeUndefined();
     });

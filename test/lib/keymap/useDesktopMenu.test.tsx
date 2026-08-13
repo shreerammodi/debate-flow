@@ -7,7 +7,7 @@ import { useFlowStore } from "@/lib/store/useFlowStore";
 
 const listeners = new Map<string, (e: { payload: string }) => void>();
 const unlisten = vi.fn();
-const invoke = vi.fn(() => Promise.resolve());
+const invoke = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("@tauri-apps/api/event", () => ({
     listen: vi.fn((event: string, handler: (e: { payload: string }) => void) => {

@@ -12,8 +12,8 @@ const relaunchMock = vi.mocked(relaunch);
 
 describe("isDesktop", () => {
     afterEach(() => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
-        delete (window as Record<string, unknown>).__TAURI__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI__;
     });
 
     it("is false in a plain browser (no Tauri globals)", () => {
@@ -21,17 +21,17 @@ describe("isDesktop", () => {
     });
 
     it("is true when the Tauri internals global is present", () => {
-        (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
         expect(isDesktop()).toBe(true);
     });
 });
 
 describe("fetchManifest", () => {
     beforeEach(() => {
-        (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     });
     afterEach(() => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         vi.clearAllMocks();
     });
 
@@ -64,7 +64,7 @@ describe("fetchManifest", () => {
     });
 
     it("returns null off-desktop without hitting the updater", async () => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         expect(await fetchManifest()).toBeNull();
         expect(checkMock).not.toHaveBeenCalled();
     });
@@ -80,10 +80,10 @@ function makeUpdate(version: string) {
 
 describe("downloadUpdate", () => {
     beforeEach(() => {
-        (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     });
     afterEach(() => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         vi.clearAllMocks();
     });
 
@@ -109,7 +109,7 @@ describe("downloadUpdate", () => {
     });
 
     it("returns null off-desktop without hitting the updater", async () => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         expect(await downloadUpdate()).toBeNull();
         expect(checkMock).not.toHaveBeenCalled();
     });
@@ -117,10 +117,10 @@ describe("downloadUpdate", () => {
 
 describe("installAndRelaunch", () => {
     beforeEach(() => {
-        (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     });
     afterEach(() => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         vi.clearAllMocks();
     });
 
@@ -147,7 +147,7 @@ describe("installAndRelaunch", () => {
     });
 
     it("is a no-op off-desktop", async () => {
-        delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+        delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
         const staged = { version: "0.3.5", install: vi.fn() };
         await installAndRelaunch(staged);
         expect(staged.install).not.toHaveBeenCalled();
