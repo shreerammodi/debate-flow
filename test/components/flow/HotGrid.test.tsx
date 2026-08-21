@@ -386,6 +386,101 @@ describe("speech alignment", () => {
 });
 
 /**
+ * Ctrl/Meta+Arrow is the grid's Excel-style jump until a debater binds a
+ * command to it. Handsontable's grid context answers the same chord, so the
+ * pane has to run the command itself and swallow the keystroke: a command
+ * left to the window keymap would fire beside a cursor that had jumped.
+ */
+describe("a rebound Ctrl/Meta+Arrow", () => {
+    const round = makeFlowRound();
+    const affSheet = round.sheets[1];
+    const negSheet = makeFlowSheet({ title: "2.", group: "neg", order: 1 });
+    round.sheets.push(negSheet);
+
+    afterEach(() => {
+        useFlowStore.setState({
+            round: null,
+            activeSheetId: null,
+            splitSheetId: null,
+            alignSpeeches: false,
+            keymapOverrides: {},
+        });
+    });
+
+    async function mount(overrides: Record<string, string>, sheetId = affSheet.id) {
+        affSheet.data = [["kritik", "perm", "extend"]];
+        negSheet.data = [["link", "impact", "block"]];
+        useFlowStore.setState({
+            round,
+            activeSheetId: sheetId,
+            splitSheetId: null,
+            alignSpeeches: sheetId === negSheet.id,
+            keymapOverrides: overrides,
+        });
+        render(<HotGrid sheetId={sheetId} pane={1} />);
+        return await waitFor(() => {
+            const h = getActiveHot();
+            expect(h).not.toBeNull();
+            return h!;
+        });
+    }
+
+    /** A keydown through Handsontable's own recorder, as a real one arrives. */
+    function press(hot: Handsontable, key: string, mods: Partial<KeyboardEventInit> = {}) {
+        hot.rootElement.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }),
+        );
+    }
+
+    it("runs the bound command and leaves the cursor where it was", async () => {
+        const hot = await mount({ "sheet.next": "Ctrl+ArrowRight" });
+        hot.selectCell(0, 0);
+        press(hot, "ArrowRight", { ctrlKey: true });
+        expect(useFlowStore.getState().activeSheetId).toBe(negSheet.id);
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(0);
+    });
+
+    it("keeps the chord off the window, so the command fires once", async () => {
+        const hot = await mount({ "sheet.next": "Ctrl+ArrowRight" });
+        hot.selectCell(0, 0);
+        let sawIt = 0;
+        const count = () => {
+            sawIt += 1;
+        };
+        window.addEventListener("keydown", count);
+        press(hot, "ArrowRight", { ctrlKey: true });
+        window.removeEventListener("keydown", count);
+        expect(sawIt).toBe(0);
+    });
+
+    it("runs a Shift extend's binding rather than extending the range", async () => {
+        const hot = await mount({ "sheet.next": "Ctrl+Shift+ArrowRight" });
+        hot.selectCell(0, 0);
+        press(hot, "ArrowRight", { ctrlKey: true, shiftKey: true });
+        expect(useFlowStore.getState().activeSheetId).toBe(negSheet.id);
+        expect(hot.getSelectedRangeLast()!.to.col).toBe(0);
+    });
+
+    it("still jumps when the chord is bound to nothing", async () => {
+        const hot = await mount({});
+        hot.selectCell(0, 0);
+        press(hot, "ArrowRight", { ctrlKey: true });
+        expect(useFlowStore.getState().activeSheetId).toBe(affSheet.id);
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(2);
+    });
+
+    it("runs the binding at the sheet's own first column too", async () => {
+        // A leftward jump has nowhere to go from the column the pad ends at,
+        // where the spacer guard would otherwise swallow the chord whole.
+        const hot = await mount({ "sheet.prev": "Ctrl+ArrowLeft" }, negSheet.id);
+        hot.selectCell(0, 1);
+        press(hot, "ArrowLeft", { ctrlKey: true });
+        expect(useFlowStore.getState().activeSheetId).toBe(affSheet.id);
+        expect(hot.getSelectedRangeLast()!.highlight.col).toBe(1);
+    });
+});
+
+/**
  * Stepping between sheets carries the platform modifier so it reaches the app
  * from inside an open cell editor. Arriving mid-word, the switch has to take
  * the word with it: the editor is closed against the sheet being left, before

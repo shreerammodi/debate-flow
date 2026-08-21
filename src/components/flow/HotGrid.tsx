@@ -117,6 +117,25 @@ const EDIT_KEYS: Record<string, true> = { Backspace: true, Delete: true, F2: tru
 const LOCK_HINT_MS = 2_000;
 
 /**
+ * Runs the command this chord is bound to and reports whether one existed.
+ * What to swallow is the caller's business: a grid answer this displaces is
+ * a different one for a bare key than for a Ctrl/Meta chord.
+ */
+function runBoundCommand(e: KeyboardEvent): boolean {
+    const commandId = resolveCommand(effectiveKeymap(useFlowStore.getState().keymapOverrides), {
+        key: e.key,
+        code: e.code,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+    });
+    if (!commandId) return false;
+    executeCommand(commandId);
+    return true;
+}
+
+/**
  * Excel-style Cmd/Ctrl+Arrow: from a filled cell adjacent to a filled cell,
  * stop at the end of that contiguous run; otherwise skip empties and land on
  * the next filled cell, or the sheet edge if none remains. minCol is the
@@ -1067,6 +1086,23 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
                 return false;
             }
 
+            // A Ctrl/Meta+Arrow bound to a command is that command, not a
+            // cursor move. Handsontable's grid context answers this chord with
+            // a jump to the far edge and the pane answers it with the
+            // Excel-style jump below, so a rebind that only reached
+            // useKeymap's window listener would fire beside a cursor that had
+            // already left. Resolving it here runs the command alone;
+            // stopImmediate is what keeps that listener from firing it a
+            // second time. This sits above the spacer guards so a binding
+            // still runs at the sheet's own first column, where a leftward
+            // jump is otherwise swallowed. Arrows only: every other Ctrl/Meta
+            // chord passes the grid untouched and the window keymap owns it.
+            if ((e.metaKey || e.ctrlKey) && ARROW_DELTAS[e.key] && runBoundCommand(e)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return false;
+            }
+
             // Nothing may leave the cursor or a range's edge on a spacer. A
             // spacer holds no cell of this sheet, so a cursor parked there is
             // refused every keystroke with no lock hint to say why, and an
@@ -1138,25 +1174,11 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
             // cell (e.g. Alt+\ split-toggle, or the bare [ ] ? sheet keys). Run the
             // command here and stop the grid touching the cell; stopImmediate keeps
             // useKeymap from firing it a second time. Ctrl/Meta chords never
-            // fast-edit, so the window keymap owns them.
-            if (!e.metaKey && !e.ctrlKey) {
-                const commandId = resolveCommand(
-                    effectiveKeymap(useFlowStore.getState().keymapOverrides),
-                    {
-                        key: e.key,
-                        code: e.code,
-                        metaKey: false,
-                        ctrlKey: false,
-                        altKey: e.altKey,
-                        shiftKey: e.shiftKey,
-                    },
-                );
-                if (commandId) {
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    executeCommand(commandId);
-                    return;
-                }
+            // fast-edit, so the window keymap owns them, arrows aside.
+            if (!e.metaKey && !e.ctrlKey && runBoundCommand(e)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
             }
 
             // A cell a peer holds refuses the keystroke and says who has it.

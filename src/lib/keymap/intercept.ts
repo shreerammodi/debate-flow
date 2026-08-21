@@ -21,7 +21,8 @@ import { eventToChord } from "./resolve";
 /**
  * Native editing chords that must pass through to the browser when the user
  * is typing in a text box. These are the chords that the OS reserves for
- * text editing: select-all, copy, paste, cut, undo, delete word/line back.
+ * text editing: select-all, copy, paste, cut, undo, delete word/line back,
+ * and the arrow jumps that walk the caret to a line or document boundary.
  *
  * On macOS these are Meta+; on Windows/Linux they are Ctrl+.
  *
@@ -39,16 +40,26 @@ const NATIVE_EDITING_KEYS = [
     "Backspace", // delete to line start (mac) / delete previous word (win/linux)
 ] as const;
 
+/**
+ * Arrow chords the caret owns inside a text box: the plain form walks to the
+ * line's end (mac) or the document's (win/linux), and the Shift form extends
+ * the selection to the same boundary. Over cells the grid and the keymap own
+ * them, so a command bound to one stops at the edge of a field.
+ */
+const NATIVE_EDITING_ARROWS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
+
 let cachedNativeEditingChords: Set<string> | null = null;
 
 /**
  * Returns the set of native editing chords for the current platform.
- * Includes both Meta+Z (undo) and Meta+Shift+Z / Meta+Z (redo, shift variant).
+ * Includes both Meta+Z (undo) and Meta+Shift+Z / Meta+Z (redo, shift variant),
+ * and the Shift+ form of each arrow, which extends the selection to the same
+ * boundary the plain chord moves the caret to.
  */
 function nativeEditingChords(): Set<string> {
     const mod = isMacPlatform() ? "Meta" : "Ctrl";
     const chords = new Set<string>();
-    for (const key of NATIVE_EDITING_KEYS) {
+    for (const key of [...NATIVE_EDITING_KEYS, ...NATIVE_EDITING_ARROWS]) {
         chords.add(`${mod}+${key}`);
     }
     // Redo: Meta+Shift+Z on Mac, Ctrl+Shift+Z on Windows/Linux.
@@ -56,12 +67,16 @@ function nativeEditingChords(): Set<string> {
     // so the redo chord is Meta+Z / Ctrl+Z (uppercase), matching eventToChord output.
     // We don't add a Shift+ prefix here.
     chords.add(`${mod}+Z`);
+    for (const arrow of NATIVE_EDITING_ARROWS) {
+        chords.add(`${mod}+Shift+${arrow}`);
+    }
     return chords;
 }
 
 /**
  * Returns true if the given key event is a native editing chord
- * (select-all, copy, paste, cut, undo, redo, delete word/line back) on the current platform.
+ * (select-all, copy, paste, cut, undo, redo, delete word/line back, caret
+ * jump) on the current platform.
  * Does NOT consider focus; the caller must check isTextEntryFocus separately.
  */
 export function isNativeEditingChord(e: KeyboardEvent): boolean {

@@ -319,6 +319,38 @@ describe("shouldIntercept", () => {
         expect(shouldIntercept(e)).toBe(true);
     });
 
+    // --- Caret jumps ---
+
+    it("does NOT intercept Cmd+Left inside a text input (native caret jump)", () => {
+        const input = document.createElement("input");
+        const e = makeKeyEvent({
+            key: "ArrowLeft",
+            [mod === "Meta" ? "metaKey" : "ctrlKey"]: true,
+        });
+        Object.defineProperty(e, "target", { value: input });
+        expect(shouldIntercept(e)).toBe(false);
+    });
+
+    it("does NOT intercept Cmd+Shift+Left inside a text input (native extend)", () => {
+        const input = document.createElement("input");
+        const e = makeKeyEvent({
+            key: "ArrowLeft",
+            shiftKey: true,
+            [mod === "Meta" ? "metaKey" : "ctrlKey"]: true,
+        });
+        Object.defineProperty(e, "target", { value: input });
+        expect(shouldIntercept(e)).toBe(false);
+    });
+
+    it("DOES intercept Cmd+Left outside a text input (history back)", () => {
+        const e = makeKeyEvent({
+            key: "ArrowLeft",
+            [mod === "Meta" ? "metaKey" : "ctrlKey"]: true,
+        });
+        Object.defineProperty(e, "target", { value: document.body });
+        expect(shouldIntercept(e)).toBe(true);
+    });
+
     // --- Other reserved chords ---
 
     it("intercepts Cmd+N / Ctrl+N regardless of focus (new neg)", () => {

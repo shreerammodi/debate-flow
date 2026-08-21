@@ -266,6 +266,17 @@ edge case; otherwise leave the code bare.
   guard resolves such chords (bare keys, Alt+key) against the keymap and runs
   them itself so the grid never touches the cell; keep new printable bindings
   flowing through that path, not around it.
+- **Ctrl/Meta+Arrow is the grid's, until a debater binds it.** The window
+  keymap owns every other Ctrl/Meta chord over the grid, but these four are
+  answered twice: Handsontable's grid context jumps to the far edge, and
+  `HotGrid`'s own `smartJump` does the Excel-style walk. A binding left to
+  `useKeymap` would run beside a cursor that had already left, so
+  `beforeKeyDown` resolves the chord itself and swallows it, above the spacer
+  guards so a leftward jump at the sheet's own first column still runs the
+  command. In a text box all four stay native caret movement, which is why
+  they sit in `intercept.ts`'s native editing chords beside Meta+A and Meta+Z;
+  `reserved.ts` carries the horizontal pair, since Cmd+Left and Cmd+Right are
+  the browser's history back and forward.
 - **`Meta+O` is Insert Cell, not Open.** Both `Meta+o` and `Meta+O` belong to
   the cell and row insert commands a debater uses mid-speech, so `flow.open`
   carries no editor chord and no menu accelerator; the start screen binds a

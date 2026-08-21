@@ -55,6 +55,15 @@ const RESERVED_KEYS = [
     // entries are for.
     "{",
     "}",
+    // -- Cursor jumps --------------------------------------------------------
+    // Cmd+Left and Cmd+Right are the browser's history back and forward, so
+    // a rebind onto either would leave the flow on the web build; the grid's
+    // own Excel-style jump lives on them by default. Their vertical pair
+    // needs no entry: nothing in the browser answers Cmd+Up or Cmd+Down, and
+    // a chord the grid handles is a chord the app already won. In a text box
+    // all four stay native caret movement - see intercept.ts.
+    "ArrowLeft",
+    "ArrowRight",
     // -- Sheet jumps -----------------------------------------------------------
     "1",
     "2",

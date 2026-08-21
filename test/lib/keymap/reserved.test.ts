@@ -122,4 +122,15 @@ describe("reservedChords", () => {
         expect(reservedChords().has("Ctrl+{")).toBe(true);
         expect(reservedChords().has("Ctrl+}")).toBe(true);
     });
+
+    it("reserves the platform modifier+left and right (history back / forward)", () => {
+        // Cmd+Left and Cmd+Right are the browser's back and forward, so a
+        // command bound to either would take the debater off the flow.
+        setPlatform("MacIntel");
+        expect(reservedChords().has("Meta+ArrowLeft")).toBe(true);
+        expect(reservedChords().has("Meta+ArrowRight")).toBe(true);
+        setPlatform("Win32");
+        expect(reservedChords().has("Ctrl+ArrowLeft")).toBe(true);
+        expect(reservedChords().has("Ctrl+ArrowRight")).toBe(true);
+    });
 });
