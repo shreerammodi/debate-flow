@@ -66,6 +66,13 @@ describe("loadRound", () => {
         expect(window.localStorage.getItem("ebb-display-settings")).toContain('"insertPaste":true');
     });
 
+    it("persists appendEdit through setAppendEdit, defaulting on", () => {
+        expect(useFlowStore.getState().appendEdit).toBe(true);
+        useFlowStore.getState().setAppendEdit(false);
+        expect(useFlowStore.getState().appendEdit).toBe(false);
+        expect(window.localStorage.getItem("ebb-display-settings")).toContain('"appendEdit":false');
+    });
+
     it("persists scrollZoom through setScrollZoom, defaulting on", () => {
         expect(useFlowStore.getState().scrollZoom).toBe(true);
         useFlowStore.getState().setScrollZoom(false);

@@ -343,6 +343,18 @@ describe("SettingsPanel", () => {
         expect(toggle).toBeChecked();
     });
 
+    it("toggles append mode from the Editor category, on by default", async () => {
+        const user = userEvent.setup();
+        renderSettingsPanel();
+        await user.click(screen.getByTestId("settings-nav-editor"));
+
+        const toggle = screen.getByTestId("append-edit-toggle");
+        expect(toggle).toBeChecked();
+        await user.click(toggle);
+        expect(useFlowStore.getState().appendEdit).toBe(false);
+        expect(toggle).not.toBeChecked();
+    });
+
     describe("CardMirror section", () => {
         it("hides the text type picker until the integration is switched on", async () => {
             const user = userEvent.setup();

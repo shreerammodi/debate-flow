@@ -61,7 +61,7 @@ import {
     nudge,
     revertMove,
 } from "@/lib/grid/moveSession";
-import { disableTextAssistance } from "@/lib/grid/plainTextInput";
+import { disableTextAssistance, seedAppend } from "@/lib/grid/plainTextInput";
 import {
     claimCell,
     claimCursor,
@@ -880,10 +880,22 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // has no hook for an editor closing, so the release is the session asking
     // `editingHere` rather than anything fired from here.
     const afterBeginEditing = useCallback((row: number, col: number) => {
-        const input = hotRef.current?.hotInstance?.rootElement.querySelector<HTMLTextAreaElement>(
+        const hot = hotRef.current?.hotInstance;
+        const input = hot?.rootElement.querySelector<HTMLTextAreaElement>(
             "textarea.handsontableInput",
         );
         if (input) disableTextAssistance(input);
+        // Append mode: a printable key opens a "fast edit", which Handsontable
+        // starts from an empty box so the character wipes the cell. Seeding the
+        // box with the cell's own text turns that into an addition. Enter, F2
+        // and a double click open in full edit mode with the text already
+        // there, so they are left alone.
+        const editor = hot?.getActiveEditor();
+        if (hot && input && editor && !editor.isInFullEditMode()) {
+            const existing = hot.getDataAtCell(row, col);
+            if (useFlowStore.getState().appendEdit && typeof existing === "string" && existing)
+                seedAppend(input, existing);
+        }
         const sid = currentSheetIdRef.current;
         // A spacer is read-only, so this is a guard rather than a path.
         const at = toModelCol(gridCol(col), loadedSpacersRef.current);

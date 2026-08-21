@@ -38,6 +38,8 @@ export interface ConfigFileShape {
     rfd_open: boolean;
     rfd_vim: boolean;
     insert_paste: boolean;
+    /** Typing on a cell adds to its text instead of replacing it. */
+    append_edit: boolean;
     scroll_zoom: boolean;
     align_speeches: boolean;
     tooltips: boolean;
@@ -132,6 +134,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         rfd_open: s.rfdOpen,
         rfd_vim: s.rfdVim,
         insert_paste: s.insertPaste,
+        append_edit: s.appendEdit,
         scroll_zoom: s.scrollZoom,
         align_speeches: s.alignSpeeches,
         tooltips: s.tooltips,
@@ -190,6 +193,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         rfdOpen: bool(o.rfd_open, false),
         rfdVim: bool(o.rfd_vim, false),
         insertPaste: bool(o.insert_paste, false),
+        appendEdit: bool(o.append_edit, true),
         scrollZoom: bool(o.scroll_zoom, true),
         alignSpeeches: bool(o.align_speeches, false),
         tooltips: bool(o.tooltips, true),

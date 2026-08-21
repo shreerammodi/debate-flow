@@ -123,6 +123,8 @@ export default function SettingsPanel() {
     const setRfdVim = useFlowStore((s) => s.setRfdVim);
     const insertPaste = useFlowStore((s) => s.insertPaste);
     const setInsertPaste = useFlowStore((s) => s.setInsertPaste);
+    const appendEdit = useFlowStore((s) => s.appendEdit);
+    const setAppendEdit = useFlowStore((s) => s.setAppendEdit);
     const cardmirrorTextType = useFlowStore((s) => s.cardmirrorTextType);
     const setCardmirrorTextType = useFlowStore((s) => s.setCardmirrorTextType);
     const cardmirrorEnabled = useFlowStore((s) => s.cardmirrorEnabled);
@@ -534,6 +536,18 @@ export default function SettingsPanel() {
                                             onCheckedChange={setInsertPaste}
                                             data-testid="insert-paste-toggle"
                                             aria-label="Insert paste"
+                                        />
+                                    }
+                                />
+                                <SettingRow
+                                    title="Append mode"
+                                    description="With append mode on, typing on a cell that already has text adds to the end of it instead of writing over it."
+                                    control={
+                                        <Switch
+                                            checked={appendEdit}
+                                            onCheckedChange={setAppendEdit}
+                                            data-testid="append-edit-toggle"
+                                            aria-label="Append mode"
                                         />
                                     }
                                 />

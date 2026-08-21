@@ -16,6 +16,7 @@ const sample: AppConfig = {
     rfdOpen: false,
     rfdVim: true,
     insertPaste: true,
+    appendEdit: false,
     scrollZoom: false,
     alignSpeeches: true,
     tooltips: false,
@@ -51,6 +52,10 @@ describe("configFromState -> toAppConfig round-trip", () => {
 
     it("defaults speech alignment off when the file does not name it", () => {
         expect(toAppConfig({}).alignSpeeches).toBe(false);
+    });
+
+    it("defaults append mode on when the file does not name it", () => {
+        expect(toAppConfig({}).appendEdit).toBe(true);
     });
 
     it("falls back to the analytic text type when the file names an unknown one", () => {

@@ -98,6 +98,12 @@ export interface FlowState {
     rfdVim: boolean;
     /** Paste pushes the target columns' existing cells down instead of overwriting them. */
     insertPaste: boolean;
+    /**
+     * Typing on a selected cell adds to the text already there instead of
+     * replacing it. Off, the first character wipes the cell, which is
+     * Handsontable's own behavior.
+     */
+    appendEdit: boolean;
     /** Mod+scroll (and trackpad pinch) zooms the grid; off leaves the wheel alone. */
     scrollZoom: boolean;
     /**
@@ -210,6 +216,7 @@ export interface FlowActions {
     setDefaultGridZoom(zoom: number): void;
     setRfdVim(on: boolean): void;
     setInsertPaste(on: boolean): void;
+    setAppendEdit(on: boolean): void;
     setScrollZoom(on: boolean): void;
     setAlignSpeeches(on: boolean): void;
     setTooltips(on: boolean): void;
@@ -309,6 +316,7 @@ interface DisplaySettings {
     rfdOpen: boolean;
     rfdVim: boolean;
     insertPaste: boolean;
+    appendEdit: boolean;
     scrollZoom: boolean;
     alignSpeeches: boolean;
     tooltips: boolean;
@@ -344,6 +352,7 @@ function loadDisplaySettings(): DisplaySettings {
         rfdOpen: false,
         rfdVim: false,
         insertPaste: false,
+        appendEdit: true,
         scrollZoom: true,
         alignSpeeches: false,
         tooltips: true,
@@ -372,6 +381,7 @@ function loadDisplaySettings(): DisplaySettings {
             rfdOpen: bool(p.rfdOpen, false),
             rfdVim: bool(p.rfdVim, false),
             insertPaste: bool(p.insertPaste, false),
+            appendEdit: bool(p.appendEdit, true),
             scrollZoom: bool(p.scrollZoom, true),
             alignSpeeches: bool(p.alignSpeeches, false),
             tooltips: bool(p.tooltips, true),
@@ -411,6 +421,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         rfdOpen: s.rfdOpen,
         rfdVim: s.rfdVim,
         insertPaste: s.insertPaste,
+        appendEdit: s.appendEdit,
         scrollZoom: s.scrollZoom,
         alignSpeeches: s.alignSpeeches,
         tooltips: s.tooltips,
@@ -509,6 +520,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     rfdOpen: initialDisplaySettings.rfdOpen,
     rfdVim: initialDisplaySettings.rfdVim,
     insertPaste: initialDisplaySettings.insertPaste,
+    appendEdit: initialDisplaySettings.appendEdit,
     scrollZoom: initialDisplaySettings.scrollZoom,
     alignSpeeches: initialDisplaySettings.alignSpeeches,
     tooltips: initialDisplaySettings.tooltips,
@@ -831,6 +843,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     setRfdVim: (on) => persistDisplay(set, get, { rfdVim: on }),
 
     setInsertPaste: (on) => persistDisplay(set, get, { insertPaste: on }),
+
+    setAppendEdit: (on) => persistDisplay(set, get, { appendEdit: on }),
 
     setScrollZoom: (on) => persistDisplay(set, get, { scrollZoom: on }),
 
