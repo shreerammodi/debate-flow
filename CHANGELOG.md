@@ -7,6 +7,16 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+### Fixed
+
+- **ebb no longer claims to run on macOS versions it cannot run on.** The
+  bundle advertised support back to macOS 10.13 while the binary itself
+  required macOS 11, so on an older Mac the Finder started the app and the
+  loader then killed it: the icon bounced once in the Dock and nothing opened,
+  with no message naming the reason. The bundle now states macOS 11, which is
+  what it has always needed, so an unsupported Mac says so instead of failing
+  silently.
+
 ## [1.0.0] - 2026-08-10
 
 ebb's first stable release. A flow is a file on your own disk, the app is

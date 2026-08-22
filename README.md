@@ -20,10 +20,10 @@ Desktop builds are found on the [releases page](https://github.com/shreerammodi/
 
 ### MacOS
 
-1. Download the `.dmg` file for your Mac.
+Requires macOS 11 (Big Sur) or later.
 
-- Apple Silicon: `*.aarch64.dmg`
-- Intel: `*.dmg`
+1. Download `ebb_<version>_universal.dmg`. One build covers both Apple Silicon
+   and Intel Macs.
 
 2. Open the `*.dmg` file, and drag ebb to your Applications folder.
 
@@ -46,8 +46,11 @@ the quarantine flag in Terminal, then open the app normally:
 xattr -dr com.apple.quarantine /Applications/ebb.app
 ```
 
-If you would like to download standalone versions, you can download the
-`*.app.tar.gz` file for your respective architecture.
+If you would like a standalone copy instead of an installer, download
+`ebb_<version>_universal.app.tar.gz` and unarchive it. Unarchive it on the Mac
+you will run it on: sending the unarchived `ebb.app` through a Windows machine,
+a cloud-drive "download as zip", or a FAT-formatted drive breaks the app's code
+signature, and macOS then refuses to launch it with no error message.
 
 ### Windows
 
