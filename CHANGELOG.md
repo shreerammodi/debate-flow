@@ -7,8 +7,41 @@ format, and this project obeys [Semantic Versioning](https://semver.org/spec/v2.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-02
+
+### Added
+
+- **Append mode: typing on a cell adds to it.** Typing on a selected cell
+  used to open an empty editor, so the first character wiped whatever the
+  cell held. With append mode on, the editor opens with the cell's own text
+  and the caret past its end, so a debater amending an argument mid-round
+  types straight onto it. Enter, F2 and a double click still open the full
+  editor as before, and Left and Right still commit and move on. On by
+  default; a switch in Settings turns it off.
+- **New flow asks for a name.** After choosing the event, the New flow dialog
+  offers a name field prefilled with the suggested filename and fully
+  selected, so typing replaces it and Enter alone keeps it. Escape steps back
+  to the event list instead of closing.
+- **The sidebar is resizable.** Drag its edge, or focus the handle and use
+  the arrow keys in steps of ten, Home and End for the narrowest and widest.
+  The width is kept in the config file. As the sidebar narrows, the header
+  hides the bulk count and shortens the side labels to a single letter so
+  the collapse caret is never pushed out of view.
+- **Ctrl/Meta+Arrow can be bound to a command.** The grid used to swallow
+  all four chords with its Excel-style jump, so a binding never saw them.
+  A bound chord now runs the command instead; unbound, the jump is
+  unchanged. In a text box all four stay caret movement.
+
 ### Fixed
 
+- **Selected text in inputs is readable under the dark theme.** Inputs
+  painted selected text near-black over the violet tint; they now use the
+  same translucent selection as the rest of the app.
+- **The grid fills the pane on the first frame after a layout change.**
+  Collapsing or resizing the sidebar, or toggling split view, painted one
+  frame with the grid at its old width and bare pane background beside it.
+- **The start screen's Join row no longer hydrates against a Settings row**
+  in the desktop shell.
 - **ebb no longer claims to run on macOS versions it cannot run on.** The
   bundle advertised support back to macOS 10.13 while the binary itself
   required macOS 11, so on an older Mac the Finder started the app and the
@@ -740,7 +773,8 @@ flow one round together without a server of ours in the middle.
 
 - Initial tagged release.
 
-[Unreleased]: https://github.com/shreerammodi/ebb/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/shreerammodi/ebb/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/shreerammodi/ebb/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/shreerammodi/ebb/compare/v0.7.2...v1.0.0
 [0.7.2]: https://github.com/shreerammodi/ebb/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/shreerammodi/ebb/compare/v0.7.0...v0.7.1

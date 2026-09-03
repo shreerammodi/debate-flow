@@ -116,7 +116,7 @@ describe("toAppConfig validation", () => {
     });
 
     it("clamps sidebar width and defaults malformed values", () => {
-        expect(toAppConfig({ sidebar_width: 90 }).sidebarWidth).toBe(180);
+        expect(toAppConfig({ sidebar_width: 90 }).sidebarWidth).toBe(140);
         expect(toAppConfig({ sidebar_width: 900 }).sidebarWidth).toBe(420);
         expect(toAppConfig({ sidebar_width: "wide" }).sidebarWidth).toBe(220);
         expect(toAppConfig({}).sidebarWidth).toBe(220);
