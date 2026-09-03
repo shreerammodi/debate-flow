@@ -227,17 +227,24 @@ export default function Sidebar() {
             aria-label="Sheets"
             data-testid="sidebar"
         >
-            <div className="flex shrink-0 items-center gap-1 p-2">
+            {/* The row is a container: as the sidebar narrows, the bulk count
+                goes first and the side labels shorten to one letter, so the
+                collapse caret at the end never gets pushed out of the row.
+                A container query measures the row's content box, inside the
+                padding, so the thresholds are content widths with a few px of
+                slack: caret, count and two full buttons come to 184, and
+                caret plus two full buttons to 136. */}
+            <div className="@container flex shrink-0 items-center gap-1 p-2">
                 <Tip label="Add sheet" command="sheet.newAff">
                     <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="border-aff text-aff dark:border-aff flex-1"
+                        className="border-aff text-aff dark:border-aff min-w-0 flex-1 px-2"
                         onClick={() => addGroup("aff")}
                         data-testid="add-aff"
                     >
-                        + {sides.aff.label}
+                        + <SideLabelText label={sides.aff.label} />
                     </Button>
                 </Tip>
                 <Tip label="Bulk add sheets">
@@ -251,7 +258,7 @@ export default function Sidebar() {
                         aria-label="Bulk add sheets"
                         data-testid="bulk-add-count"
                         data-editing-field
-                        className="border-input text-foreground h-8 w-11 shrink-0 [appearance:textfield] rounded-md border bg-transparent px-1 text-center text-[13px] outline-none focus:placeholder-transparent [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        className="border-input text-foreground h-8 w-11 shrink-0 [appearance:textfield] rounded-md border bg-transparent px-1 text-center text-[13px] outline-none focus:placeholder-transparent @max-[192px]:hidden [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                 </Tip>
                 <Tip label="Add sheet" command="sheet.newNeg">
@@ -259,11 +266,11 @@ export default function Sidebar() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="border-neg text-neg dark:border-neg flex-1"
+                        className="border-neg text-neg dark:border-neg min-w-0 flex-1 px-2"
                         onClick={() => addGroup("neg")}
                         data-testid="add-neg"
                     >
-                        + {sides.neg.label}
+                        + <SideLabelText label={sides.neg.label} />
                     </Button>
                 </Tip>
                 <Tip label="Collapse sidebar" command="sidebar.toggle">
@@ -370,6 +377,23 @@ export default function Sidebar() {
                 className="group hover:after:bg-border focus-visible:after:bg-ring absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-transparent after:transition-colors"
             />
         </nav>
+    );
+}
+
+/**
+ * A side's label, shortened to its first letter once the header row is too
+ * narrow to hold the full word beside the collapse caret. The full word stays
+ * in the accessibility tree at every width; the container query only picks
+ * which of the two is painted.
+ */
+function SideLabelText({ label }: { label: string }) {
+    return (
+        <>
+            <span className="@max-[144px]:sr-only">{label}</span>
+            <span className="hidden @max-[144px]:inline" aria-hidden>
+                {label.charAt(0)}
+            </span>
+        </>
     );
 }
 

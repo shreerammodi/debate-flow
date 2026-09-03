@@ -145,7 +145,7 @@ describe("Sidebar", () => {
             expect(handle).toHaveAttribute("aria-valuenow", "230");
 
             await user.keyboard("{Home}");
-            expect(screen.getByTestId("sidebar")).toHaveStyle({ width: "180px" });
+            expect(screen.getByTestId("sidebar")).toHaveStyle({ width: "140px" });
         });
 
         it("restores the resized width after collapsing and expanding", async () => {

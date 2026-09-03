@@ -347,7 +347,7 @@ export function bool(value: unknown, fallback: boolean): boolean {
     return typeof value === "boolean" ? value : fallback;
 }
 
-export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MIN = 140;
 export const SIDEBAR_WIDTH_MAX = 420;
 export const SIDEBAR_WIDTH_DEFAULT = 220;
 

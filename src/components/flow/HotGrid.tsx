@@ -523,9 +523,20 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     // Handsontable's own ResizeObserver defers its refresh to the next frame,
     // so the pane widening in this commit would otherwise paint once with the
     // grid still at its old width and bare pane background beside it.
+    // Mount is skipped: the wrapper builds its instance in a plain effect,
+    // which runs after this one, and on StrictMode's simulated remount the
+    // ref still holds the destroyed one, which the wrapper warns about.
+    const mountedRef = useRef(false);
     useLayoutEffect(() => {
+        if (!mountedRef.current) return;
         hotRef.current?.hotInstance?.refreshDimensions();
     }, [gridZoom, sidebarCollapsed, sidebarWidth, splitSheetId]);
+    useLayoutEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     // Mod+scroll zooms only the grid. Native listener (not React onWheel) so the
     // preventDefault sticks and the browser's own page zoom never fires. Trackpad
