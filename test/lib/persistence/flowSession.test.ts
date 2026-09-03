@@ -40,6 +40,16 @@ describe("createFlowFile", () => {
         expect(second).not.toBe(first);
         expect(fs.files.size).toBeGreaterThanOrEqual(2);
     });
+
+    it("files the flow under the name the debater typed", async () => {
+        const path = await createFlowFile(makeFlowRound({}), fs, " Round 3 ");
+        expect(path).toBe(`${FLOWS_DIR}/Round 3.ebb`);
+    });
+
+    it("falls back to the suggested name when the typed one is blank", async () => {
+        const path = await createFlowFile(makeFlowRound({ event: "ld" }), fs, "  ");
+        expect(path).toMatch(/\/ld-\d{4}-\d{2}-\d{2}\.ebb$/);
+    });
 });
 
 describe("readFlowAt", () => {

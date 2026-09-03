@@ -19,7 +19,7 @@ import type { FlowRound } from "@/lib/model/flow";
 
 import { parseFlowFile, parseLegacyExport, serializeFlow } from "./flowFile";
 import { getFlowFs, type FlowFs } from "./flowFs";
-import { EBB_EXT, basename, suggestFilename } from "./flowPaths";
+import { EBB_EXT, basename, suggestFilename, withEbbExt } from "./flowPaths";
 import { resolveFlowsDir } from "./flowsDir";
 import { loadRecents, promoteRecent, saveRecents } from "./recents";
 
@@ -97,12 +97,21 @@ export async function readFlowAt(path: string, fs?: FlowFs): Promise<FlowRound |
 
 // --- Creating and saving -------------------------------------------------------
 
-/** Write a brand-new flow into the flows folder; resolves to the path used. */
-export async function createFlowFile(round: FlowRound, fs?: FlowFs): Promise<string> {
+/**
+ * Write a brand-new flow into the flows folder; resolves to the path used.
+ * `name` is the stem the debater typed; blank falls back to the suggestion so
+ * a cleared field still creates a file. Collisions are deduped by the adapter.
+ */
+export async function createFlowFile(
+    round: FlowRound,
+    fs?: FlowFs,
+    name?: string,
+): Promise<string> {
     const io = fs ?? (await getFlowFs());
     const dir = await resolveFlowsDir(io);
     const text = serializeFlow(round);
-    const path = await io.createFlow(dir, suggestFilename(round), text);
+    const stem = name?.trim();
+    const path = await io.createFlow(dir, stem ? withEbbExt(stem) : suggestFilename(round), text);
     await noteOpened(path, io);
     void persistReplica(round, text);
     return path;

@@ -3,9 +3,12 @@
 import { useState } from "react";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import type { EventId } from "@/lib/format/events";
+import { makeFlowRound } from "@/lib/model/flow";
 import type { Side } from "@/lib/model/types";
+import { EBB_EXT, stem, suggestFilename } from "@/lib/persistence/flowPaths";
 import { useFlowStore } from "@/lib/store/useFlowStore";
 import { cn } from "@/lib/utils";
 
@@ -36,31 +39,87 @@ const CHOICES: Choice[] = [
     { key: "r", label: "Parliamentary", event: "parli" },
 ];
 
+type Picked = Pick<Choice, "event" | "firstSide">;
+
 export default function NewFlowDialog() {
     const open = useFlowStore((s) => s.newFlowOpen);
     const setOpen = useFlowStore((s) => s.setNewFlowOpen);
+    const create = useCreateFlow();
+    const [picked, setPicked] = useState<Picked | null>(null);
+
+    function onOpenChange(next: boolean, details?: { reason: string; cancel: () => void }) {
+        // Escape on the name step goes back to the event list. Base UI hears
+        // the key itself, so cancelling its close here is the only way in.
+        if (!next && picked && details?.reason === "escape-key") {
+            details.cancel();
+            setPicked(null);
+            return;
+        }
+        // The step outlives the popup, which Base UI keeps mounted through its
+        // close animation, so it is reset on close rather than by unmounting.
+        if (!next) setPicked(null);
+        setOpen(next);
+    }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            {/* The cursor lives in the content, which unmounts with the dialog,
-                so each opening starts at the top without an effect to reset it. */}
+        <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-sm" data-testid="new-flow-dialog">
                 <DialogHeader>
-                    <DialogTitle>New flow</DialogTitle>
+                    <DialogTitle>{picked ? "Name this flow" : "New flow"}</DialogTitle>
                 </DialogHeader>
-                <Choices onPick={() => setOpen(false)} />
+                {picked ? (
+                    <NameStep
+                        picked={picked}
+                        onSubmit={(name) => {
+                            onOpenChange(false);
+                            create(picked.event, picked.firstSide, name);
+                        }}
+                    />
+                ) : (
+                    <Choices onPick={setPicked} />
+                )}
             </DialogContent>
         </Dialog>
     );
 }
 
-function Choices({ onPick }: { onPick: () => void }) {
-    const create = useCreateFlow();
+/**
+ * The filename, offered fully selected so the first keystroke replaces it and
+ * Enter alone keeps it. The extension is fixed beside the field rather than in
+ * it, so nothing the debater types can lose it.
+ */
+function NameStep({ picked, onSubmit }: { picked: Picked; onSubmit: (name: string) => void }) {
+    const [name, setName] = useState(() =>
+        stem(suggestFilename(makeFlowRound({ event: picked.event, firstSide: picked.firstSide }))),
+    );
+
+    return (
+        <form
+            className="flex items-center gap-1 font-mono text-sm"
+            onSubmit={(e) => {
+                e.preventDefault();
+                onSubmit(name);
+            }}
+        >
+            <Input
+                autoFocus
+                aria-label="Flow name"
+                data-testid="new-flow-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                spellCheck={false}
+            />
+            <span className="text-muted-foreground">{EBB_EXT}</span>
+        </form>
+    );
+}
+
+function Choices({ onPick }: { onPick: (picked: Picked) => void }) {
     const [cursor, setCursor] = useState(0);
 
     function choose(choice: Choice) {
-        onPick();
-        create(choice.event, choice.firstSide);
+        onPick({ event: choice.event, firstSide: choice.firstSide });
     }
 
     function onKeyDown(e: React.KeyboardEvent) {
