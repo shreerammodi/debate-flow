@@ -92,6 +92,7 @@ export interface FlowState {
     cheatsheetOpen: boolean;
     infoOpen: boolean;
     sidebarCollapsed: boolean;
+    sidebarWidth: number;
     /** RFD drawer open/closed; persisted like sidebarCollapsed. */
     rfdOpen: boolean;
     /** Vim keybindings in the RFD editor; persisted like sidebarCollapsed. */
@@ -251,6 +252,7 @@ export interface FlowActions {
     setCheatsheetOpen(open: boolean): void;
     setInfoOpen(open: boolean): void;
     setSidebarCollapsed(collapsed: boolean): void;
+    setSidebarWidth(width: number): void;
     setRfdOpen(open: boolean): void;
     setRenamingSheet(id: string | null): void;
 }
@@ -313,6 +315,7 @@ interface DisplaySettings {
     flowFont: FontId;
     defaultGridZoom: number;
     sidebarCollapsed: boolean;
+    sidebarWidth: number;
     rfdOpen: boolean;
     rfdVim: boolean;
     insertPaste: boolean;
@@ -344,11 +347,22 @@ export function bool(value: unknown, fallback: boolean): boolean {
     return typeof value === "boolean" ? value : fallback;
 }
 
+export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MAX = 420;
+export const SIDEBAR_WIDTH_DEFAULT = 220;
+
+export function resolveSidebarWidth(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value)
+        ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(value)))
+        : SIDEBAR_WIDTH_DEFAULT;
+}
+
 function loadDisplaySettings(): DisplaySettings {
     const fallback: DisplaySettings = {
         flowFont: DEFAULT_FONT_ID,
         defaultGridZoom: 1,
         sidebarCollapsed: false,
+        sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
         rfdOpen: false,
         rfdVim: false,
         insertPaste: false,
@@ -378,6 +392,7 @@ function loadDisplaySettings(): DisplaySettings {
             flowFont: resolveFontId(p.flowFont),
             defaultGridZoom: resolveZoom(p.defaultGridZoom),
             sidebarCollapsed: bool(p.sidebarCollapsed, false),
+            sidebarWidth: resolveSidebarWidth(p.sidebarWidth),
             rfdOpen: bool(p.rfdOpen, false),
             rfdVim: bool(p.rfdVim, false),
             insertPaste: bool(p.insertPaste, false),
@@ -418,6 +433,7 @@ function displaySettingsOf(s: FlowState): DisplaySettings {
         flowFont: s.flowFont,
         defaultGridZoom: s.defaultGridZoom,
         sidebarCollapsed: s.sidebarCollapsed,
+        sidebarWidth: s.sidebarWidth,
         rfdOpen: s.rfdOpen,
         rfdVim: s.rfdVim,
         insertPaste: s.insertPaste,
@@ -517,6 +533,7 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
     cheatsheetOpen: false,
     infoOpen: false,
     sidebarCollapsed: initialDisplaySettings.sidebarCollapsed,
+    sidebarWidth: initialDisplaySettings.sidebarWidth,
     rfdOpen: initialDisplaySettings.rfdOpen,
     rfdVim: initialDisplaySettings.rfdVim,
     insertPaste: initialDisplaySettings.insertPaste,
@@ -918,6 +935,8 @@ export const useFlowStore = create<FlowStore>()((set, get) => ({
         set({ infoOpen: open });
     },
     setSidebarCollapsed: (collapsed) => persistDisplay(set, get, { sidebarCollapsed: collapsed }),
+    setSidebarWidth: (width) =>
+        persistDisplay(set, get, { sidebarWidth: resolveSidebarWidth(width) }),
     setRfdOpen: (open) => persistDisplay(set, get, { rfdOpen: open }),
     setRenamingSheet(id) {
         set({ renamingSheetId: id });

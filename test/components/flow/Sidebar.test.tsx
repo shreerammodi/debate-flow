@@ -4,7 +4,7 @@
  * Uses the real Zustand store. Resets state between tests for isolation.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 
@@ -64,6 +64,7 @@ function resetStore() {
         renamingSheetId: null,
         sheetRange: null,
         sidebarCollapsed: false,
+        sidebarWidth: 220,
         contacts: {},
     });
 }
@@ -115,6 +116,49 @@ describe("Sidebar", () => {
         expect(screen.queryByTestId("add-sheet")).toBeNull();
         expect(screen.getByTestId("add-aff")).toBeInTheDocument();
         expect(screen.getByTestId("add-neg")).toBeInTheDocument();
+    });
+
+    describe("resizing", () => {
+        it("drags the expanded sidebar within its width bounds", () => {
+            setupRound();
+            renderSidebar();
+            const sidebar = screen.getByTestId("sidebar");
+            const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+
+            fireEvent.pointerDown(handle, { pointerId: 1, clientX: 220 });
+            fireEvent.pointerMove(handle, { pointerId: 1, clientX: 540 });
+            expect(sidebar).toHaveStyle({ width: "420px" });
+            fireEvent.pointerUp(handle, { pointerId: 1, clientX: 540 });
+
+            expect(useFlowStore.getState().sidebarWidth).toBe(420);
+        });
+
+        it("resizes from the keyboard and exposes the current width", async () => {
+            const user = userEvent.setup();
+            setupRound();
+            renderSidebar();
+            const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+
+            await user.click(handle);
+            await user.keyboard("{ArrowRight}");
+            expect(screen.getByTestId("sidebar")).toHaveStyle({ width: "230px" });
+            expect(handle).toHaveAttribute("aria-valuenow", "230");
+
+            await user.keyboard("{Home}");
+            expect(screen.getByTestId("sidebar")).toHaveStyle({ width: "180px" });
+        });
+
+        it("restores the resized width after collapsing and expanding", async () => {
+            const user = userEvent.setup();
+            setupRound();
+            useFlowStore.setState({ sidebarWidth: 320 });
+            renderSidebar();
+
+            await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+            await user.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+            expect(screen.getByTestId("sidebar")).toHaveStyle({ width: "320px" });
+        });
     });
 
     it('"+ Aff" button adds an aff sheet and makes it active', async () => {

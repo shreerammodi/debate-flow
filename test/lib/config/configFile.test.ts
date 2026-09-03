@@ -13,6 +13,7 @@ const sample: AppConfig = {
     flowFont: "plex-mono",
     defaultGridZoom: 1.25,
     sidebarCollapsed: true,
+    sidebarWidth: 312,
     rfdOpen: false,
     rfdVim: true,
     insertPaste: true,
@@ -45,6 +46,7 @@ describe("configFromState -> toAppConfig round-trip", () => {
         const file = configFromState(sample);
         expect(file.flow_font).toBe("IBM Plex Mono");
         expect(file.default_zoom).toBe(1.25);
+        expect(file.sidebar_width).toBe(312);
         expect(file.rfd_vim).toBe(true);
         expect(file.neg_color).toBeNull();
         expect(file.update.auto_check_enabled).toBe(true);
@@ -111,6 +113,13 @@ describe("toAppConfig validation", () => {
         expect(toAppConfig({ default_zoom: 0.1 }).defaultGridZoom).toBe(0.5);
         expect(toAppConfig({ default_zoom: "big" }).defaultGridZoom).toBe(1);
         expect(toAppConfig({}).defaultGridZoom).toBe(1);
+    });
+
+    it("clamps sidebar width and defaults malformed values", () => {
+        expect(toAppConfig({ sidebar_width: 90 }).sidebarWidth).toBe(180);
+        expect(toAppConfig({ sidebar_width: 900 }).sidebarWidth).toBe(420);
+        expect(toAppConfig({ sidebar_width: "wide" }).sidebarWidth).toBe(220);
+        expect(toAppConfig({}).sidebarWidth).toBe(220);
     });
 
     it("drops keymap entries for unknown commands or non-string chords", () => {

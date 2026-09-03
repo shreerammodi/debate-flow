@@ -2,7 +2,7 @@
 
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { LazyMotion, Reorder } from "motion/react";
-import { useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { toast } from "sonner";
 
 import InviteChip from "@/components/collab/InviteChip";
@@ -14,7 +14,13 @@ import { Tip } from "@/components/ui/tooltip";
 import { sideLabels } from "@/lib/format/events";
 import { focusActiveHot } from "@/lib/grid/hotInstance";
 import { compareSheets, dropSheetRange, sheetRangeIds, type FlowSheet } from "@/lib/model/flow";
-import { focusedSheetId, useFlowStore } from "@/lib/store/useFlowStore";
+import {
+    focusedSheetId,
+    resolveSidebarWidth,
+    SIDEBAR_WIDTH_MAX,
+    SIDEBAR_WIDTH_MIN,
+    useFlowStore,
+} from "@/lib/store/useFlowStore";
 import { cn } from "@/lib/utils";
 
 const EMPTY_SHEETS: FlowSheet[] = [];
@@ -36,6 +42,8 @@ export default function Sidebar() {
     const restoreSheet = useFlowStore((s) => s.restoreSheet);
     const sidebarCollapsed = useFlowStore((s) => s.sidebarCollapsed);
     const setSidebarCollapsed = useFlowStore((s) => s.setSidebarCollapsed);
+    const sidebarWidth = useFlowStore((s) => s.sidebarWidth);
+    const setSidebarWidth = useFlowStore((s) => s.setSidebarWidth);
     const reorderSheets = useFlowStore((s) => s.reorderSheets);
     const sheetRange = useFlowStore((s) => s.sheetRange);
     const setSheetRange = useFlowStore((s) => s.setSheetRange);
@@ -44,6 +52,13 @@ export default function Sidebar() {
     // with it, and the ordering motion last proposed. A ref, not state - the
     // gesture reads what it wrote and nothing renders on it.
     const drag = useRef<{ id: string; block: string[]; landing: string[] } | null>(null);
+    const nav = useRef<HTMLElement>(null);
+    const resize = useRef<{
+        pointerId: number;
+        originX: number;
+        originWidth: number;
+        width: number;
+    } | null>(null);
     // Bulk count: empty (or junk) means one sheet, so the buttons stay single-add
     // by default and only fan out when the user types a number.
     const [bulkCount, setBulkCount] = useState("");
@@ -69,6 +84,55 @@ export default function Sidebar() {
         });
     }
 
+    function handleResizeStart(event: PointerEvent<HTMLDivElement>) {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        resize.current = {
+            pointerId: event.pointerId,
+            originX: event.clientX,
+            originWidth: sidebarWidth,
+            width: sidebarWidth,
+        };
+    }
+
+    function handleResize(event: PointerEvent<HTMLDivElement>) {
+        const gesture = resize.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        const width = resolveSidebarWidth(gesture.originWidth + event.clientX - gesture.originX);
+        gesture.width = width;
+        if (nav.current) nav.current.style.width = `${width}px`;
+        event.currentTarget.setAttribute("aria-valuenow", String(width));
+    }
+
+    function handleResizeEnd(event: PointerEvent<HTMLDivElement>) {
+        const gesture = resize.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        resize.current = null;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        setSidebarWidth(gesture.width);
+    }
+
+    function handleResizeKey(event: KeyboardEvent<HTMLDivElement>) {
+        let width: number;
+        switch (event.key) {
+            case "ArrowLeft":
+                width = sidebarWidth - 10;
+                break;
+            case "ArrowRight":
+                width = sidebarWidth + 10;
+                break;
+            case "Home":
+                width = SIDEBAR_WIDTH_MIN;
+                break;
+            case "End":
+                width = SIDEBAR_WIDTH_MAX;
+                break;
+            default:
+                return;
+        }
+        event.preventDefault();
+        setSidebarWidth(width);
+    }
     const cxSheet = sheets.find((s) => s.kind === "cx") ?? null;
 
     if (sidebarCollapsed) {
@@ -157,7 +221,9 @@ export default function Sidebar() {
 
     return (
         <nav
-            className="no-print border-border bg-card flex h-full w-[220px] shrink-0 flex-col border-r"
+            ref={nav}
+            className="no-print border-border bg-card relative flex h-full shrink-0 flex-col border-r"
+            style={{ width: sidebarWidth }}
             aria-label="Sheets"
             data-testid="sidebar"
         >
@@ -288,6 +354,21 @@ export default function Sidebar() {
             <div className="border-border/60 shrink-0 border-t p-2">
                 <ShareButton />
             </div>
+            <div
+                role="separator"
+                aria-label="Resize sidebar"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_WIDTH_MIN}
+                aria-valuemax={SIDEBAR_WIDTH_MAX}
+                aria-valuenow={sidebarWidth}
+                tabIndex={0}
+                onPointerDown={handleResizeStart}
+                onPointerMove={handleResize}
+                onPointerUp={handleResizeEnd}
+                onPointerCancel={handleResizeEnd}
+                onKeyDown={handleResizeKey}
+                className="group hover:after:bg-border focus-visible:after:bg-ring absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-transparent after:transition-colors"
+            />
         </nav>
     );
 }

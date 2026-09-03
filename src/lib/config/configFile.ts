@@ -21,6 +21,7 @@ import {
     type AppConfig,
     bool,
     resolveColor,
+    resolveSidebarWidth,
     resolveZoom,
     useFlowStore,
 } from "@/lib/store/useFlowStore";
@@ -35,6 +36,7 @@ export interface ConfigFileShape {
     /** The grid zoom new sessions open at, as a factor (1 = 100%). */
     default_zoom: number;
     sidebar_collapsed: boolean;
+    sidebar_width: number;
     rfd_open: boolean;
     rfd_vim: boolean;
     insert_paste: boolean;
@@ -131,6 +133,7 @@ export function configFromState(s: AppConfig): ConfigFileShape {
         flow_font: fontLabel(s.flowFont),
         default_zoom: s.defaultGridZoom,
         sidebar_collapsed: s.sidebarCollapsed,
+        sidebar_width: s.sidebarWidth,
         rfd_open: s.rfdOpen,
         rfd_vim: s.rfdVim,
         insert_paste: s.insertPaste,
@@ -190,6 +193,7 @@ export function toAppConfig(raw: unknown): AppConfig {
         flowFont: resolveFontName(o.flow_font),
         defaultGridZoom: resolveZoom(o.default_zoom),
         sidebarCollapsed: bool(o.sidebar_collapsed, false),
+        sidebarWidth: resolveSidebarWidth(o.sidebar_width),
         rfdOpen: bool(o.rfd_open, false),
         rfdVim: bool(o.rfd_vim, false),
         insertPaste: bool(o.insert_paste, false),
