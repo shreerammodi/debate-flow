@@ -4,7 +4,7 @@ import { HotTable } from "@handsontable/react-wrapper";
 import type { HotTableRef } from "@handsontable/react-wrapper";
 import type Handsontable from "handsontable";
 import { registerAllModules } from "handsontable/registry";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import "handsontable/styles/handsontable.min.css";
 import "handsontable/styles/ht-theme-main.min.css";
@@ -311,6 +311,8 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
     const splitSheetId = useFlowStore((s) => s.splitSheetId);
     const focusedPane = useFlowStore((s) => s.focusedPane);
     const gridZoom = useFlowStore((s) => s.gridZoom);
+    const sidebarCollapsed = useFlowStore((s) => s.sidebarCollapsed);
+    const sidebarWidth = useFlowStore((s) => s.sidebarWidth);
     // Inert leading columns: one per speech this sheet does not show. They are
     // real grid columns, so a grid column index is not a cell index while the
     // count is above zero, and every value crossing to the model converts.
@@ -516,10 +518,14 @@ export default memo(function HotGrid({ sheetId, pane }: { sheetId: string; pane:
 
     // Zoom scales the grid via CSS on the wrapper; Handsontable measures its
     // viewport once, so re-measure it against the new box or the last
-    // rows/cols stay clipped or leave a gap.
-    useEffect(() => {
+    // rows/cols stay clipped or leave a gap. A layout effect rather than a
+    // plain one, and keyed on the chrome that changes the pane's width too:
+    // Handsontable's own ResizeObserver defers its refresh to the next frame,
+    // so the pane widening in this commit would otherwise paint once with the
+    // grid still at its old width and bare pane background beside it.
+    useLayoutEffect(() => {
         hotRef.current?.hotInstance?.refreshDimensions();
-    }, [gridZoom]);
+    }, [gridZoom, sidebarCollapsed, sidebarWidth, splitSheetId]);
 
     // Mod+scroll zooms only the grid. Native listener (not React onWheel) so the
     // preventDefault sticks and the browser's own page zoom never fires. Trackpad
