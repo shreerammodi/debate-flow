@@ -17,7 +17,7 @@ import { noteOpened } from "@/lib/persistence/flowSession";
 import { relativeTime } from "@/lib/start/format";
 import { useCollabStore } from "@/lib/store/useCollabStore";
 import { useFlowStore } from "@/lib/store/useFlowStore";
-import { getCurrentVersion, isDesktop } from "@/lib/update/adapter";
+import { getCurrentVersion, isDesktop, useIsDesktop } from "@/lib/update/adapter";
 import { cn } from "@/lib/utils";
 
 import MigrationDialog from "./MigrationDialog";
@@ -50,6 +50,9 @@ export default function StartScreen() {
     const [version, setVersion] = useState(process.env.NEXT_PUBLIC_EBB_VERSION ?? "");
     const invites = useCollabStore((s) => s.invites);
     const contacts = useFlowStore((s) => s.contacts);
+    // For render only: this page is prerendered, so a branch on isDesktop()
+    // here would hydrate a row the server never drew.
+    const desktop = useIsDesktop();
 
     useEffect(() => {
         // The packaged version is the truth on desktop; the injected constant
@@ -101,7 +104,7 @@ export default function StartScreen() {
         // round and the palette only mounts on the flow screen. Desktop only,
         // the way every route to a session is - a browser cannot bind an
         // endpoint. The command carries the consent question with it.
-        ...(isDesktop()
+        ...(desktop
             ? [
                   {
                       id: "join",

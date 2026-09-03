@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 import { parseManifest } from "./policy";
 import type { UpdateManifest } from "./types";
 
@@ -5,6 +7,21 @@ import type { UpdateManifest } from "./types";
 export function isDesktop(): boolean {
     if (typeof window === "undefined") return false;
     return "__TAURI_INTERNALS__" in window || "__TAURI__" in window;
+}
+
+const noop = () => () => {};
+const serverSnapshot = () => false;
+
+/**
+ * `isDesktop()` for render. A prerendered page hydrates against markup the
+ * server built with no window, so a component that branches on the shell
+ * during its first render must give the server's answer first and switch
+ * to the real one on the client; `useSyncExternalStore` does exactly that
+ * with a false server snapshot. Effects and handlers can call `isDesktop()`
+ * directly, since they only run on the client.
+ */
+export function useIsDesktop(): boolean {
+    return useSyncExternalStore(noop, isDesktop, serverSnapshot);
 }
 
 /**
